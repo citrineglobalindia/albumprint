@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate, Link } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
-  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare,
+  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, CheckCheck, Keyboard,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
 import { ORDERS, CUSTOMERS } from "../lib/data";
 import { useAuth, ROLES } from "../lib/auth";
+import { notifStore, useNotifs } from "../lib/notifStore";
 
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -52,10 +53,11 @@ function Sidebar() {
 function SearchBox() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
   const nav = useNavigate();
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); document.getElementById("global-search")?.focus(); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); const el = document.getElementById("global-search") as HTMLInputElement | null; el?.focus(); el?.select(); setOpen(true); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -63,19 +65,29 @@ function SearchBox() {
   const term = q.trim().toLowerCase();
   const orders = term ? ORDERS.filter((o) => o.id.toLowerCase().includes(term) || o.customer.toLowerCase().includes(term) || o.mobile.includes(term) || o.event.toLowerCase().includes(term)).slice(0, 5) : [];
   const customers = term ? CUSTOMERS.filter((c) => c.name.toLowerCase().includes(term) || c.studio.toLowerCase().includes(term) || c.mobile.includes(term)).slice(0, 3) : [];
-  const go = (to: string) => { setOpen(false); setQ(""); nav(to); };
+  const results = [
+    ...orders.map((o) => ({ key: o.id, to: `/orders/${o.id}`, a: o.id, b: `${o.customer} · ${o.event}` })),
+    ...customers.map((c) => ({ key: c.id, to: "/customers", a: c.name, b: `${c.studio} · ${c.mobile}` })),
+  ];
+  const go = (to: string) => { setOpen(false); setQ(""); setHi(0); (document.getElementById("global-search") as HTMLInputElement | null)?.blur(); nav(to); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") { setOpen(false); setQ(""); setHi(0); (e.target as HTMLInputElement).blur(); }
+    else if (e.key === "Enter") { const r = results[hi] ?? results[0]; if (r) { e.preventDefault(); go(r.to); } }
+    else if (e.key === "ArrowDown" && results.length) { e.preventDefault(); setHi((hi + 1) % results.length); }
+    else if (e.key === "ArrowUp" && results.length) { e.preventDefault(); setHi((hi - 1 + results.length) % results.length); }
+  };
   return (
     <div className="relative w-full max-w-[520px]">
       <label className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-white px-3.5">
         <Search className="size-4 text-sub" />
-        <input id="global-search" value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} placeholder="Search orders, customers, mobile number..." className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
+        <input id="global-search" value={q} onChange={(e) => { setQ(e.target.value); setHi(0); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey} placeholder="Search orders, customers, mobile number..." className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
         <kbd className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">⌘ K</kbd>
       </label>
       {open && term && (
         <div className="absolute left-0 right-0 top-12 z-40 rounded-xl border border-line bg-white p-2 shadow-xl">
-          {orders.length + customers.length === 0 && <div className="px-3 py-2 text-sm text-sub">No results</div>}
-          {orders.map((o) => <button key={o.id} onMouseDown={() => go(`/orders/${o.id}`)} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-brand-soft"><b>{o.id}</b><span className="text-sub">{o.customer} · {o.event}</span></button>)}
-          {customers.map((c) => <button key={c.id} onMouseDown={() => go("/customers")} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-brand-soft"><b>{c.name}</b><span className="text-sub">{c.studio} · {c.mobile}</span></button>)}
+          {results.length === 0 && <div className="px-3 py-2 text-sm text-sub">No results</div>}
+          {results.map((r, i) => <button key={r.key} onMouseDown={() => go(r.to)} onMouseEnter={() => setHi(i)} className={cx("flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm", i === hi ? "bg-brand-soft" : "hover:bg-brand-soft")}><b>{r.a}</b><span className="text-sub">{r.b}</span></button>)}
+          {results.length > 0 && <div className="px-3 pb-1 pt-2 text-[11px] text-sub">Enter to open · ↑↓ to move · Esc to close</div>}
         </div>
       )}
     </div>
@@ -85,16 +97,71 @@ function SearchBox() {
 function Topbar() {
   const { role, user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [bell, setBell] = useState(false);
+  const [help, setHelp] = useState(false);
   const nav = useNavigate();
+  const loc = useLocation();
+  const notifs = useNotifs();
+  const unread = notifs.filter((n) => !n.read).length;
+  useEffect(() => { setBell(false); setHelp(false); }, [loc.pathname]);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+      if (e.key === "Escape") { setBell(false); setHelp(false); setOpen(false); }
+      else if (e.key === "?" && !typing) { e.preventDefault(); setHelp((x) => !x); setBell(false); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
   return (
     <header className="flex items-center justify-between gap-4 px-7 pt-5">
       <SearchBox />
       <div className="flex items-center gap-5">
-        <Link to="/notifications" className="relative text-ink" aria-label="Notifications">
-          <Bell className="size-5" />
-          <span className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-rose-500 text-[10px] font-bold text-white">3</span>
-        </Link>
-        <button aria-label="Help"><CircleHelp className="size-5" /></button>
+        <div className="relative">
+          <button onClick={() => { setBell(!bell); setHelp(false); }} className="relative text-ink" aria-label="Notifications" aria-expanded={bell}>
+            <Bell className="size-5" />
+            {unread > 0 && <span data-testid="bell-badge" className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{unread}</span>}
+          </button>
+          {bell && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setBell(false)} />
+              <div role="dialog" aria-label="Recent notifications" className="absolute right-0 top-9 z-40 w-[360px] rounded-xl border border-line bg-white shadow-xl">
+                <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                  <b className="text-sm">Notifications{unread > 0 && <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-xs text-rose-600">{unread} new</span>}</b>
+                  <button onClick={() => notifStore.markAllRead()} disabled={!unread} className="inline-flex items-center gap-1 text-xs font-bold text-brand disabled:opacity-40"><CheckCheck className="size-3.5" />Mark all read</button>
+                </div>
+                <ul className="scroll-thin max-h-80 overflow-y-auto">
+                  {notifs.slice(0, 6).map((n) => (
+                    <li key={n.id}><button onClick={() => { notifStore.markRead(n.id); setBell(false); nav(n.to); }} className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-brand-soft">
+                      <span className={cx("mt-1.5 size-2 shrink-0 rounded-full", n.read ? "bg-transparent" : "bg-brand")} />
+                      <span className="min-w-0 flex-1"><b className="block text-[13px]">{n.title}</b><span className="block truncate text-xs text-sub">{n.body}</span></span>
+                      <span className="shrink-0 text-[11px] text-sub">{n.time}</span>
+                    </button></li>
+                  ))}
+                </ul>
+                <button onClick={() => { setBell(false); nav("/notifications"); }} className="block w-full border-t border-line px-4 py-3 text-center text-[13px] font-bold text-brand hover:bg-brand-soft">View all</button>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="relative">
+          <button aria-label="Help" aria-expanded={help} onClick={() => { setHelp(!help); setBell(false); }}><CircleHelp className="size-5" /></button>
+          {help && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setHelp(false)} />
+              <div role="dialog" aria-label="Help and shortcuts" className="absolute right-0 top-9 z-40 w-72 rounded-xl border border-line bg-white p-4 text-[13px] shadow-xl">
+                <div className="mb-2 flex items-center gap-2 font-extrabold"><Keyboard className="size-4 text-brand" />Keyboard shortcuts</div>
+                <ul className="space-y-2">
+                  {[["⌘/Ctrl + K", "Focus global search"], ["Enter", "Open first search result"], ["↑ ↓", "Move through results"], ["Esc", "Close search, menus and popovers"], ["?", "Toggle this help"]].map(([k, d]) => <li key={k} className="flex items-center justify-between gap-3"><span className="text-sub">{d}</span><kbd className="whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold">{k}</kbd></li>)}
+                </ul>
+                <div className="mt-3 border-t border-line pt-3">
+                  <a href="mailto:support@albumpro.com?subject=AlbumPro%20help" className="font-bold text-brand hover:underline">Contact support</a>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="relative">
           <button onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} className="flex items-center gap-2.5">
             <Avatar name={user} size={38} />
