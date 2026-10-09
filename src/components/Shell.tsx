@@ -65,7 +65,7 @@ function SearchBox() {
       <label className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-white px-3.5">
         <Search className="size-4 text-sub" />
         <input id="global-search" value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} placeholder="Search orders, customers, mobile number..." className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
-        <kbd className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">⌘ K</kbd>
+        <kbd className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">⌘ K</kbd>
       </label>
       {open && term && (
         <div className="absolute left-0 right-0 top-12 z-40 rounded-xl border border-line bg-white p-2 shadow-xl">

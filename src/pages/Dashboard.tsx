@@ -76,7 +76,7 @@ export default function Dashboard() {
         <MoreButton />
       </PageHeader>
 
-      <KpiRow items={kpis} className="xl:!grid-cols-8" />
+      <KpiRow items={kpis} cols={4} />
 
       <Panel className="mb-5" title="Production Pipeline" subtitle="Complete flow from order to delivery" action={<LinkAction onClick={() => nav("/pipeline")}>View All Pipeline →</LinkAction>}>
         <div className="scroll-thin flex items-center gap-1 overflow-x-auto pb-1">
@@ -105,7 +105,7 @@ export default function Dashboard() {
                 <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3f4fe0" stopOpacity={0.25} /><stop offset="100%" stopColor="#3f4fe0" stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid vertical={false} stroke="#e6e9f5" />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} interval={4} />
-                <YAxis tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis tickLine={false} axisLine={false} fontSize={11} domain={[0, "auto"]} />
                 <Tooltip />
                 <Area dataKey="total" name="Total Orders" stroke="#3f4fe0" strokeWidth={2} fill="url(#g1)" />
                 <Area dataKey="completed" name="Completed" stroke="#10b981" strokeWidth={2} fill="none" />

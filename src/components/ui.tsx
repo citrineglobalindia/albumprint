@@ -110,10 +110,10 @@ export function KpiCard({ k }: { k: Kpi }) {
         <div className="truncate text-[13px] font-medium text-sub">{k.label}</div>
         <div className="text-2xl font-extrabold leading-tight text-ink">{k.value}</div>
         {k.delta !== undefined && (
-          <div className={cx("flex items-center gap-1 text-xs font-bold", good ? "text-emerald-600" : "text-rose-600")}>
+          <div className={cx("flex flex-wrap items-center gap-x-1 text-xs font-bold", good ? "text-emerald-600" : "text-rose-600")}>
             {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
             {Math.abs(k.delta)}%
-            <span className="font-medium text-sub">{k.deltaLabel ?? "vs last month"}</span>
+            <span className="whitespace-nowrap text-[11px] font-medium text-sub">{k.deltaLabel ?? "vs last month"}</span>
           </div>
         )}
       </div>
@@ -121,9 +121,9 @@ export function KpiCard({ k }: { k: Kpi }) {
   );
 }
 
-export function KpiRow({ items, className }: { items: Kpi[]; className?: string }) {
+export function KpiRow({ items, className, cols }: { items: Kpi[]; className?: string; cols?: number }) {
   return (
-    <div className={cx("mb-5 grid gap-4", className)} style={{ gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))` }}>
+    <div className={cx("mb-5 grid gap-4", className)} style={{ gridTemplateColumns: cols ? `repeat(${cols}, minmax(0, 1fr))` : `repeat(auto-fit, minmax(205px, 1fr))` }}>
       {items.map((k) => <KpiCard key={k.label} k={k} />)}
     </div>
   );
