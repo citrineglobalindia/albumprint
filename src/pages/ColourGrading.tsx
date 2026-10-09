@@ -215,7 +215,7 @@ export default function ColourGrading() {
           <div className="mt-3 flex gap-2">
             {cur.status === "New" && <button onClick={() => act(cur, "In Progress", "Grading started")} className="h-11 flex-1 rounded-xl border border-brand text-sm font-bold text-brand hover:bg-brand-soft">Start Job</button>}
             {cur.status === "In Progress" && <button onClick={() => setDtab("preview")} className="h-11 flex-1 rounded-xl border border-brand text-sm font-bold text-brand hover:bg-brand-soft">Continue</button>}
-            <button disabled={!canSubmit} onClick={() => act(cur, "Submitted", "Submitted for Admin approval")} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40">
+            <button disabled={!canSubmit} title={canSubmit ? "" : "Upload graded files first"} onClick={() => act(cur, "Submitted", "Submitted for Admin approval")} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40">
               <Send className="size-4" />Submit for Admin Approval
             </button>
           </div>
