@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Download, FileText, Receipt, RefreshCw, Undo2, Wallet, Clock } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Download, FileText, Receipt, RefreshCw, Undo2, Wallet, Clock, MoreVertical } from "lucide-react";
 import { Avatar, Field, FilterSelect, KpiRow, Panel, PageHeader, Pagination, PayPill, PrimaryButton, SearchInput, SlideOver, Td, Th, TodayChip, MoreButton, OutlineButton, inputCls, tableCls, trCls, LinkAction, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
@@ -65,6 +65,14 @@ export default function Payments() {
   const [viewing, setViewing] = useState<Row | null>(null);
   const [toast, show] = useToast();
   const [receiptSeq, setReceiptSeq] = useState(306);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [lrange, setLrange] = useState("All Time");
+  const ledgerRef = useRef<HTMLDivElement>(null);
+  const [refundRow, setRefundRow] = useState<Row | null>(null);
+  const [rAmt, setRAmt] = useState("");
+  const [rReason, setRReason] = useState("");
+  const [rErr, setRErr] = useState("");
+  const [refunded, setRefunded] = useState(0);
 
   const [orderId, setOrderId] = useState("");
   const [amount, setAmount] = useState("");
@@ -109,9 +117,11 @@ export default function Payments() {
     const s = statusOf(r);
     if (fStatus !== "All Payment Status" && (fStatus === "Partially Paid" ? s !== "Partial" : s !== fStatus)) return false;
     if (fMode !== "All Payment Modes" && r.mode !== fMode) return false;
+    if (lrange === "Today" && r.date !== "2026-10-03") return false;
+    if (lrange === "Last 7 Days" && !r.date) return false;
     const t = q.trim().toLowerCase();
     return !t || r.orderId.toLowerCase().includes(t) || r.customer.toLowerCase().includes(t) || (r.receipt ?? "").toLowerCase().includes(t);
-  }), [rows, q, fStatus, fMode]);
+  }), [rows, q, fStatus, fMode, lrange]);
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const counts = useMemo(() => {
@@ -126,6 +136,28 @@ export default function Payments() {
   const overdueAmt = rows.filter((r) => statusOf(r) === "Overdue").reduce((a, r) => a + r.total - r.paid, 0);
   const pending = totalBilled - collected - overdueAmt;
 
+  const downloadReceipt = (r: Row) => {
+    if (!r.receipt) { show("No receipt yet - no payment recorded"); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([`PAYMENT RECEIPT ${r.receipt}\nOrder: ${r.orderId}\nCustomer: ${r.customer}\nAmount paid: ${inr(r.paid)}\nBalance: ${inr(r.total - r.paid)}\nMode: ${r.mode ?? "-"}\nDate: ${r.date ?? "-"}\n`], { type: "text/plain" }));
+    a.download = `${r.receipt}.txt`; document.body.appendChild(a); a.click(); a.remove();
+    show(`Receipt ${r.receipt} downloaded`);
+  };
+  const openRefund = (r: Row) => {
+    if (r.paid <= 0) { show("Nothing to refund on this order"); return; }
+    setRefundRow(r); setRAmt(String(r.paid)); setRReason(""); setRErr("");
+  };
+  const submitRefund = () => {
+    const amt = Number(rAmt);
+    if (!refundRow) return;
+    if (!amt || amt <= 0) return setRErr("Enter a valid refund amount");
+    if (amt > refundRow.paid) return setRErr(`Refund cannot exceed paid amount of ${inr(refundRow.paid)}`);
+    if (!rReason.trim()) return setRErr("Reason is required");
+    setRows((rs) => rs.map((r) => (r.orderId === refundRow.orderId ? { ...r, paid: r.paid - amt } : r)));
+    setRecent((rc) => [{ id: Date.now(), kind: "refunded" as const, amount: amt, orderId: refundRow.orderId, customer: refundRow.customer, mode: refundRow.mode ?? "Bank Transfer" }, ...rc].slice(0, 6));
+    setRefunded((n) => n + amt);
+    setRefundRow(null); show(`Refund of ${inr(amt)} issued for ${refundRow.orderId}`);
+  };
   const exportCsv = () => {
     downloadCsv("payment-ledger.csv", [["Order ID", "Customer", "Total", "Paid", "Balance", "Status", "Last Payment Date", "Mode", "Receipt No"],
       ...filtered.map((r) => [r.orderId, r.customer, r.total, r.paid, r.total - r.paid, statusOf(r), r.date ?? "", r.mode ?? "", r.receipt ?? ""])]);
@@ -147,14 +179,14 @@ export default function Payments() {
         { label: "Pending", value: inr(pending), delta: 12, icon: Clock, tone: "amber", invert: true },
         { label: "Overdue", value: inr(overdueAmt), delta: 28, icon: AlertTriangle, tone: "red", invert: true },
         { label: "Advance Received", value: inr(120000), delta: 35, icon: Wallet, tone: "violet" },
-        { label: "Refunds", value: inr(12000), delta: 5, icon: Undo2, tone: "pink", invert: true },
+        { label: "Refunds", value: inr(12000 + refunded), delta: 5, icon: Undo2, tone: "pink", invert: true },
       ]} />
 
       <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,0.8fr)]">
-        <Panel title="Collections Trend" action={<FilterSelect className="w-36" value={range} onChange={setRange} options={["Last 7 Days", "Last 30 Days"]} />}>
+        <Panel title="Collections Trend" subtitle={`${range}: collected ${inr((range === "Last 7 Days" ? trend.slice(-7) : range === "Last 14 Days" ? trend.slice(-14) : trend).reduce((a, d) => a + d.collected, 0))}`} action={<FilterSelect className="w-36" value={range} onChange={setRange} options={["Last 7 Days", "Last 14 Days", "Last 30 Days"]} />}>
           <div className="h-[260px]">
             <ResponsiveContainer>
-              <BarChart data={range === "Last 7 Days" ? trend.slice(-7) : trend} barGap={0}>
+              <BarChart data={range === "Last 7 Days" ? trend.slice(-7) : range === "Last 14 Days" ? trend.slice(-14) : trend} barGap={0}>
                 <CartesianGrid vertical={false} stroke="#e6e9f5" />
                 <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${v / 1000}K` : String(v))} />
@@ -192,7 +224,7 @@ export default function Payments() {
           </div>
         </Panel>
 
-        <Panel title="Recent Payments" action={<LinkAction>View All →</LinkAction>} bodyClassName="pt-3">
+        <Panel title="Recent Payments" action={<LinkAction onClick={() => { setQ(""); setFStatus("All Payment Status"); setFMode("All Payment Modes"); setLrange("All Time"); setPage(1); ledgerRef.current?.scrollIntoView({ behavior: "smooth" }); show("Showing full payment ledger"); }}>View All →</LinkAction>} bodyClassName="pt-3">
           <ul className="space-y-3">
             {recent.map((p) => (
               <li key={p.id} className="flex items-start gap-2.5">
@@ -210,11 +242,12 @@ export default function Payments() {
         </Panel>
       </div>
 
+      <div ref={ledgerRef} />
       <Panel
         title="Payment Ledger" subtitle="All payments received from customers"
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <FilterSelect className="w-36" value={range} onChange={setRange} options={["Last 7 Days", "Last 30 Days"]} />
+            <FilterSelect className="w-36" value={lrange} onChange={(v) => { setLrange(v); setPage(1); }} options={["All Time", "Today", "Last 7 Days"]} />
             <FilterSelect className="w-44" value={fStatus} onChange={(v) => { setFStatus(v); setPage(1); }} options={["All Payment Status", "Paid", "Partially Paid", "Unpaid", "Overdue"]} />
             <FilterSelect className="w-44" value={fMode} onChange={(v) => { setFMode(v); setPage(1); }} options={["All Payment Modes", ...MODES]} />
             <SearchInput className="w-64" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by order ID, customer, receipt..." />
@@ -241,7 +274,13 @@ export default function Payments() {
                     <Td>{r.date ? fmtDate(r.date) : "-"}</Td>
                     <Td>{r.mode ?? "-"}</Td>
                     <Td>{r.receipt ?? "-"}</Td>
-                    <Td><button onClick={() => setViewing(r)} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button></Td>
+                    <Td><div className="flex items-center gap-2"><button onClick={() => setViewing(r)} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button>
+                      <div className="relative"><button aria-label="Row actions" onClick={() => setMenu(menu === r.orderId ? null : r.orderId)} onBlur={() => setTimeout(() => setMenu(null), 150)}><MoreVertical className="size-4 text-sub" /></button>
+                        {menu === r.orderId && (
+                          <div className="absolute right-0 top-6 z-30 w-36 rounded-xl border border-line bg-white p-1 text-left shadow-xl">
+                            {([["View receipt", () => setViewing(r)], ["Print receipt", () => downloadReceipt(r)], ["Refund", () => openRefund(r)]] as [string, () => void][]).map(([l, f]) => <button key={l} onMouseDown={() => { setMenu(null); f(); }} className="block w-full rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-brand-soft">{l}</button>)}
+                          </div>
+                        )}</div></div></Td>
                   </tr>
                 );
               })}
@@ -293,7 +332,7 @@ export default function Payments() {
         {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">{err}</div>}
       </SlideOver>
 
-      <SlideOver open={!!viewing} onClose={() => setViewing(null)} title={`Payment - ${viewing?.orderId ?? ""}`} width={400}>
+      <SlideOver open={!!viewing} onClose={() => setViewing(null)} title={`Payment - ${viewing?.orderId ?? ""}`} width={400} footer={viewing && <><button onClick={() => downloadReceipt(viewing)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Download receipt</button><button onClick={() => { const v = viewing; setViewing(null); openRefund(v); }} className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white">Refund</button></>}>
         {viewing && (
           <dl className="space-y-3 text-sm">
             {[
@@ -304,6 +343,12 @@ export default function Payments() {
             <p className="text-xs text-sub">Delivery is blocked until dues are cleared unless Admin overrides.</p>
           </dl>
         )}
+      </SlideOver>
+      <SlideOver open={!!refundRow} onClose={() => setRefundRow(null)} title={`Refund - ${refundRow?.orderId ?? ""}`} footer={<><button onClick={() => setRefundRow(null)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Cancel</button><button onClick={submitRefund} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white">Issue Refund</button></>}>
+        {refundRow && <p className="mb-4 text-sm text-sub">{refundRow.customer} - paid {inr(refundRow.paid)}</p>}
+        <Field label="Refund amount" required><input aria-label="Refund amount" type="number" className={inputCls} value={rAmt} onChange={(e) => setRAmt(e.target.value)} /></Field>
+        <Field label="Reason" required><textarea aria-label="Refund reason" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={rReason} onChange={(e) => setRReason(e.target.value)} /></Field>
+        {rErr && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">{rErr}</div>}
       </SlideOver>
     </div>
   );

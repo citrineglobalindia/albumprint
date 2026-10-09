@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
-import { Users, ShieldCheck, Crown, Phone, Repeat, IndianRupee, Mail, MapPin, CalendarDays, Tag, X, Filter, MoreHorizontal, ChevronDown, User, StickyNote } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "../components/Toast";
+import { ActionMenu } from "../components/ActionMenu";
+import { Users, ShieldCheck, Crown, Phone, Repeat, IndianRupee, Mail, MapPin, CalendarDays, Tag, X, Filter, MoreHorizontal, ChevronDown, User, StickyNote, Pencil } from "lucide-react";
 import {
   PageHeader, PrimaryButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, Pagination,
-  tableCls, Th, Td, trCls, cx, OutlineButton, SlideOver, Field, inputCls, type Kpi,
+  tableCls, Th, Td, trCls, cx, OutlineButton, MoreButton, SlideOver, Field, inputCls, type Kpi,
 } from "../components/ui";
 import { CUSTOMERS, type Customer } from "../lib/data";
 import { inr, fmtDate } from "../lib/format";
@@ -33,7 +36,19 @@ const EMPTY = { name: "", studio: "", mobile: "", whatsapp: "", email: "", addre
 
 export default function Customers() {
   const [all, setAll] = useState<Customer[]>(CUSTOMERS);
+  const nav = useNavigate();
+  const [toast, show] = useToast();
   const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [segment, setSegment] = useState<string | null>(null);
+  const [segOpen, setSegOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [duesOnly, setDuesOnly] = useState(false);
+  const [minLife, setMinLife] = useState("");
+  const [follow, setFollow] = useState<Record<string, string[]>>({});
+  const [fdraft, setFdraft] = useState("");
+  const closeForm = () => { setAdding(false); setEditId(null); setErrs({}); setF(EMPTY); };
+  const openEdit = (c: Customer) => { setF({ ...EMPTY, name: c.name, studio: c.studio, mobile: c.mobile, email: c.email, city: c.city, state: c.state }); setErrs({}); setEditId(c.id); };
   const [f, setF] = useState(EMPTY);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const save = () => {
@@ -45,8 +60,12 @@ export default function Customers() {
     if (f.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(f.gstin.toUpperCase())) e.gstin = "Invalid GSTIN";
     setErrs(e);
     if (Object.keys(e).length) return;
+    if (editId) {
+      setAll((p) => p.map((x) => (x.id === editId ? { ...x, name: f.name || f.studio, studio: f.studio, mobile: f.mobile, email: f.email, city: f.city, state: f.state } : x)));
+      show(`${f.studio} updated`); closeForm(); return;
+    }
     const c: Customer = { id: `IDC${String(1249 + all.length - CUSTOMERS.length).padStart(6, "0")}`, name: f.name || f.studio, studio: f.studio, mobile: f.mobile, email: f.email, city: f.city, state: f.state, type: "New", status: "Active", activeOrders: 0, lifetime: 0, lastOrder: "2026-10-03", since: "2026-10-03", dues: 0, tags: [] };
-    setAll([c, ...all]); setActiveId(c.id); setAdding(false); setF(EMPTY);
+    setAll([c, ...all]); setActiveId(c.id); setPage(1); closeForm(); show(`Customer ${c.studio} added`);
   };
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
@@ -68,20 +87,29 @@ export default function Customers() {
     if (type !== "All Customer Types" && c.type !== type) return false;
     if (city !== "All Cities" && c.city !== city) return false;
     if (status !== "All Statuses" && c.status !== status) return false;
+    if (duesOnly && !(c.dues > 0)) return false;
+    if (minLife && c.lifetime < Number(minLife)) return false;
+    if (segment === "VIP" && c.type !== "VIP") return false;
+    if (segment === "New" && c.type !== "New") return false;
+    if (segment === "Repeat" && c.activeOrders < 2) return false;
+    if (segment === "High dues" && !(c.dues > 0)) return false;
     return true;
-  }), [q, type, city, status]);
+  }), [all, q, type, city, status, duesOnly, minLife, segment]);
   const list = base.filter((c) => inTab(c, tab));
   const rows = list.slice((page - 1) * pageSize, page * pageSize);
   const cur = all.find((c) => c.id === activeId) ?? null;
   const allChecked = rows.length > 0 && rows.every((c) => checked.has(c.id));
   const tabs: { key: Tab; label: string }[] = [{ key: "all", label: "All Customers" }, { key: "active", label: "Active" }, { key: "vip", label: "VIP" }, { key: "new", label: "New" }, { key: "inactive", label: "Inactive" }];
+  const setStatusFor = (ids: string[], st: Customer["status"]) => { setAll((p) => p.map((c) => (ids.includes(c.id) ? { ...c, status: st } : c))); show(`${ids.length} customer${ids.length > 1 ? "s" : ""} ${st === "Active" ? "activated" : "deactivated"}`); };
+  const activeFilters = (duesOnly ? 1 : 0) + (minLife ? 1 : 0);
+  const myFollow = cur ? [...(follow[cur.id] ?? []), "Call about final approval — 7 Oct 2026", "Share new album samples — 10 Oct 2026"] : [];
   const myNotes = cur ? [...(notes[cur.id] ?? []), "Discussed new album design samples. Client liked the premium matte finish. Follow up next week for final approval."] : [];
 
   return (
     <div>
       <PageHeader title="Customers" subtitle="Manage your studio clients, track orders, and build long-term relationships.">
         <PrimaryButton onClick={() => setAdding(true)}>Add Customer</PrimaryButton>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold">More <ChevronDown className="size-4" /></button>
+        <MoreButton />
       </PageHeader>
       <KpiRow items={kpis} />
 
@@ -89,15 +117,33 @@ export default function Customers() {
         <Panel bodyClassName="!p-4">
           <div className="flex items-center justify-between gap-3">
             <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((c) => inTab(c, t.key)).length }))} />
-            <button className="inline-flex items-center gap-1 text-xs font-bold text-brand">View Segments <ChevronDown className="size-3.5" /></button>
+            <div className="relative">
+              <button onClick={() => setSegOpen(!segOpen)} className="inline-flex items-center gap-1 text-xs font-bold text-brand">{segment ? `Segment: ${segment}` : "View Segments"} <ChevronDown className="size-3.5" /></button>
+              {segOpen && (
+                <div className="absolute right-0 top-7 z-30 w-44 rounded-xl border border-line bg-white p-1.5 shadow-xl">
+                  {[null, "VIP", "New", "Repeat", "High dues"].map((sg) => (
+                    <button key={sg ?? "all"} onClick={() => { setSegment(sg); setSegOpen(false); setPage(1); show(sg ? `Segment applied: ${sg}` : "Segment cleared"); }} className={cx("block w-full rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft", segment === sg && "bg-brand-soft text-brand")}>{sg ?? "All customers"}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line pt-4">
             <SearchInput className="min-w-[220px] flex-1" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search customer name, mobile, email or company..." />
             <FilterSelect value={type} onChange={(v) => { setType(v); setPage(1); }} options={["All Customer Types", "VIP", "Regular", "New"]} />
             <FilterSelect value={city} onChange={(v) => { setCity(v); setPage(1); }} options={["All Cities", ...Array.from(new Set(CUSTOMERS.map((c) => c.city)))]} />
             <FilterSelect value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={["All Statuses", "Active", "Inactive"]} />
-            <OutlineButton icon={Filter} className="!h-10">Filters</OutlineButton>
+            <OutlineButton icon={Filter} className="!h-10" onClick={() => setFiltersOpen(true)}>Filters{activeFilters ? ` (${activeFilters})` : ""}</OutlineButton>
           </div>
+          {checked.size > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
+              <b>{checked.size} selected</b>
+              <OutlineButton onClick={() => { setAll((p) => p.map((c) => (checked.has(c.id) ? { ...c, type: "VIP" } : c))); show(`${checked.size} marked VIP`); setChecked(new Set()); }}>Mark VIP</OutlineButton>
+              <OutlineButton onClick={() => { setStatusFor([...checked], "Inactive"); setChecked(new Set()); }}>Deactivate</OutlineButton>
+              <OutlineButton onClick={() => { setStatusFor([...checked], "Active"); setChecked(new Set()); }}>Activate</OutlineButton>
+              <button onClick={() => setChecked(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
+            </div>
+          )}
           <div className="mt-3 overflow-x-auto">
             <table className={tableCls}>
               <thead><tr>
@@ -114,7 +160,13 @@ export default function Customers() {
                     <Td>{c.studio}</Td><Td>{c.mobile}</Td><Td className="text-brand">{c.email}</Td><Td>{c.city}</Td><Td><TypePill t={c.type} /></Td>
                     <Td className="text-center"><span className="inline-grid size-6 place-items-center rounded-md bg-brand-soft font-bold text-brand">{c.activeOrders}</span></Td>
                     <Td className="font-bold">{inr(c.lifetime)}</Td><Td>{fmtDate(c.lastOrder)}</Td>
-                    <Td className="text-right"><button onClick={(e) => e.stopPropagation()} className="h-8 rounded-lg border border-line px-2.5"><MoreHorizontal className="size-4" /></button></Td>
+                    <Td className="text-right"><ActionMenu trigger={<MoreHorizontal className="size-4" />} items={[
+                      { label: "View", onClick: () => { setActiveId(c.id); setDtab("history"); } },
+                      { label: "Edit", onClick: () => openEdit(c) },
+                      { label: "Create Order", onClick: () => nav(`/orders?new=1&customer=${encodeURIComponent(c.name)}`) },
+                      { label: "Add Note", onClick: () => { setActiveId(c.id); setDtab("notes"); } },
+                      { label: c.status === "Active" ? "Deactivate" : "Activate", danger: c.status === "Active", onClick: () => setStatusFor([c.id], c.status === "Active" ? "Inactive" : "Active") },
+                    ]} /></Td>
                   </tr>
                 ))}
                 {rows.length === 0 && <tr><td colSpan={12} className="py-10 text-center text-sub">No customers found.</td></tr>}
@@ -129,12 +181,15 @@ export default function Customers() {
             <div className="flex items-start gap-3">
               <Thumb seed={cur.name} size={64} rounded="rounded-full" />
               <div className="min-w-0 flex-1">
-                <Pill tone="green" dot>{cur.status}</Pill>
+                <Pill tone={cur.status === "Active" ? "green" : "slate"} dot>{cur.status}</Pill>
                 <h3 className="mt-1 text-xl font-extrabold">{cur.name}</h3>
                 <div className="text-[13px] text-sub">{cur.studio}</div>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <button onClick={() => setActiveId(null)} aria-label="Close" className="text-sub"><X className="size-4" /></button>
+                <span className="flex items-center gap-2">
+                  <button onClick={() => openEdit(cur)} aria-label="Edit customer" className="inline-flex h-7 items-center gap-1 rounded-lg border border-line px-2 text-xs font-bold text-brand hover:bg-brand-soft"><Pencil className="size-3" />Edit</button>
+                  <button onClick={() => setActiveId(null)} aria-label="Close" className="text-sub"><X className="size-4" /></button>
+                </span>
                 {cur.type === "VIP" && <Pill tone="amber" icon={Crown}>VIP Customer</Pill>}
               </div>
             </div>
@@ -150,7 +205,7 @@ export default function Customers() {
               <div><div className="text-[11px] text-sub">Lifetime Value</div><div className="text-lg font-extrabold">{inr(cur.lifetime)}</div></div>
               <div><div className="text-[11px] text-sub">Pending Dues</div><div className={cx("text-lg font-extrabold", cur.dues ? "text-rose-600" : "text-emerald-600")}>{inr(cur.dues)}</div></div>
             </div>
-            <LineTabs<"history" | "notes" | "follow"> className="mt-4" value={dtab} onChange={setDtab} tabs={[{ key: "history", label: "Order History" }, { key: "notes", label: `Notes (${myNotes.length})` }, { key: "follow", label: "Follow-ups (2)" }]} />
+            <LineTabs<"history" | "notes" | "follow"> className="mt-4" value={dtab} onChange={setDtab} tabs={[{ key: "history", label: "Order History" }, { key: "notes", label: `Notes (${myNotes.length})` }, { key: "follow", label: `Follow-ups (${myFollow.length})` }]} />
             {dtab === "history" && (
               <ul className="mt-3 space-y-2.5">
                 {HISTORY.map((h, i) => (
@@ -167,14 +222,20 @@ export default function Customers() {
                 {myNotes.map((n, i) => <div key={i} className="rounded-xl bg-violet-50 p-3 text-xs"><div className="mb-1 flex items-center gap-1.5 font-bold text-violet-700"><StickyNote className="size-3.5" />Note</div>{n}<div className="mt-1 text-sub">- by Admin</div></div>)}
                 <div className="flex gap-2">
                   <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a note…" className="h-9 min-w-0 flex-1 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand" />
-                  <button onClick={() => { if (draft.trim()) { setNotes((p) => ({ ...p, [cur.id]: [draft.trim(), ...(p[cur.id] ?? [])] })); setDraft(""); } }} className="h-9 rounded-lg bg-brand px-3 text-xs font-bold text-white">Add</button>
+                  <button onClick={() => { if (draft.trim()) { setNotes((p) => ({ ...p, [cur.id]: [draft.trim(), ...(p[cur.id] ?? [])] })); setDraft(""); show("Note added"); } }} className="h-9 rounded-lg bg-brand px-3 text-xs font-bold text-white">Add</button>
                 </div>
               </div>
             )}
             {dtab === "follow" && (
-              <ul className="mt-3 space-y-2 text-xs">
-                {["Call about final approval — 7 Oct 2026", "Share new album samples — 10 Oct 2026"].map((f) => <li key={f} className="flex items-center gap-2 rounded-lg border border-line p-2.5"><User className="size-3.5 text-sub" />{f}</li>)}
-              </ul>
+              <div className="mt-3 space-y-2 text-xs">
+                <ul className="space-y-2">
+                  {myFollow.map((f) => <li key={f} className="flex items-center gap-2 rounded-lg border border-line p-2.5"><User className="size-3.5 text-sub" />{f}</li>)}
+                </ul>
+                <div className="flex gap-2">
+                  <input value={fdraft} onChange={(e) => setFdraft(e.target.value)} placeholder="Add a follow-up…" className="h-9 min-w-0 flex-1 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand" />
+                  <button onClick={() => { if (fdraft.trim()) { setFollow((p) => ({ ...p, [cur.id]: [fdraft.trim(), ...(p[cur.id] ?? [])] })); setFdraft(""); show("Follow-up added"); } }} className="h-9 rounded-lg bg-brand px-3 text-xs font-bold text-white">Add</button>
+                </div>
+              </div>
             )}
             {dtab === "history" && (
               <div className="mt-4 rounded-xl bg-violet-50 p-3 text-xs">
@@ -187,13 +248,21 @@ export default function Customers() {
           <Panel><p className="py-10 text-center text-sm text-sub">Select a customer to view details.</p></Panel>
         )}
       </div>
-      <SlideOver open={adding} onClose={() => setAdding(false)} title="Add Customer" footer={<><OutlineButton className="!h-10" onClick={() => setAdding(false)}>Cancel</OutlineButton><PrimaryButton onClick={save}>Save Customer</PrimaryButton></>}>
+      <SlideOver open={adding || editId !== null} onClose={closeForm} title={editId ? "Edit Customer" : "Add Customer"} footer={<><OutlineButton className="!h-10" onClick={closeForm}>Cancel</OutlineButton><PrimaryButton onClick={save}>Save Customer</PrimaryButton></>}>
         {([["studio", "Customer / Studio Name", true], ["name", "Contact Person"], ["mobile", "Mobile Number", true], ["whatsapp", "WhatsApp Number"], ["email", "Email"], ["address", "Address"], ["city", "City"], ["state", "State"], ["pin", "PIN"], ["gstin", "GSTIN / Tax ID"], ["notes", "Customer Notes"]] as [keyof typeof EMPTY, string, boolean?][]).map(([k, label, req]) => (
           <Field key={k} label={label} required={req} hint={errs[k]}>
             <input className={cx(inputCls, errs[k] && "border-rose-400")} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
           </Field>
         ))}
       </SlideOver>
+      <SlideOver open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filter Customers" width={380}
+        footer={<><OutlineButton onClick={() => { setCity("All Cities"); setType("All Customer Types"); setDuesOnly(false); setMinLife(""); setPage(1); }}>Reset</OutlineButton><PrimaryButton onClick={() => { setFiltersOpen(false); show("Filters applied"); }}>Apply</PrimaryButton></>}>
+        <Field label="City"><FilterSelect value={city} onChange={(v) => { setCity(v); setPage(1); }} options={["All Cities", ...Array.from(new Set(CUSTOMERS.map((c) => c.city)))]} /></Field>
+        <Field label="Customer type"><FilterSelect value={type} onChange={(v) => { setType(v); setPage(1); }} options={["All Customer Types", "VIP", "Regular", "New"]} /></Field>
+        <Field label="Minimum lifetime value (₹)"><input type="number" min={0} className={inputCls} value={minLife} onChange={(e) => { setMinLife(e.target.value); setPage(1); }} placeholder="e.g. 100000" /></Field>
+        <label className="flex items-center gap-2 text-[13px] font-semibold"><input type="checkbox" checked={duesOnly} onChange={(e) => { setDuesOnly(e.target.checked); setPage(1); }} />Only customers with pending dues</label>
+      </SlideOver>
+      {toast}
     </div>
   );
 }

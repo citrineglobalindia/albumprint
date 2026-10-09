@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   ClipboardList, Palette, LayoutTemplate, Users, Printer, ShieldCheck, Truck, IndianRupee, FileCheck, ArrowRight,
   AlarmClock, Clock, MessageSquare, Send, PackageCheck, CheckCircle2, Plus,
 } from "lucide-react";
-import { Avatar, KpiRow, Panel, LinkAction, PageHeader, PrimaryButton, MoreButton, TodayChip, Pill, PriorityPill, TONE, cx, Thumb, Th, Td, trCls, tableCls, RowViewButton, ProgressBar, type Kpi } from "../components/ui";
+import { Avatar, KpiRow, Panel, LinkAction, PageHeader, PrimaryButton, MoreButton, FilterSelect, TodayChip, Pill, PriorityPill, TONE, cx, Thumb, Th, Td, trCls, tableCls, RowViewButton, ProgressBar, type Kpi } from "../components/ui";
 import { ORDERS, STAGES, countByStage, stageLabel, stageTone } from "../lib/data";
 import { fmtDate, inr, isOverdue } from "../lib/format";
 
@@ -45,11 +46,11 @@ const activity = [
 ];
 
 const alerts = [
-  { t: "Orders overdue", s: "Past due date", n: 5, icon: AlarmClock, tone: "red" as const },
-  { t: "Client review pending > 3 days", s: "Needs follow up", n: 7, icon: Clock, tone: "orange" as const },
-  { t: "Designs waiting for approval", s: "Awaiting admin approval", n: 6, icon: LayoutTemplate, tone: "violet" as const },
-  { t: "Print release pending", s: "Designs ready for print approval", n: 4, icon: Send, tone: "red" as const },
-  { t: "QC pending > 2 days", s: "Awaiting quality check", n: 3, icon: ShieldCheck, tone: "green" as const },
+  { t: "Orders overdue", s: "Past due date", n: 5, icon: AlarmClock, tone: "red" as const, to: "/orders" },
+  { t: "Client review pending > 3 days", s: "Needs follow up", n: 7, icon: Clock, tone: "orange" as const, to: "/pipeline" },
+  { t: "Designs waiting for approval", s: "Awaiting admin approval", n: 6, icon: LayoutTemplate, tone: "violet" as const, to: "/designing" },
+  { t: "Print release pending", s: "Designs ready for print approval", n: 4, icon: Send, tone: "red" as const, to: "/printing" },
+  { t: "QC pending > 2 days", s: "Awaiting quality check", n: 3, icon: ShieldCheck, tone: "green" as const, to: "/qc" },
 ];
 
 const schedule = [
@@ -66,13 +67,18 @@ function IconTile({ icon: Icon, tone }: { icon: typeof Palette; tone: keyof type
 
 export default function Dashboard() {
   const nav = useNavigate();
+  const [range, setRange] = useState("Last 30 Days");
+  const [rrange, setRrange] = useState("Last 30 Days");
+  const days = (r: string) => (r === "Last 7 Days" ? 7 : r === "Last 90 Days" ? 30 : 30);
+  const ranges = ["Last 7 Days", "Last 30 Days", "Last 90 Days"];
+  const revMul = rrange === "Last 7 Days" ? 0.25 : rrange === "Last 90 Days" ? 2.8 : 1;
   const pipeline = STAGES.map((s) => ({ ...s, count: s.key === "new_order" ? ORDERS.length : countByStage(s.key) }));
   const recent = ORDERS.slice(0, 8);
   return (
     <>
       <PageHeader title="Good Morning, Admin 👋" subtitle="Here's what's happening in your album production today.">
         <TodayChip />
-        <PrimaryButton onClick={() => nav("/orders")}>New Order</PrimaryButton>
+        <PrimaryButton onClick={() => nav("/orders?new=1")}>New Order</PrimaryButton>
         <MoreButton />
       </PageHeader>
 
@@ -93,7 +99,7 @@ export default function Dashboard() {
       </Panel>
 
       <div className="mb-5 grid gap-5 xl:grid-cols-[1.35fr_1fr_1fr]">
-        <Panel title="Orders Overview" action={<span className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold">Last 30 Days</span>}>
+        <Panel title="Orders Overview" action={<FilterSelect className="w-36" value={range} onChange={setRange} options={ranges} />}>
           <div className="mb-2 flex gap-5 text-xs font-semibold">
             <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-blue-500" />Total Orders</span>
             <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Completed</span>
@@ -101,7 +107,7 @@ export default function Dashboard() {
           </div>
           <div className="h-60">
             <ResponsiveContainer>
-              <AreaChart data={trend} margin={{ left: -20, right: 8 }}>
+              <AreaChart data={trend.slice(-days(range))} margin={{ left: -20, right: 8 }}>
                 <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3f4fe0" stopOpacity={0.25} /><stop offset="100%" stopColor="#3f4fe0" stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid vertical={false} stroke="#e6e9f5" />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} interval={4} />
@@ -115,22 +121,22 @@ export default function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title="Revenue & Collections" action={<span className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold">Last 30 Days</span>}>
+        <Panel title="Revenue & Collections" action={<FilterSelect className="w-36" value={rrange} onChange={setRrange} options={ranges} />}>
           <div className="flex items-end justify-between">
-            <div><div className="text-3xl font-extrabold">{inr(645000)}</div><div className="text-sm text-sub">Total Revenue</div></div>
+            <div><div className="text-3xl font-extrabold">{inr(Math.round(645000 * revMul))}</div><div className="text-sm text-sub">Total Revenue</div></div>
             <div className="text-right text-xs font-bold text-emerald-600">↑ 18%<div className="font-medium text-sub">vs last month</div></div>
           </div>
           <div className="my-3 h-28">
             <ResponsiveContainer><BarChart data={revenue}><Bar dataKey="v" fill="#a5b4fc" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>
           </div>
           <div className="grid grid-cols-3 gap-3 border-t border-line pt-3 text-xs">
-            <div><b className="block text-sm">{inr(420000)}</b>Collected<ProgressBar value={65} tone="green" className="mt-1.5" /></div>
-            <div><b className="block text-sm">{inr(225000)}</b>Pending<ProgressBar value={35} tone="red" className="mt-1.5" /></div>
-            <div><b className="block text-sm">{inr(1280000)}</b>Total Order Value</div>
+            <div><b className="block text-sm">{inr(Math.round(420000 * revMul))}</b>Collected<ProgressBar value={65} tone="green" className="mt-1.5" /></div>
+            <div><b className="block text-sm">{inr(Math.round(225000 * revMul))}</b>Pending<ProgressBar value={35} tone="red" className="mt-1.5" /></div>
+            <div><b className="block text-sm">{inr(Math.round(1280000 * revMul))}</b>Total Order Value</div>
           </div>
         </Panel>
 
-        <Panel title="Admin Approvals & Tasks" action={<LinkAction>View All →</LinkAction>} bodyClassName="space-y-2.5">
+        <Panel title="Admin Approvals & Tasks" action={<LinkAction onClick={() => nav("/colour-grading")}>View All →</LinkAction>} bodyClassName="space-y-2.5">
           {approvals.map((a) => (
             <Link key={a.label} to={a.to} className="flex items-center gap-3 rounded-xl border border-line p-2.5 hover:bg-brand-soft/60">
               <IconTile icon={a.icon} tone={a.tone} />
@@ -164,27 +170,27 @@ export default function Dashboard() {
         </Panel>
 
         <div className="space-y-5">
-          <Panel title="Recent Activity" action={<LinkAction>View All →</LinkAction>} bodyClassName="space-y-3">
+          <Panel title="Recent Activity" action={<LinkAction onClick={() => nav("/notifications")}>View All →</LinkAction>} bodyClassName="space-y-3">
             {activity.map((a) => (
-              <div key={a.t + a.d} className="flex items-start gap-3">
+              <Link key={a.t + a.d} to={/^IDP\d+/.test(a.d.split(" ")[0]!) ? `/orders/${a.d.split(" ")[0]}` : "/orders"} className="flex items-start gap-3 rounded-lg hover:bg-brand-soft/60">
                 <IconTile icon={a.icon} tone={a.tone} />
                 <div className="min-w-0 flex-1 text-xs leading-snug"><b className="text-[13px]">{a.t}</b><div className="text-sub">{a.d}</div><div className="text-sub">{a.by}</div></div>
                 <span className="whitespace-nowrap text-[11px] text-sub">{a.ago}</span>
-              </div>
+              </Link>
             ))}
           </Panel>
-          <Panel title="Workflow Alerts" action={<LinkAction>View All →</LinkAction>} bodyClassName="space-y-2.5">
+          <Panel title="Workflow Alerts" action={<LinkAction onClick={() => nav("/orders")}>View All →</LinkAction>} bodyClassName="space-y-2.5">
             {alerts.map((a) => (
-              <div key={a.t} className="flex items-center gap-3">
+              <Link key={a.t} to={a.to} className="flex items-center gap-3 rounded-lg hover:bg-brand-soft/60">
                 <IconTile icon={a.icon} tone={a.tone} />
                 <span className="flex-1 text-xs leading-tight"><b className="block text-[13px]">{a.t}</b><span className="text-sub">{a.s}</span></span>
                 <span className={cx("rounded-lg px-3 py-1 text-xs font-bold", TONE[a.tone].soft, TONE[a.tone].text)}>{a.n}</span>
-              </div>
+              </Link>
             ))}
           </Panel>
-          <Panel title="Today's Schedule" action={<LinkAction>View All →</LinkAction>} bodyClassName="space-y-2">
+          <Panel title="Today's Schedule" action={<LinkAction onClick={() => nav("/notifications")}>View All →</LinkAction>} bodyClassName="space-y-2">
             {schedule.map(([t, d]) => (
-              <div key={t} className="flex gap-3 text-xs"><span className="w-16 font-semibold text-sub">{t}</span><span>{d}</span></div>
+              <Link key={t} to={d.includes("Colour") ? "/colour-grading" : d.includes("QC") ? "/qc" : d.includes("follow-up") ? "/customers" : d.includes("printing") ? "/printing" : "/pipeline"} className="flex gap-3 rounded-lg text-xs hover:bg-brand-soft/60"><span className="w-16 font-semibold text-sub">{t}</span><span>{d}</span></Link>
             ))}
           </Panel>
         </div>

@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Clock, Search, CheckCircle2, XCircle, Wrench, Truck, ShieldCheck, MoreVertical, ChevronLeft, ChevronRight, Check, X, Plus, ScanLine, Layers, Scissors, BookOpen, AlignCenter, Square, Package, Palette, ChevronDown } from "lucide-react";
-import { PageHeader, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, PrimaryButton, TodayChip, cx, type Kpi } from "../components/ui";
+import { useNavigate } from "react-router-dom";
+import { Clock, Search, CheckCircle2, XCircle, Wrench, Truck, ShieldCheck, MoreVertical, ChevronLeft, ChevronRight, Check, X, Plus, ScanLine, Layers, Scissors, BookOpen, AlignCenter, Square, Package, Palette, ZoomIn, ZoomOut, Maximize2, Minimize2 } from "lucide-react";
+import { PageHeader, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, PrimaryButton, TodayChip, MoreButton, SlideOver, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { useToast } from "../components/Toast";
 import { ORDERS } from "../lib/data";
 import type { Tone } from "../lib/data";
 import { fmtDate } from "../lib/format";
@@ -42,6 +44,17 @@ export default function QualityControl() {
   const [tab, setTab] = useState<"check" | "notes" | "evidence" | "history">("check");
   const [thumb, setThumb] = useState(0);
   const [err, setErr] = useState("");
+  const nav = useNavigate();
+  const [toast, show] = useToast();
+  const [newOpen, setNewOpen] = useState(false);
+  const [nForm, setNForm] = useState({ order: "", assignee: OPS[0]! });
+  const [nErr, setNErr] = useState("");
+  const [assignId, setAssignId] = useState<string | null>(null);
+  const [assignTo, setAssignTo] = useState(OPS[0]!);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [zoomP, setZoomP] = useState(100);
+  const [full, setFull] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(false);
 
   const sel = items.find((i) => i.id === selId)!;
   const list = items.filter((i) => (statusF === "All Statuses" || i.status === statusF) && (!q || `${i.id} ${i.customer} ${i.event}`.toLowerCase().includes(q.toLowerCase())));
@@ -49,6 +62,14 @@ export default function QualityControl() {
   const patch = (p: Partial<Insp>) => setItems((is) => is.map((i) => (i.id === selId ? { ...i, ...p } : i)));
   const spreads = Math.ceil(sel.pages / 2) + 1;
   const prev = ["Cover", ...Array.from({ length: 8 }, (_, i) => `Page ${i * 2 + 1}-${i * 2 + 2}`)];
+
+  const eligible = ORDERS.filter((o) => (o.stage === "qc" || o.stage === "printing") && !items.some((i) => i.id === o.id));
+  const createInsp = () => {
+    const o = ORDERS.find((x) => x.id === nForm.order);
+    if (!o) { setNErr("Select an order waiting for QC"); return; }
+    setItems((is) => [{ id: o.id, customer: o.customer, event: o.event, size: o.size, pages: o.pages, due: o.due, operator: nForm.assignee, status: "Awaiting QC", marks: blank(), notes: "", defect: "", evidence: 0, log: ["Inspection created - 3 Oct 2026, 10:00 AM"] }, ...is]);
+    setSelId(o.id); setStatusF("All Statuses"); setQ(""); setNewOpen(false); show(`Inspection created for ${o.id}`);
+  };
 
   const kpis: Kpi[] = [
     { label: "Awaiting QC", value: cnt("Awaiting QC") + 12, delta: 12, icon: Clock, tone: "orange" },
@@ -75,8 +96,8 @@ export default function QualityControl() {
     <div className="min-w-0">
       <PageHeader title="Quality Control" subtitle="Inspect completed albums for quality, ensure perfection before delivery." icon={<ShieldCheck className="size-10 text-brand" />}>
         <TodayChip />
-        <PrimaryButton>New Inspection</PrimaryButton>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold">More <ChevronDown className="size-4" /></button>
+        <PrimaryButton onClick={() => { setNForm({ order: "", assignee: OPS[0]! }); setNErr(""); setNewOpen(true); }}>New Inspection</PrimaryButton>
+        <MoreButton />
       </PageHeader>
       <KpiRow items={kpis} />
 
@@ -86,7 +107,7 @@ export default function QualityControl() {
           <SearchInput className="mb-3" value={q} onChange={setQ} placeholder="Search by order ID, customer, event..." />
           <div className="scroll-thin max-h-[640px] space-y-2 overflow-y-auto pr-1">
             {list.map((i) => (
-              <button key={i.id} onClick={() => { setSelId(i.id); setErr(""); }} className={cx("flex w-full items-start gap-3 rounded-xl border p-3 text-left", i.id === selId ? "border-brand bg-brand-soft/40" : "border-line hover:bg-slate-50")}>
+              <div key={i.id} role="button" tabIndex={0} onClick={() => { setSelId(i.id); setErr(""); }} className={cx("flex w-full cursor-pointer items-start gap-3 rounded-xl border p-3 text-left", i.id === selId ? "border-brand bg-brand-soft/40" : "border-line hover:bg-slate-50")}>
                 <Thumb seed={i.id} size={56} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2"><b className="text-[13px]">{i.id}</b><Pill tone={Q_TONE[i.status]} dot>{i.status}</Pill></div>
@@ -94,8 +115,15 @@ export default function QualityControl() {
                   <div className="text-xs text-sub">{i.event} Album</div>
                   <div className="mt-0.5 flex items-center justify-between text-xs text-sub"><span>{i.size} | {i.pages} Pages</span><span className="flex items-center gap-1.5 font-medium text-ink"><Avatar name={i.operator} size={20} />{i.operator}</span></div>
                 </div>
-                <MoreVertical className="size-4 shrink-0 text-sub" />
-              </button>
+                <div className="relative shrink-0">
+                  <button aria-label="Row actions" onClick={(e) => { e.stopPropagation(); setMenu(menu === i.id ? null : i.id); }} onBlur={() => setTimeout(() => setMenu(null), 150)}><MoreVertical className="size-4 text-sub" /></button>
+                  {menu === i.id && (
+                    <div className="absolute right-0 top-6 z-30 w-36 rounded-xl border border-line bg-white p-1 shadow-xl">
+                      {([["Assign…", () => { setAssignId(i.id); setAssignTo(i.operator); }], ["Open order", () => nav(`/orders/${i.id}`)], ["Start inspection", () => { setItems((is) => is.map((x) => x.id === i.id ? { ...x, status: "In Inspection" } : x)); show(`${i.id} moved to In Inspection`); }]] as [string, () => void][]).map(([l, f]) => <button key={l} onMouseDown={() => { setMenu(null); f(); }} className="block w-full rounded-lg px-3 py-1.5 text-left text-xs font-semibold hover:bg-brand-soft">{l}</button>)}
+                    </div>
+                  )}
+                </div>
+              </div>
             ))}
             {list.length === 0 && <div className="py-8 text-center text-sm text-sub">No albums match.</div>}
           </div>
@@ -103,13 +131,18 @@ export default function QualityControl() {
 
         <Panel title="Album Preview" bodyClassName="p-4" action={
           <div className="flex items-center gap-2 text-xs">
+            <button aria-label="Zoom out" onClick={() => setZoomP((z) => Math.max(60, z - 20))} className="grid size-7 place-items-center rounded-lg border border-line"><ZoomOut className="size-4" /></button>
+            <span className="w-9 text-center">{zoomP}%</span>
+            <button aria-label="Zoom in" onClick={() => setZoomP((z) => Math.min(160, z + 20))} className="grid size-7 place-items-center rounded-lg border border-line"><ZoomIn className="size-4" /></button>
+            <button aria-label="Toggle fullscreen" onClick={() => setFull((f) => !f)} className="grid size-7 place-items-center rounded-lg border border-line">{full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button>
             <button aria-label="Previous" disabled={thumb === 0} onClick={() => setThumb(thumb - 1)} className="grid size-7 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft className="size-4" /></button>
             <span>{thumb + 1} / {sel.pages}</span>
             <button aria-label="Next" disabled={thumb >= spreads - 1} onClick={() => setThumb(thumb + 1)} className="grid size-7 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
           </div>
         }>
-          <div className="relative grid h-[290px] place-items-center rounded-xl bg-gradient-to-br from-stone-200 to-stone-300">
-            <div className="flex h-[86%] w-[70%] overflow-hidden rounded-md bg-[#f1ece4] shadow-2xl">
+          <div data-testid="preview" className={cx("relative grid place-items-center overflow-hidden bg-gradient-to-br from-stone-200 to-stone-300", full ? "fixed inset-4 z-[55] h-auto rounded-2xl shadow-2xl" : "h-[290px] rounded-xl")}>
+            {full && <button aria-label="Exit fullscreen" onClick={() => setFull(false)} className="absolute right-3 top-3 z-10 grid size-9 place-items-center rounded-lg bg-white shadow"><Minimize2 className="size-4" /></button>}
+            <div className="flex h-[86%] w-[70%] overflow-hidden rounded-md bg-[#f1ece4] shadow-2xl transition-transform" style={{ transform: `scale(${zoomP / 100})` }}>
               <div className="grid flex-1 place-items-center p-3"><Thumb seed={thumb + 1} size={0} rounded="rounded" className="!h-full !w-full" /></div>
               {thumb > 0 && <div className="grid flex-1 place-items-center border-l border-black/10 p-3"><Thumb seed={thumb + 4} size={0} rounded="rounded" className="!h-full !w-full" /></div>}
             </div>
@@ -120,7 +153,7 @@ export default function QualityControl() {
               <button key={p} onClick={() => setThumb(i)} className={cx("min-w-0 flex-1 overflow-hidden rounded-lg border-2", thumb === i ? "border-brand" : "border-transparent")}><Thumb seed={i + 2} size={0} rounded="rounded-none" className="!h-16 !w-full" /></button>
             ))}
           </div>
-          <div className="mt-4 flex items-baseline justify-between text-sm"><h3 className="font-extrabold">Page Thumbnails <span className="text-xs font-normal text-sub">({sel.pages} pages)</span></h3><span className="text-xs font-bold text-brand">View All Pages →</span></div>
+          <div className="mt-4 flex items-baseline justify-between text-sm"><h3 className="font-extrabold">Page Thumbnails <span className="text-xs font-normal text-sub">({sel.pages} pages)</span></h3><button onClick={() => setPagesOpen(true)} className="text-xs font-bold text-brand hover:underline">View All Pages →</button></div>
           <div className="mt-2 flex gap-2">
             {prev.slice(0, 6).map((p, i) => (
               <button key={p} onClick={() => setThumb(i)} className="min-w-0 flex-1 text-center">
@@ -215,6 +248,30 @@ export default function QualityControl() {
           </div>
         </Panel>
       </div>
+      {toast}
+      <SlideOver open={newOpen} onClose={() => setNewOpen(false)} title="New Inspection" footer={<><button onClick={() => setNewOpen(false)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Cancel</button><button onClick={createInsp} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white">Add to Queue</button></>}>
+        <Field label="Order waiting for QC" required>
+          <select aria-label="Order" className={inputCls} value={nForm.order} onChange={(e) => setNForm({ ...nForm, order: e.target.value })}>
+            <option value="">Select order…</option>
+            {eligible.map((o) => <option key={o.id} value={o.id}>{o.id} - {o.customer} ({o.size})</option>)}
+          </select>
+          {nErr && <span className="text-xs text-rose-600">{nErr}</span>}
+        </Field>
+        <Field label="Assign to"><select className={inputCls} value={nForm.assignee} onChange={(e) => setNForm({ ...nForm, assignee: e.target.value })}>{OPS.map((o) => <option key={o}>{o}</option>)}</select></Field>
+      </SlideOver>
+      <SlideOver open={!!assignId} onClose={() => setAssignId(null)} title={`Assign ${assignId ?? ""}`} footer={<button onClick={() => { setItems((is) => is.map((x) => x.id === assignId ? { ...x, operator: assignTo } : x)); show(`Assigned to ${assignTo}`); setAssignId(null); }} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white">Assign</button>}>
+        <Field label="Inspector"><select aria-label="Inspector" className={inputCls} value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>{OPS.map((o) => <option key={o}>{o}</option>)}</select></Field>
+      </SlideOver>
+      <SlideOver open={pagesOpen} onClose={() => setPagesOpen(false)} width={560} title={`All Pages - ${sel.id}`}>
+        <div className="grid grid-cols-4 gap-3">
+          {Array.from({ length: spreads }, (_, i) => (
+            <button key={i} onClick={() => { setThumb(i); setPagesOpen(false); }} className="text-center">
+              <div className={cx("overflow-hidden rounded-md border-2", thumb === i ? "border-brand" : "border-transparent")}><Thumb seed={i + 7} size={0} rounded="rounded-none" className="!h-20 !w-full" /></div>
+              <div className="mt-1 text-[10px] text-sub">{i === 0 ? "Cover" : `Page ${i * 2 - 1}-${i * 2}`}</div>
+            </button>
+          ))}
+        </div>
+      </SlideOver>
     </div>
   );
 }

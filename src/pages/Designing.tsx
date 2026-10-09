@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History } from "lucide-react";
-import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, cx } from "../components/ui";
+import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
 import { ORDERS } from "../lib/data";
 import { fmtDate } from "../lib/format";
 
@@ -19,6 +19,8 @@ const CORRECTIONS0: Correction[] = [
   { id: "COR-002", page: 5, text: "Replace the bottom-left photo with the sangeet shot.", by: "Client", status: "In Progress" },
   { id: "COR-003", page: 1, text: "Cover title font too thin - use bolder script.", by: "Admin", status: "Open" },
 ];
+const BG_SWATCHES = ["#fbf7f0", "#ffffff", "#f3e8ff", "#fde68a", "#fecdd3", "#bae6fd", "#bbf7d0", "#1e293b"];
+interface Overlay { id: number; page: number; kind: "text" | "image"; text: string; x: number; y: number }
 const COMMENTS = [
   { by: "Chidanan da", when: "2 Oct 2026, 06:10 PM", page: 1, text: "Love the cover! Please add both names in gold foil." },
   { by: "Chidanan da", when: "3 Oct 2026, 09:40 AM", page: 12, text: "Skin tones look slightly dull on this page." },
@@ -57,10 +59,45 @@ export default function Designing() {
   const [adding, setAdding] = useState(false);
   const [pagesAdded, setPagesAdded] = useState(0);
   const [toast, setToast] = useState("");
+  const [saveMenu, setSaveMenu] = useState(false);
+  const [versions, setVersions] = useState(1);
+  const [bgOpen, setBgOpen] = useState(false);
+  const [bg, setBg] = useState<Record<number, string>>({});
+  const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [noteMenu, setNoteMenu] = useState<number | null>(null);
+  const [editNote, setEditNote] = useState<number | null>(null);
+  const [events, setEvents] = useState([
+    { when: "1 Oct 2026, 10:24 AM", text: "Design started by Ramesh" },
+    { when: "2 Oct 2026, 06:10 PM", text: "Client comment received on page 1" },
+    { when: "3 Oct 2026, 04:15 PM", text: "Last edit saved" },
+  ]);
 
   const spreads = Math.ceil(order.pages / 2) + 1 + pagesAdded;
   const openCorr = corrections.filter((c) => c.status !== "Resolved").length;
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+  const log = (text: string) => setEvents((e) => [...e, { when: "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }), text }]);
+  const addOverlay = (kind: "text" | "image") => {
+    setOverlays((o) => [...o, { id: Date.now(), page, kind, text: kind === "text" ? "Double-click to edit" : "Image placeholder", x: 12 + (o.length % 5) * 8, y: 15 + (o.length % 5) * 10 }]);
+    flash(kind === "text" ? "Text box added" : "Image placeholder added");
+  };
+  const download = (name: string, body: string, type = "text/plain") => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([body], { type }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  };
+  const copyLink = async () => {
+    const link = `https://albumpro.app/proof/${order.id}/${Math.random().toString(36).slice(2, 10)}`;
+    try { await navigator.clipboard.writeText(link); } catch { /* clipboard may be unavailable */ }
+    flash("Secure proof link copied: " + link);
+    log("Secure proof link generated");
+  };
+  const saveAction = (k: "draft" | "version" | "discard") => {
+    setSaveMenu(false);
+    if (k === "draft") { flash("Draft saved"); log("Draft saved"); }
+    else if (k === "version") { setVersions((v) => v + 1); flash(`Saved as version v${versions + 1}`); log(`Saved as version v${versions + 1}`); }
+    else { setOverlays([]); setBg({}); setTpl(0); setHistory([0]); setHIdx(0); flash("Unsaved changes discarded"); }
+  };
 
   const applyTpl = (i: number) => {
     setTpl(i);
@@ -80,11 +117,11 @@ export default function Designing() {
     setStatus("With Client"); flash("Proof sent to client for review");
   };
 
-  const tools = [
-    { I: Type, l: "Add Text", m: "Text box added" },
-    { I: ImageIcon, l: "Add Image", m: "Image placeholder added" },
-    { I: LayoutGrid, l: "Templates", m: "" },
-    { I: Brush, l: "Background", m: "Background changed" },
+  const tools: { I: typeof Type; l: string; run: () => void }[] = [
+    { I: Type, l: "Add Text", run: () => addOverlay("text") },
+    { I: ImageIcon, l: "Add Image", run: () => addOverlay("image") },
+    { I: LayoutGrid, l: "Templates", run: () => { setTplTab("Design Templates"); flash("Showing design templates"); } },
+    { I: Brush, l: "Background", run: () => setBgOpen((v) => !v) },
   ];
   const details = [
     { I: Ruler, l: "Album Size", v: `${order.size} (Landscape)` },
@@ -109,9 +146,16 @@ export default function Designing() {
         </div>
         <div className="flex">
           <button onClick={() => flash("Progress saved")} className="inline-flex h-11 items-center gap-2 rounded-l-xl bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"><Save className="size-4" />Save Progress</button>
-          <button className="grid h-11 w-10 place-items-center rounded-r-xl border-l border-white/30 bg-brand text-white hover:bg-brand-dark"><ChevronDown className="size-4" /></button>
+          <div className="relative">
+            <button aria-label="Save options" onClick={() => setSaveMenu((v) => !v)} onBlur={() => setTimeout(() => setSaveMenu(false), 150)} className="grid h-11 w-10 place-items-center rounded-r-xl border-l border-white/30 bg-brand text-white hover:bg-brand-dark"><ChevronDown className="size-4" /></button>
+            {saveMenu && (
+              <div className="absolute right-0 top-12 z-40 w-48 rounded-xl border border-line bg-white p-1.5 shadow-xl">
+                {([["Save draft", "draft"], ["Save as new version", "version"], ["Discard changes", "discard"]] as const).map(([l, k]) => <button key={k} onMouseDown={() => saveAction(k)} className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft">{l}</button>)}
+              </div>
+            )}
+          </div>
         </div>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold">More <ChevronDown className="size-4" /></button>
+        <MoreButton />
       </PageHeader>
 
       {toast && <div className="fixed right-6 top-6 z-50 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white shadow-xl">{toast}</div>}
@@ -155,13 +199,22 @@ export default function Designing() {
                 <button aria-label="Next page" disabled={page >= spreads - 1} onClick={() => setPage(page + 1)} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
               </div>
               <div className="ml-auto flex gap-1">
-                {tools.map(({ I, l, m }) => (
-                  <button key={l} onClick={() => m && flash(m)} className="grid h-12 min-w-14 place-items-center rounded-lg px-1.5 hover:bg-slate-100"><I className="size-4 text-ink" />{l}</button>
+                {tools.map(({ I, l, run }) => (
+                  <button key={l} onClick={run} className={cx("grid h-12 min-w-14 place-items-center rounded-lg px-1.5 hover:bg-slate-100", l === "Background" && bgOpen && "bg-brand-soft")}><I className="size-4 text-ink" />{l}</button>
                 ))}
               </div>
             </div>
+            {bgOpen && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-line bg-slate-50 p-2.5 text-[12px] font-semibold">
+                Spread background
+                {BG_SWATCHES.map((c) => (
+                  <button key={c} aria-label={`Background ${c}`} onClick={() => { setBg((b) => ({ ...b, [page]: c })); flash("Background changed"); }} className={cx("size-7 rounded-full border-2", bg[page] === c ? "border-brand" : "border-line")} style={{ background: c }} />
+                ))}
+                <button onClick={() => { setBg((b) => { const n = { ...b }; delete n[page]; return n; }); }} className="ml-auto text-xs font-bold text-brand">Reset</button>
+              </div>
+            )}
             <div className="grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70">
-              <div className="flex aspect-[2/1] w-[88%] max-w-[760px] origin-center overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / 85})` }}>
+              <div data-testid="canvas" className="relative flex aspect-[2/1] w-[88%] max-w-[760px] origin-center overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / 85})`, background: bg[page] }}>
                 <div className="relative flex-1 border-r border-black/10">
                   <PageArt seed={page + tpl} />
                   {page === 0 && (
@@ -172,6 +225,18 @@ export default function Designing() {
                   )}
                 </div>
                 <div className="relative flex-1"><PageArt seed={page + tpl + 3} mirror /></div>
+                {overlays.filter((o) => o.page === page).map((o) => (
+                  <div key={o.id} className="absolute" style={{ left: `${o.x}%`, top: `${o.y}%` }}>
+                    {o.kind === "text" ? (
+                      <div className="group flex items-center gap-1 rounded border border-dashed border-brand bg-white/70 px-1.5 py-0.5">
+                        <input aria-label="Text overlay" value={o.text} onChange={(e) => setOverlays((l) => l.map((x) => x.id === o.id ? { ...x, text: e.target.value } : x))} className="w-36 bg-transparent font-serif text-sm outline-none" />
+                        <button aria-label="Remove overlay" onClick={() => setOverlays((l) => l.filter((x) => x.id !== o.id))} className="text-xs text-rose-600">✕</button>
+                      </div>
+                    ) : (
+                      <div className="relative"><Thumb seed={o.id} size={64} /><button aria-label="Remove overlay" onClick={() => setOverlays((l) => l.filter((x) => x.id !== o.id))} className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-rose-500 text-[9px] text-white">✕</button></div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </Panel>
@@ -183,7 +248,7 @@ export default function Designing() {
                   <button key={t} onClick={() => setTplTab(t)} className={cx("-mb-px whitespace-nowrap border-b-2 pb-2 text-[13px] font-bold", t === tplTab ? "border-brand text-brand" : "border-transparent text-sub")}>{t}</button>
                 ))}
               </div>
-              <LinkAction>View All →</LinkAction>
+              <LinkAction onClick={() => { setTplTab("Design Templates"); setTpl((t) => (t + 1) % TEMPLATES.length); flash(`Browsing all ${TEMPLATES.length} templates in ${tplTab}`); }}>View All →</LinkAction>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {TEMPLATES.map((t, i) => (
@@ -242,7 +307,7 @@ export default function Designing() {
             )}
           </Panel>
 
-          <Panel title="Deadline & Status" action={<LinkAction>View Timeline</LinkAction>} bodyClassName="p-4">
+          <Panel title="Deadline & Status" action={<LinkAction onClick={() => setTimelineOpen(true)}>View Timeline</LinkAction>} bodyClassName="p-4">
             <div className="flex items-center gap-3">
               <div className="grid size-11 place-items-center rounded-xl bg-brand-soft text-brand"><CalendarDays className="size-5" /></div>
               <div className="flex-1"><div className="text-xs text-sub">Due Date</div><div className="font-extrabold text-rose-600">{fmtDate("2026-10-10")}</div></div>
@@ -259,14 +324,14 @@ export default function Designing() {
               </div>
             )}
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <OutlineButton className="h-10 justify-center" icon={Download} onClick={() => flash("Proof PDF downloaded")}>Download Proof</OutlineButton>
-              <OutlineButton className="h-10 justify-center" icon={Link2} onClick={() => flash("Secure proof link copied")}>Share Link</OutlineButton>
+              <OutlineButton className="h-10 justify-center" icon={Download} onClick={() => { download(`${order.id}-proof.txt`, `Album proof\nOrder: ${order.id}\nClient: ${order.customer}\nPages: ${order.pages}\nTemplate: ${TEMPLATES[tpl]}\nStatus: ${status}\n`); flash("Proof downloaded"); log("Proof downloaded"); }}>Download Proof</OutlineButton>
+              <OutlineButton className="h-10 justify-center" icon={Link2} onClick={copyLink}>Share Link</OutlineButton>
             </div>
           </Panel>
 
           <Panel title="Quick Notes" action={<LinkAction onClick={() => setAdding((a) => !a)}>Add Note</LinkAction>} bodyClassName="p-4">
             {adding && (
-              <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!noteDraft.trim()) return; setNotes([{ text: noteDraft, by: "Admin", when: "just now" }, ...notes]); setNoteDraft(""); setAdding(false); }}>
+              <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!noteDraft.trim()) return; if (editNote !== null) { setNotes(notes.map((n, i) => i === editNote ? { ...n, text: noteDraft } : n)); setEditNote(null); flash("Note updated"); } else { setNotes([{ text: noteDraft, by: "Admin", when: "just now" }, ...notes]); flash("Note added"); } setNoteDraft(""); setAdding(false); }}>
                 <input autoFocus value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="Write a note..." className="h-9 min-w-0 flex-1 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand" />
                 <button className="rounded-lg bg-brand px-3 text-xs font-bold text-white">Save</button>
               </form>
@@ -276,13 +341,31 @@ export default function Designing() {
                 <div key={i} className="flex gap-3 rounded-xl border border-line p-3 text-[13px]">
                   <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><StickyNote className="size-4" /></div>
                   <div className="min-w-0 flex-1"><p>{n.text}</p><div className="mt-1 text-xs text-sub">By {n.by} - {n.when}</div></div>
-                  <MoreVertical className="size-4 text-sub" />
+                  <div className="relative">
+                    <button aria-label="Note options" onClick={() => setNoteMenu(noteMenu === i ? null : i)} onBlur={() => setTimeout(() => setNoteMenu(null), 150)}><MoreVertical className="size-4 text-sub" /></button>
+                    {noteMenu === i && (
+                      <div className="absolute right-0 top-6 z-30 w-28 rounded-xl border border-line bg-white p-1 shadow-xl">
+                        <button onMouseDown={() => { setEditNote(i); setNoteDraft(n.text); setAdding(true); setNoteMenu(null); }} className="block w-full rounded-lg px-3 py-1.5 text-left text-xs font-semibold hover:bg-brand-soft">Edit</button>
+                        <button onMouseDown={() => { setNotes(notes.filter((_, j) => j !== i)); setNoteMenu(null); flash("Note deleted"); }} className="block w-full rounded-lg px-3 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-brand-soft">Delete</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </Panel>
         </div>
       </div>
+      <SlideOver open={timelineOpen} onClose={() => setTimelineOpen(false)} title="Status Timeline">
+        <ol className="space-y-4 border-l-2 border-line pl-4">
+          {[...events, { when: "Now", text: `Current status: ${status}` }].map((e, i) => (
+            <li key={i} className="relative text-[13px]">
+              <span className="absolute -left-[23px] top-1 size-3 rounded-full bg-brand" />
+              <div className="font-semibold">{e.text}</div><div className="text-xs text-sub">{e.when}</div>
+            </li>
+          ))}
+        </ol>
+      </SlideOver>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Aperture, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft } from "lucide-react";
 import { useAuth, ROLES, type RoleKey } from "../lib/auth";
@@ -20,6 +20,14 @@ export default function Login() {
   const [human, setHuman] = useState(false);
   const [otp, setOtp] = useState("");
   const [err, setErr] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const [resent, setResent] = useState(false);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [cooldown]);
+  const resend = () => { setResent(true); setCooldown(30); setOtp(""); };
   if (role) return <Navigate to="/" replace />;
 
   const choose = (r: RoleKey) => { setPick(r); setEmail(ROLES[r].email); setErr(""); };
@@ -81,7 +89,8 @@ export default function Login() {
               <p className="mb-5 mt-1 text-sm text-sub">Enter the 6-digit code sent to your registered mobile. (Demo: any 6 digits.)</p>
               <input className={cx(inputCls, "mb-3 text-center text-xl font-bold tracking-[0.5em]")} inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => e.key === "Enter" && otp.length === 6 && finish()} placeholder="······" autoFocus />
               <button disabled={otp.length !== 6} onClick={finish} className="h-11 w-full rounded-xl bg-brand font-bold text-white disabled:opacity-50">Verify & continue</button>
-              <p className="mt-3 text-center text-xs text-sub">Didn't get it? <button className="font-bold text-brand">Resend code</button></p>
+              <p className="mt-3 text-center text-xs text-sub">Didn't get it? <button disabled={cooldown > 0} onClick={resend} className="font-bold text-brand disabled:text-sub">{cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}</button></p>
+              {resent && <p role="status" className="mt-1 text-center text-xs font-semibold text-emerald-600">A new code has been sent to your registered mobile.</p>}
             </>
           )}
 

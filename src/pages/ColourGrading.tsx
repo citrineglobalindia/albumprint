@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, CalendarDays, Plus, Image as ImageIcon, MoreVertical, Pencil, UploadCloud, Send, ChevronDown } from "lucide-react";
-import { PageHeader, PrimaryButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
+import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, CalendarDays, Plus, Image as ImageIcon, Pencil, UploadCloud, Send } from "lucide-react";
+import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { ORDERS, ASSIGNEES, PRIORITIES, type Priority } from "../lib/data";
 import { fmtDate, TODAY } from "../lib/format";
+import { useToast } from "../components/Toast";
+import { ActionMenu } from "../components/ActionMenu";
 import type { Tone } from "../lib/data";
 
 type Status = "New" | "In Progress" | "Pending" | "Rework" | "Submitted" | "Approved" | "Overdue";
@@ -35,6 +37,27 @@ export default function ColourGrading() {
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [history, setHistory] = useState<Record<string, string[]>>({});
   const pageSize = 12;
+  const [toast, show] = useToast();
+  const [creating, setCreating] = useState(false);
+  const EMPTY = { order: "", colorist: COLORISTS[0]!, priority: "Normal" as Priority, due: "", notes: "" };
+  const [f, setF] = useState(EMPTY);
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const available = ORDERS.filter((o) => !jobs.some((j) => j.id === o.id));
+  const saveJob = () => {
+    const e: Record<string, string> = {};
+    if (!f.order) e.order = "Pick an order";
+    if (!f.due) e.due = "Choose a due date";
+    setErrs(e);
+    if (Object.keys(e).length) return;
+    const o = ORDERS.find((x) => x.id === f.order)!;
+    const j: Job = { id: o.id, customer: o.customer, event: o.event, files: 200, colorist: f.colorist, priority: f.priority, due: f.due, status: "New", notes: [f.notes.trim() || "Standard grading, keep skin tones natural."] };
+    setJobs((p) => [j, ...p]); setActiveId(j.id); setTab("queue"); setPage(1); setCreating(false); setF(EMPTY); setErrs({});
+    show(`Job ${j.id} added to ${j.colorist}'s queue`);
+  };
+  const bulk = (fn: (j: Job) => Job, msg: string) => {
+    setJobs((p) => p.map((j) => (checked.has(j.id) ? fn(j) : j)));
+    show(`${msg} (${checked.size} jobs)`); setChecked(new Set());
+  };
 
   const base = useMemo(() => jobs.filter((j) => {
     const s = q.trim().toLowerCase();
@@ -78,8 +101,8 @@ export default function ColourGrading() {
           <CalendarDays className="size-6 text-sub" />
           <div className="text-xs leading-tight text-sub">Today<div className="text-sm font-semibold text-ink">{TODAY.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</div></div>
         </div>
-        <PrimaryButton>New Job</PrimaryButton>
-        <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold">More <ChevronDown className="size-4" /></button>
+        <PrimaryButton onClick={() => setCreating(true)}>New Job</PrimaryButton>
+        <MoreButton />
       </PageHeader>
       <KpiRow items={kpis} />
 
@@ -93,6 +116,15 @@ export default function ColourGrading() {
             <FilterSelect value={col} onChange={(v) => { setCol(v); setPage(1); }} options={["All Colorists", ...COLORISTS.filter((c) => ASSIGNEES.includes(c))]} />
             <FilterSelect value={prio} onChange={(v) => { setPrio(v); setPage(1); }} options={["All Priorities", ...PRIORITIES]} />
           </div>
+          {checked.size > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
+              <b>{checked.size} selected</b>
+              <OutlineButton onClick={() => bulk((j) => j.status === "New" ? { ...j, status: "In Progress" } : j, "Started grading")}>Start selected</OutlineButton>
+              <OutlineButton onClick={() => bulk((j) => ({ ...j, priority: "High" }), "Priority set to High")}>Set High priority</OutlineButton>
+              <OutlineButton onClick={() => bulk((j) => j.status === "In Progress" || j.status === "Rework" ? { ...j, status: "Submitted" } : j, "Submitted for approval")}>Submit selected</OutlineButton>
+              <button onClick={() => setChecked(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
+            </div>
+          )}
           <div className="mt-3 overflow-x-auto">
             <table className={tableCls}>
               <thead><tr>
@@ -114,7 +146,13 @@ export default function ColourGrading() {
                       <Td><Pill tone={STATUS_TONE[j.status]} className="min-w-[84px] justify-center">{j.status}</Pill></Td>
                       <Td className="text-right"><span className="inline-flex items-center gap-2">
                         <button onClick={(e) => { e.stopPropagation(); a.run(); }} className={cx("h-8 w-[84px] rounded-lg border text-xs font-bold", a.primary ? "border-brand bg-brand text-white hover:bg-brand-dark" : "border-line bg-white hover:bg-brand-soft")}>{a.label}</button>
-                        <MoreVertical className="size-4 text-sub" /></span></Td>
+                        <ActionMenu items={[
+                          { label: "View details", onClick: () => { setActiveId(j.id); setDtab("details"); } },
+                          { label: "Start grading", hidden: j.status !== "New", onClick: () => act(j, "In Progress", "Grading started") },
+                          { label: "Add note", onClick: () => { setActiveId(j.id); setDtab("notes"); setNoteDraft(""); } },
+                          { label: "Send to rework", hidden: j.status !== "Submitted", onClick: () => { act(j, "Rework", "Sent back for rework"); show(`${j.id} sent to rework`); } },
+                          { label: "Mark approved", hidden: j.status !== "Submitted", onClick: () => { act(j, "Approved", "Approved by admin"); show(`${j.id} approved`); } },
+                        ]} /></span></Td>
                     </tr>
                   );
                 })}
@@ -163,12 +201,12 @@ export default function ColourGrading() {
               )}
               <div className="relative space-y-0.5 rounded-xl bg-slate-50 p-3 text-[13px]">
                 {cur.notes.map((n, i) => <p key={i}>{n}</p>)}
-                <Pencil className="absolute right-3 top-3 size-3.5 text-sub" />
+                <button aria-label="Edit note" onClick={() => setNoteDraft(cur.notes[cur.notes.length - 1] ?? "")} className="absolute right-3 top-3 text-sub hover:text-brand"><Pencil className="size-3.5" /></button>
               </div>
             </div>
           )}
 
-          <button onClick={() => setUploaded((u) => ({ ...u, [cur.id]: (u[cur.id] ?? 0) + 24 }))} className="mt-4 flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-brand/50 bg-brand-soft/40 px-4 py-4 text-center">
+          <button onClick={() => { setUploaded((u) => ({ ...u, [cur.id]: (u[cur.id] ?? 0) + 24 })); show(`24 graded files uploaded to ${cur.id}`); }} className="mt-4 flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-brand/50 bg-brand-soft/40 px-4 py-4 text-center">
             <span className="inline-flex items-center gap-2 font-extrabold"><UploadCloud className="size-5 text-brand" />Upload Graded Files</span>
             <span className="text-xs text-sub">Drag & drop files here or click to upload</span>
             <span className="text-xs text-slate-400">Supports JPG, TIFF, ZIP (Max 5GB){uploaded[cur.id] ? ` · ${uploaded[cur.id]} files added` : ""}</span>
@@ -183,6 +221,20 @@ export default function ColourGrading() {
           </div>
         </Panel>
       </div>
+      <SlideOver open={creating} onClose={() => setCreating(false)} title="New Grading Job"
+        footer={<><OutlineButton onClick={() => setCreating(false)}>Cancel</OutlineButton><PrimaryButton onClick={saveJob}>Create Job</PrimaryButton></>}>
+        <Field label="Order" required hint={errs.order}>
+          <select aria-label="Order" className={cx(inputCls, errs.order && "border-rose-400")} value={f.order} onChange={(e) => setF({ ...f, order: e.target.value })}>
+            <option value="">Select an order…</option>
+            {available.map((o) => <option key={o.id} value={o.id}>{o.id} — {o.customer} ({o.event})</option>)}
+          </select>
+        </Field>
+        <Field label="Assignee"><FilterSelect value={f.colorist} onChange={(v) => setF({ ...f, colorist: v })} options={COLORISTS} /></Field>
+        <Field label="Priority"><FilterSelect value={f.priority} onChange={(v) => setF({ ...f, priority: v as Priority })} options={PRIORITIES} /></Field>
+        <Field label="Due date" required hint={errs.due}><input type="date" className={cx(inputCls, errs.due && "border-rose-400")} value={f.due} onChange={(e) => setF({ ...f, due: e.target.value })} /></Field>
+        <Field label="Instructions"><textarea rows={4} className={cx(inputCls, "h-auto py-2")} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+      </SlideOver>
+      {toast}
     </div>
   );
 }

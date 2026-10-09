@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye } from "lucide-react";
 import type { ComponentType } from "react";
-import { Field, FilterSelect, Panel, Pill, PageHeader, SearchInput, Td, Th, Toggle, inputCls, tableCls, trCls, cx } from "../components/ui";
+import { Field, FilterSelect, Panel, Pill, PageHeader, SearchInput, SlideOver, Td, Th, Toggle, inputCls, tableCls, trCls, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { downloadCsv } from "../lib/csv";
 
 type Val = string | boolean;
 type Fld =
@@ -105,22 +106,75 @@ const LOG: [string, string, string, string][] = [
   ["01 Oct 2026, 03:12 PM", "Admin", "User created", "Neha Reddy (Colour Grading)"],
 ];
 
+const STORE = "albumpro.settings";
+const ERR = "mt-1 block text-xs font-semibold text-rose-600";
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const load = (): Record<string, Val> => {
+  try { const raw = localStorage.getItem(STORE); if (raw) return { ...INIT, ...JSON.parse(raw) }; } catch { /* ignore */ }
+  return INIT;
+};
+type Errs = Record<string, string>;
+const validate = (v: Record<string, Val>): Errs => {
+  const e: Errs = {};
+  const s = (k: string) => String(v[k] ?? "").trim();
+  if (!s("name")) e.name = "Company name is required";
+  if (s("email") && !EMAIL_RE.test(s("email"))) e.email = "Enter a valid email address";
+  if (s("gstin") && !/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z0-9][A-Z0-9]$/i.test(s("gstin"))) e.gstin = "GSTIN must be 15 characters, e.g. 29ABCDE1234F1Z5";
+  if (s("pan") && !/^[A-Z]{5}\d{4}[A-Z]$/i.test(s("pan"))) e.pan = "PAN must look like ABCDE1234F";
+  if (s("smtp_port") && !(Number(s("smtp_port")) >= 1 && Number(s("smtp_port")) <= 65535)) e.smtp_port = "Port must be between 1 and 65535";
+  if (s("from_email") && !EMAIL_RE.test(s("from_email"))) e.from_email = "Enter a valid email address";
+  if (s("smtp_user") && !EMAIL_RE.test(s("smtp_user"))) e.smtp_user = "Enter a valid email address";
+  if (Number(s("pw_min")) < 6 && s("pw_min")) e.pw_min = "Minimum length cannot be below 6";
+  if (s("adv_pct") && !(Number(s("adv_pct")) >= 0 && Number(s("adv_pct")) <= 100)) e.adv_pct = "Enter a percentage between 0 and 100";
+  if (s("disc_limit") && !(Number(s("disc_limit")) >= 0 && Number(s("disc_limit")) <= 100)) e.disc_limit = "Enter a percentage between 0 and 100";
+  return e;
+};
+const FIELD_SEC: Record<string, string> = { name: "general", email: "general", gstin: "company", pan: "company", disc_limit: "workflow", smtp_port: "email", smtp_user: "email", from_email: "email", adv_pct: "payment", pw_min: "security" };
+
+const TEMPLATE_PREVIEW = [["Album Premium 12x36", "1", "₹8,500"], ["Extra pages (10)", "1", "₹1,200"], ["Box - Premium", "1", "₹1,500"]];
+
 export default function Settings() {
   const [sec, setSec] = useState("general");
-  const [v, setV] = useState<Record<string, Val>>(INIT);
+  const [v, setV] = useState<Record<string, Val>>(load);
   const [dirty, setDirty] = useState(false);
+  const [errs, setErrs] = useState<Errs>({});
   const [toast, show] = useToast();
   const [logQ, setLogQ] = useState("");
-  const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); setDirty(true); };
+  const [logUser, setLogUser] = useState("All Users");
+  const [logAction, setLogAction] = useState("All Actions");
+  const [preview, setPreview] = useState<null | "invoice" | "receipt">(null);
+  const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); setDirty(true); if (errs[k]) setErrs((e) => { const c = { ...e }; delete c[k]; return c; }); };
   const s = SECTIONS.find((x) => x.key === sec)!;
   const str = (k: string) => String(v[k] ?? "");
 
-  const save = () => { setDirty(false); show(`${s.label} settings saved`); };
+  const save = () => {
+    const e = validate(v);
+    setErrs(e);
+    const bad = Object.keys(e);
+    if (bad.length) { setSec(FIELD_SEC[bad[0]!] ?? sec); show(`Fix ${bad.length} invalid field${bad.length > 1 ? "s" : ""} before saving`); return; }
+    try { localStorage.setItem(STORE, JSON.stringify(v)); } catch { show("Saved for this session only (browser storage unavailable)"); setDirty(false); return; }
+    setDirty(false);
+    show(`${s.label} settings saved`);
+  };
+  const sendTestEmail = () => {
+    if (!str("smtp_host").trim() || !EMAIL_RE.test(str("from_email"))) { show("Enter an SMTP host and a valid From Email first"); return; }
+    show(`Test email sent to ${str("from_email")} via ${str("smtp_host")}:${str("smtp_port")}`);
+  };
+  const sendTestWa = () => {
+    if (!v.wa_on) { show("Enable WhatsApp messages first"); return; }
+    if (str("wa_num").replace(/\D/g, "").length < 10) { show("Enter a valid business number first"); return; }
+    show(`Test WhatsApp message (${str("wa_tpl")}) sent to ${str("wa_num")}`);
+  };
+
+  const users = useMemo(() => ["All Users", ...new Set(LOG.map((r) => r[1]))], []);
+  const actions = useMemo(() => ["All Actions", ...new Set(LOG.map((r) => r[2]))], []);
+  const logRows = LOG.filter((r) => (logUser === "All Users" || r[1] === logUser) && (logAction === "All Actions" || r[2] === logAction) && r.join(" ").toLowerCase().includes(logQ.toLowerCase()));
 
   return (
     <div className="min-w-0">
       {toast}
       <PageHeader title="Settings" subtitle="Configure system preferences and behaviour">
+        {dirty && <span className="text-xs font-bold text-amber-600">Unsaved changes</span>}
         <button onClick={save} className={cx("inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark", dirty && "ring-4 ring-brand/20")}><Save className="size-4" />Save Changes</button>
       </PageHeader>
 
@@ -136,17 +190,24 @@ export default function Settings() {
         </Panel>
 
         <Panel title={s.title} subtitle={s.desc} bodyClassName="space-y-4">
-          {sec === "general" && <General v={v} set={set} />}
+          {sec === "general" && <General v={v} set={set} errs={errs} show={show} />}
           {sec === "audit" && (
             <div>
-              <SearchInput className="mb-3 max-w-sm" value={logQ} onChange={setLogQ} placeholder="Search user or action..." />
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <SearchInput className="w-72" value={logQ} onChange={setLogQ} placeholder="Search user or action..." />
+                <FilterSelect className="w-44" value={logUser} onChange={setLogUser} options={users} />
+                <FilterSelect className="w-48" value={logAction} onChange={setLogAction} options={actions} />
+                <button onClick={() => { setLogQ(""); setLogUser("All Users"); setLogAction("All Actions"); show("Log filters cleared"); }} className="text-sm font-bold text-brand">Clear</button>
+                <button onClick={() => { downloadCsv("activity-log.csv", [["Timestamp", "User", "Action", "Details"], ...logRows]); show(`Exported ${logRows.length} log entries`); }} className="ml-auto inline-flex h-10 items-center gap-2 rounded-lg border border-line px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Download className="size-4" />Export</button>
+              </div>
               <div className="overflow-x-auto">
                 <table className={tableCls}>
                   <thead><tr><Th>Timestamp</Th><Th>User</Th><Th>Action</Th><Th>Details</Th></tr></thead>
                   <tbody>
-                    {LOG.filter((r) => r.join(" ").toLowerCase().includes(logQ.toLowerCase())).map((r, i) => (
+                    {logRows.map((r, i) => (
                       <tr key={i} className={trCls}><Td>{r[0]}</Td><Td className="font-semibold">{r[1]}</Td><Td><Pill tone={/fail|changed|approved/i.test(r[2]) ? "amber" : "blue"}>{r[2]}</Pill></Td><Td className="text-sub">{r[3]}</Td></tr>
                     ))}
+                    {logRows.length === 0 && <tr><td colSpan={4} className="py-8 text-center text-sub">No log entries match.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -165,21 +226,44 @@ export default function Settings() {
                       {f.t === "textarea" ? <textarea className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />
                         : f.t === "select" ? <FilterSelect value={str(f.k)} onChange={(x) => set(f.k, x)} options={f.o} />
                         : <input type={f.t} className={inputCls} value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />}
+                      {errs[f.k] && <span className={ERR}>{errs[f.k]}</span>}
                     </Field>
                   ),
                 )}
               </div>
+              {sec === "email" && g.title === "SMTP" && <button onClick={sendTestEmail} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test email</button>}
+              {sec === "whatsapp" && <button onClick={sendTestWa} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test WhatsApp message</button>}
+              {sec === "templates" && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => setPreview("invoice")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview invoice</button>
+                  <button onClick={() => setPreview("receipt")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview receipt</button>
+                </div>
+              )}
             </div>
           ))}
         </Panel>
       </div>
+
+      <SlideOver open={!!preview} onClose={() => setPreview(null)} width={520} title={preview === "invoice" ? `Invoice preview - ${str("tpl_inv")}` : `Receipt preview - ${str("tpl_rcp")}`}
+        footer={<><button onClick={() => setPreview(null)} className="h-11 px-5 text-sm font-bold">Close</button><button onClick={() => { window.print(); }} className="h-11 rounded-xl bg-brand px-5 text-sm font-bold text-white">Print sample</button></>}>
+        <div className="rounded-xl border border-line p-5 text-[13px]">
+          <div className="flex items-start justify-between"><div><div className="text-base font-extrabold">{str("name")}</div><div className="whitespace-pre-line text-xs text-sub">{str("address")}</div><div className="text-xs text-sub">GSTIN {str("gstin")}</div></div><b className="text-brand">{preview === "invoice" ? "TAX INVOICE" : "PAYMENT RECEIPT"}</b></div>
+          <div className="mt-3 text-xs text-sub">{preview === "invoice" ? `${str("inv_prefix")}${str("inv_next").padStart(4, "0")}` : `${str("rcp_prefix")}-0042`} · Due in {str("inv_terms")} days</div>
+          <table className="mt-3 w-full"><tbody>{TEMPLATE_PREVIEW.map(([a, b, c]) => <tr key={a} className="border-t border-line"><td className="py-1.5">{a}</td><td>{b}</td><td className="text-right">{c}</td></tr>)}
+            <tr className="border-t border-line font-bold"><td className="py-1.5" colSpan={2}>GST ({str("inv_gst")})</td><td className="text-right">₹2,200</td></tr>
+            <tr className="font-extrabold"><td className="py-1.5" colSpan={2}>Total</td><td className="text-right">₹13,400</td></tr></tbody></table>
+          <p className="mt-4 text-xs">{str("tpl_foot")}</p>
+          <p className="mt-2 text-[11px] text-sub">{str("tpl_terms")}</p>
+        </div>
+        <p className="mt-3 text-xs text-sub">Edit the footer, terms and template choice on the Document Templates page, then save.</p>
+      </SlideOver>
     </div>
   );
 }
 
-function General({ v, set }: { v: Record<string, Val>; set: (k: string, x: Val) => void }) {
+function General({ v, set, errs, show }: { v: Record<string, Val>; set: (k: string, x: Val) => void; errs: Errs; show: (m: string) => void }) {
   const s = (k: string) => String(v[k] ?? "");
-  const [logo, setLogo] = useState<string | null>(null);
+  const [logo, setLogo] = useState<string | null>(() => { try { return localStorage.getItem("albumpro.logo"); } catch { return null; } });
   const toggles: [string, string, string][] = [
     ["autoAssign", "Auto Assign to Next Department", "Automatically move order to next stage after approval"],
     ["deliveryNoPay", "Allow Delivery Without Full Payment", "Permits delivery even if final payment is pending"],
@@ -192,10 +276,10 @@ function General({ v, set }: { v: Record<string, Val>; set: (k: string, x: Val) 
       <p className="mb-4 text-xs text-sub">This information will be used across the system (invoices, reports, client communication, etc.)</p>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
         <div className="grid gap-x-4 md:grid-cols-2">
-          <Field label="Company Name" required><input className={inputCls} value={s("name")} onChange={(e) => set("name", e.target.value)} /></Field>
+          <Field label="Company Name" required><input className={inputCls} value={s("name")} onChange={(e) => set("name", e.target.value)} />{errs.name && <span className={ERR}>{errs.name}</span>}</Field>
           <Field label="Website"><input className={inputCls} value={s("website")} onChange={(e) => set("website", e.target.value)} /></Field>
           <Field label="Phone Number"><input className={inputCls} value={s("phone")} onChange={(e) => set("phone", e.target.value)} /></Field>
-          <Field label="Email"><input type="email" className={inputCls} value={s("email")} onChange={(e) => set("email", e.target.value)} /></Field>
+          <Field label="Email"><input type="email" className={inputCls} value={s("email")} onChange={(e) => set("email", e.target.value)} />{errs.email && <span className={ERR}>{errs.email}</span>}</Field>
           <div className="md:col-span-2"><Field label="Address"><textarea className="h-24 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={s("address")} onChange={(e) => set("address", e.target.value)} /></Field></div>
         </div>
         <div className="rounded-xl border border-line p-4 text-center">
@@ -205,7 +289,15 @@ function General({ v, set }: { v: Record<string, Val>; set: (k: string, x: Val) 
           </div>
           <label className="mt-3 block cursor-pointer rounded-lg border border-line py-2 text-sm font-bold text-brand hover:bg-brand-soft">
             Change Logo
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f && f.size <= 2 * 1024 * 1024) { setLogo(URL.createObjectURL(f)); set("logo", f.name); } }} />
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => {
+              const f = e.target.files?.[0]; e.target.value = "";
+              if (!f) return;
+              if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { show("Logo must be a PNG, JPG or WebP image"); return; }
+              if (f.size > 2 * 1024 * 1024) { show("Logo is larger than 2MB"); return; }
+              const r = new FileReader();
+              r.onload = () => { const url = String(r.result); setLogo(url); try { localStorage.setItem("albumpro.logo", url); } catch { /* ignore */ } set("logo", f.name); show(`Logo updated: ${f.name}`); };
+              r.readAsDataURL(f);
+            }} />
           </label>
         </div>
       </div>
@@ -218,7 +310,7 @@ function General({ v, set }: { v: Record<string, Val>; set: (k: string, x: Val) 
         <Field label="Default Currency"><FilterSelect value={s("currency")} onChange={(x) => set("currency", x)} options={["INR (₹)", "USD ($)"]} /></Field>
         <Field label="Default Tax (GST %)"><FilterSelect value={s("tax")} onChange={(x) => set("tax", x)} options={["0%", "5%", "12%", "18%", "28%"]} /></Field>
         <Field label="Default Order Prefix"><input className={inputCls} value={s("prefix")} onChange={(e) => set("prefix", e.target.value.toUpperCase())} /></Field>
-        <Field label="Next Order Number"><input className={cx(inputCls, "bg-slate-50")} value={s("nextNo")} readOnly /></Field>
+        <Field label="Next Order Number"><input className={inputCls} inputMode="numeric" value={s("nextNo")} onChange={(e) => set("nextNo", e.target.value.replace(/\D/g, ""))} /></Field>
       </div>
     </div>
 

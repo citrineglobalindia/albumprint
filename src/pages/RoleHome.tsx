@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   FilePlus2, FolderOpen, IndianRupee, PackageCheck, CalendarClock, Palette, PlayCircle, Hourglass, Undo2, CheckCircle2, AlarmClock,
   LayoutTemplate, Send, MessageSquare, Lock, Printer, Cog, BookOpen, Boxes, Truck, ShieldCheck, XCircle, Wrench, Timer, FileText, Receipt, RefreshCcw, Wallet, ArrowRight,
@@ -98,6 +98,7 @@ const CFG: Partial<Record<RoleKey, Cfg>> = {
 
 export default function RoleHome() {
   const { role, user } = useAuth();
+  const nav = useNavigate();
   const cfg = CFG[role!]!;
   const items: Kpi[] = cfg.kpis.map((k) => {
     const n = ORDERS.reduce((a, o) => { const r = k.fn(o); return a + (typeof r === "number" ? 0 : r ? 1 : 0); }, 0);
@@ -110,16 +111,16 @@ export default function RoleHome() {
     <>
       <PageHeader title={cfg.title} subtitle={`${cfg.subtitle} Signed in as ${user} · ${ROLES[role!].dept}.`}>
         <TodayChip />
-        {cfg.cta && <Link to={cfg.cta.to}><PrimaryButton icon={ArrowRight}>{cfg.cta.label}</PrimaryButton></Link>}
+        {cfg.cta && <PrimaryButton icon={ArrowRight} onClick={() => nav(cfg.cta!.to)}>{cfg.cta.label}</PrimaryButton>}
       </PageHeader>
       <KpiRow items={items} />
-      <Panel title={cfg.queueTitle} subtitle="Orders waiting on your department" action={<Link to={cfg.link}><LinkAction>Open module →</LinkAction></Link>} bodyClassName="px-2 pb-2">
+      <Panel title={cfg.queueTitle} subtitle="Orders waiting on your department" action={<LinkAction onClick={() => nav(cfg.link)}>Open module →</LinkAction>} bodyClassName="px-2 pb-2">
         <div className="scroll-thin overflow-x-auto">
           <table className={tableCls}>
             <thead><tr><Th>Order ID</Th><Th>Customer</Th><Th>Event</Th><Th>Workflow</Th><Th>Stage</Th><Th>Priority</Th><Th>Assigned</Th><Th>Due</Th>{money && <><Th>Balance</Th><Th>Payment</Th></>}<Th /></tr></thead>
             <tbody>
               {rows.map((o, i) => (
-                <tr key={o.id} className={trCls}>
+                <tr key={o.id} onClick={() => nav(role === "accounts" || role === "reception" ? `/orders/${o.id}` : cfg.link)} className={`${trCls} cursor-pointer`}>
                   <Td><span className="flex items-center gap-2"><Thumb seed={i} size={28} /><b>{o.id}</b></span></Td>
                   <Td>{o.customer}</Td><Td>{o.event}</Td><Td>{o.workflow}</Td>
                   <Td><Pill tone={stageTone(o.stage)} dot>{stageLabel(o.stage)}</Pill></Td>

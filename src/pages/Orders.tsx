@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
-import { ArrowUpDown, CalendarDays, ClipboardList, Clock, Filter, MoreVertical, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useToast } from "../components/Toast";
+import { ActionMenu } from "../components/ActionMenu";
+import { ArrowUpDown, CalendarDays, ClipboardList, Clock, Filter, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Plus } from "lucide-react";
 import {
   PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, CountTabs,
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, cx, type Kpi,
@@ -49,12 +52,32 @@ export default function Orders() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<string | null>(null);
+  const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [toast, show] = useToast();
+  const [range, setRange] = useState("All Time");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [evt, setEvt] = useState("All Events");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [editing, setEditing] = useState<Row | null>(null);
+  const [ef, setEf] = useState({ priority: "Normal" as Priority, assignee: "Priya", due: "", size: "12x36" });
+  const [eerr, setEerr] = useState("");
+  const [bulkAsg, setBulkAsg] = useState("Assign to…");
+  useEffect(() => {
+    if (params.get("new") === "1") {
+      const c = params.get("customer");
+      if (c) setForm((f) => ({ ...f, customer: c }));
+      setCreate(true);
+      setParams({}, { replace: true });
+    }
+  }, [params, setParams]);
   const [create, setCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [err, setErr] = useState("");
 
-  const reset = () => { setQ(""); setWf("All Workflow Types"); setSize("All Album Sizes"); setPrio("All Priority"); setPay("All Payment Status"); setAsg("All Assigned To"); setPage(1); };
+  const reset = () => { setQ(""); setWf("All Workflow Types"); setSize("All Album Sizes"); setPrio("All Priority"); setPay("All Payment Status"); setAsg("All Assigned To"); setEvt("All Events"); setFrom(""); setTo(""); setOverdueOnly(false); setRange("All Time"); setPage(1); };
 
   const base = useMemo(() => rows.filter((o) => {
     const s = q.trim().toLowerCase();
@@ -64,8 +87,16 @@ export default function Orders() {
     if (prio !== "All Priority" && o.priority !== prio) return false;
     if (pay !== "All Payment Status" && o.pay !== pay) return false;
     if (asg !== "All Assigned To" && o.assignee !== asg) return false;
+    if (evt !== "All Events" && o.event !== evt) return false;
+    if (overdueOnly && !(o.stage !== "delivered" && !o.hold && isOverdue(o.due))) return false;
+    if (from && o.pendingAt < from) return false;
+    if (to && o.pendingAt > to) return false;
+    if (range !== "All Time") {
+      const n = range === "Last 7 Days" ? 7 : range === "Last 30 Days" ? 30 : 90;
+      if (new Date(o.pendingAt) < new Date(TODAY.getTime() - n * 86400000)) return false;
+    }
     return true;
-  }), [rows, q, wf, size, prio, pay, asg]);
+  }), [rows, q, wf, size, prio, pay, asg, evt, overdueOnly, from, to, range]);
 
   const count = (t: TabKey) => base.filter((o) => inTab(o, t)).length;
   const filtered = useMemo(() => {
@@ -102,19 +133,33 @@ export default function Orders() {
       size: form.size, pages: Number(form.pages) || 30, stage: "new_order", priority: form.priority, pendingAt: form.orderDate, assignee: "Priya",
       due: form.expectedDelivery, pay: "Unpaid", total: 0, paid: 0, progress: 0,
     };
-    setRows((r) => [o, ...r]); setCreate(false); setForm(emptyForm); setErr(""); setTab("all"); setPage(1);
+    setRows((r) => [o, ...r]); setCreate(false); setForm(emptyForm); setErr(""); setTab("all"); setPage(1); show(`Order ${o.id} created`);
   };
+
+  const bulk = (fn: (o: Row) => Row, msg: string) => { const n = sel.size; setRows((r) => r.map((o) => (sel.has(o.id) ? fn(o) : o))); setSel(new Set()); show(`${msg} (${n} orders)`); };
+  const openEdit = (o: Row) => { setEf({ priority: o.priority, assignee: o.assignee, due: o.due, size: o.size }); setEerr(""); setEditing(o); };
+  const saveEdit = () => {
+    if (!ef.due) { setEerr("Due date is required."); return; }
+    setRows((r) => r.map((x) => (x.id === editing!.id ? { ...x, ...ef } : x)));
+    show(`Order ${editing!.id} updated`); setEditing(null);
+  };
+  const moreCount = (evt !== "All Events" ? 1 : 0) + (from ? 1 : 0) + (to ? 1 : 0) + (overdueOnly ? 1 : 0);
 
   const sel2 = (k: keyof typeof emptyForm, opts: string[]) => <FilterSelect value={form[k]} onChange={(v) => setF(k, v)} options={opts} />;
 
   return (
-    <div onClick={() => menu && setMenu(null)}>
+    <div>
       <PageHeader title="Orders" subtitle="Manage and track all album orders from design to delivery.">
         <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-2">
           <CalendarDays className="size-6 text-sub" />
-          <div className="text-xs leading-tight text-sub">Last 30 Days<div className="text-sm font-semibold text-ink">{fmtDate("2026-10-01")} - {fmtDate("2026-10-30")}</div></div>
+          <div className="text-xs leading-tight text-sub">
+            <select aria-label="Date range" value={range} onChange={(e) => { setRange(e.target.value); setPage(1); show(`Showing: ${e.target.value}`); }} className="-ml-1 cursor-pointer bg-transparent text-xs text-sub outline-none">
+              {["All Time", "Last 7 Days", "Last 30 Days", "Last 90 Days"].map((r) => <option key={r}>{r}</option>)}
+            </select>
+            <div className="text-sm font-semibold text-ink">{fmtDate("2026-10-01")} - {fmtDate("2026-10-30")}</div>
+          </div>
         </div>
-        <OutlineButton icon={Filter} className="!h-11 !rounded-xl !px-4 !text-sm !font-bold">More Filters</OutlineButton>
+        <OutlineButton onClick={() => setMoreOpen(true)} icon={Filter} className="!h-11 !rounded-xl !px-4 !text-sm !font-bold">More Filters{moreCount ? ` (${moreCount})` : ""}</OutlineButton>
         <PrimaryButton onClick={() => setCreate(true)}>Create Order</PrimaryButton>
       </PageHeader>
 
@@ -139,6 +184,18 @@ export default function Orders() {
           <button onClick={reset} className="ml-auto inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
         </div>
 
+        {sel.size > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
+            <b>{sel.size} selected</b>
+            <OutlineButton onClick={() => bulk((o) => ({ ...o, hold: "On Hold" }), "Put on hold")}>Put On Hold</OutlineButton>
+            <OutlineButton onClick={() => bulk((o) => ({ ...o, hold: "Cancelled" }), "Cancelled")}>Cancel</OutlineButton>
+            <OutlineButton onClick={() => bulk((o) => ({ ...o, priority: "High" }), "Priority set to High")}>Set High priority</OutlineButton>
+            <select aria-label="Bulk assign" value={bulkAsg} onChange={(e) => { const v = e.target.value; setBulkAsg("Assign to…"); bulk((o) => ({ ...o, assignee: v }), `Assigned to ${v}`); }} className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] font-semibold">
+              <option>Assign to…</option>{ASSIGNEES.map((a) => <option key={a}>{a}</option>)}
+            </select>
+            <button onClick={() => setSel(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
+          </div>
+        )}
         <div className="mt-4 overflow-x-auto">
           <table className={tableCls}>
             <thead>
@@ -150,7 +207,7 @@ export default function Orders() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((o, i) => (
+              {pageRows.map((o) => (
                 <tr key={o.id} className={cx(trCls, sel.has(o.id) && "bg-brand-soft/60")}>
                   <Td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} /></Td>
                   <Td className="font-bold">{o.id}</Td>
@@ -161,16 +218,15 @@ export default function Orders() {
                   <Td><span className="inline-flex items-center gap-2"><Avatar name={o.assignee} size={24} />{o.assignee}</span></Td>
                   <Td className={cx("font-medium", isOverdue(o.due) && o.stage !== "delivered" ? "text-rose-600" : "")}>{fmtDate(o.due)}</Td>
                   <Td><PayPill s={o.pay} /></Td>
-                  <Td className="relative text-right">
+                  <Td className="text-right">
                     <span className="inline-flex items-center gap-2"><RowViewButton to={`/orders/${o.id}`} />
-                      <button aria-label="More" onClick={(e) => { e.stopPropagation(); setMenu(menu === o.id ? null : o.id); }} className="grid size-8 place-items-center rounded-lg hover:bg-slate-100"><MoreVertical className="size-4" /></button></span>
-                    {menu === o.id && (
-                      <div className={cx("absolute right-3 z-20 w-36 rounded-lg border border-line bg-white py-1 text-left shadow-lg", i > pageRows.length - 3 && i > 2 ? "bottom-8" : "top-10")}>
-                        {(o.hold ? ["Resume"] : ["Put On Hold", "Cancel Order"]).map((a) => (
-                          <button key={a} className="block w-full px-3 py-1.5 text-left text-[13px] hover:bg-brand-soft" onClick={() => setRows((r) => r.map((x) => x.id === o.id ? { ...x, hold: a === "Resume" ? undefined : a === "Put On Hold" ? "On Hold" : "Cancelled" } : x))}>{a}</button>
-                        ))}
-                      </div>
-                    )}
+                      <ActionMenu items={[
+                        { label: "View details", onClick: () => nav(`/orders/${o.id}`) },
+                        { label: "Edit", onClick: () => openEdit(o) },
+                        { label: "Resume", hidden: !o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: undefined } : x))); show(`${o.id} resumed`); } },
+                        { label: "Put On Hold", hidden: !!o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: "On Hold" } : x))); show(`${o.id} put on hold`); } },
+                        { label: "Cancel Order", danger: true, hidden: !!o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: "Cancelled" } : x))); show(`${o.id} cancelled`); } },
+                      ]} /></span>
                   </Td>
                 </tr>
               ))}
@@ -179,7 +235,7 @@ export default function Orders() {
           </table>
         </div>
         <Pagination page={page} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} noun="orders" />
-        {sel.size > 0 && <div className="mt-1 text-xs text-sub">{sel.size} selected · today {fmtDate(TODAY)}</div>}
+        <div className="mt-1 text-xs text-sub">{sel.size} selected · today {fmtDate(TODAY)}</div>
       </Panel>
 
       <SlideOver open={create} onClose={() => setCreate(false)} title="Create Order" width={560}
@@ -215,6 +271,24 @@ export default function Orders() {
         </div>
         <Field label="Special Instructions"><textarea rows={3} className={cx(inputCls, "h-auto py-2")} value={form.notes} onChange={(e) => setF("notes", e.target.value)} /></Field>
       </SlideOver>
+
+      <SlideOver open={moreOpen} onClose={() => setMoreOpen(false)} title="More Filters" width={380}
+        footer={<><OutlineButton onClick={() => { setEvt("All Events"); setFrom(""); setTo(""); setOverdueOnly(false); setPage(1); }}>Reset</OutlineButton><PrimaryButton icon={Filter} onClick={() => { setMoreOpen(false); setPage(1); show("Filters applied"); }}>Apply</PrimaryButton></>}>
+        <Field label="Order date from"><input type="date" className={inputCls} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="Order date to"><input type="date" className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        <Field label="Event type"><FilterSelect value={evt} onChange={setEvt} options={["All Events", ...EVENTS]} /></Field>
+        <label className="flex items-center gap-2 text-[13px] font-semibold"><input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />Overdue only</label>
+      </SlideOver>
+
+      <SlideOver open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.id ?? ""}`} width={420}
+        footer={<><OutlineButton onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Plus} onClick={saveEdit}>Save changes</PrimaryButton></>}>
+        {eerr && <div className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-600">{eerr}</div>}
+        <Field label="Priority"><FilterSelect value={ef.priority} onChange={(v) => setEf({ ...ef, priority: v as Priority })} options={PRIORITIES} /></Field>
+        <Field label="Assigned to"><FilterSelect value={ef.assignee} onChange={(v) => setEf({ ...ef, assignee: v })} options={ASSIGNEES} /></Field>
+        <Field label="Album size"><FilterSelect value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} options={ALBUM_SIZES} /></Field>
+        <Field label="Due date" required><input type="date" className={inputCls} value={ef.due} onChange={(e) => setEf({ ...ef, due: e.target.value })} /></Field>
+      </SlideOver>
+      {toast}
     </div>
   );
 }

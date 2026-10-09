@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardList, Download, FileText, FileEdit, Send, Trash2, Plus, Camera } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Download, FileText, FileEdit, Send, Trash2, Plus, Camera, MoreVertical, Pencil } from "lucide-react";
 import { FilterSelect, Field, KpiRow, Panel, PageHeader, Pagination, Pill, PrimaryButton, SearchInput, SlideOver, Td, Th, TodayChip, MoreButton, inputCls, tableCls, trCls, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { ORDERS } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
+import { downloadCsv } from "../lib/csv";
 import type { Tone } from "../lib/data";
 
 type InvStatus = "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue";
 interface Line { desc: string; qty: number; price: number }
 interface Pay { date: string; mode: string; ref: string; amount: number }
-interface Invoice { no: string; orderId: string; customer: string; event: string; date: string; due: string; lines: Line[]; gstPct: number; discount: number; status: InvStatus; payments: Pay[] }
+interface Invoice { no: string; orderId: string; customer: string; event: string; date: string; due: string; lines: Line[]; gstPct: number; discount: number; status: InvStatus; payments: Pay[]; notes?: string }
 
 const sub = (i: Invoice) => i.lines.reduce((a, l) => a + l.qty * l.price, 0) - i.discount;
 const gst = (i: Invoice) => Math.round((sub(i) * i.gstPct) / 100);
@@ -59,12 +60,15 @@ export default function Invoices() {
   const [cDisc, setCDisc] = useState("0");
   const [cLines, setCLines] = useState<Line[]>([{ desc: "Premium Wedding Album", qty: 1, price: 16000 }]);
   const [cErr, setCErr] = useState("");
+  const [editNo, setEditNo] = useState<string | null>(null);
+  const [menu, setMenu] = useState<string | null>(null);
 
   const filtered = useMemo(() => list.filter((i) => {
     if (fStatus !== "All Statuses" && i.status !== fStatus) return false;
+    if (range === "Last 7 Days" && new Date(i.date) < new Date("2026-09-26")) return false;
     const t = q.trim().toLowerCase();
     return !t || i.no.toLowerCase().includes(t) || i.orderId.toLowerCase().includes(t) || i.customer.toLowerCase().includes(t);
-  }), [list, q, fStatus]);
+  }), [list, q, fStatus, range]);
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
   const cur = list.find((i) => i.no === sel) ?? list[0]!;
   const count = (s: InvStatus) => list.filter((i) => i.status === s).length;
@@ -87,13 +91,33 @@ export default function Invoices() {
   };
   const download = () => { show("Preparing PDF - choose Save as PDF in the print dialog"); setTimeout(() => window.print(), 300); };
 
-  const openCreate = () => { setCErr(""); setCLines([{ desc: "Premium Wedding Album", qty: 1, price: 16000 }]); setCDisc("0"); setOpen(true); };
+  const openCreate = () => { setEditNo(null); setCErr(""); setCLines([{ desc: "Premium Wedding Album", qty: 1, price: 16000 }]); setCDisc("0"); setOpen(true); };
+  const openEdit = (inv: Invoice) => {
+    setEditNo(inv.no); setCOrder(inv.orderId); setCDate(inv.date); setCDue(inv.due); setCGst(String(inv.gstPct)); setCDisc(String(inv.discount));
+    setCLines(inv.lines.map((l) => ({ ...l }))); setCErr(""); setOpen(true);
+  };
+  const duplicate = (inv: Invoice) => {
+    const no = `INV-2026-${String(list.length + 1).padStart(4, "0")}`;
+    setList((l) => [{ ...inv, no, status: "Draft", payments: [], lines: inv.lines.map((x) => ({ ...x })) }, ...l]);
+    setSel(no); setPage(1); show(`Duplicated as ${no} (Draft)`);
+  };
+  const remove = (nos: string[]) => {
+    if (!window.confirm(`Delete ${nos.length} invoice(s)? This cannot be undone.`)) return;
+    setList((l) => l.filter((i) => !nos.includes(i.no)));
+    setChecked(new Set()); show(`Deleted ${nos.length} invoice(s)`);
+  };
+  const bulk = (fn: (i: Invoice) => Invoice, msg: string) => { setList((l) => l.map((i) => (checked.has(i.no) ? fn(i) : i))); show(msg); setChecked(new Set()); };
+  const exportRows = (rowsX: Invoice[]) => { downloadCsv("invoices.csv", [["Invoice", "Order", "Customer", "Date", "Due", "Total", "Paid", "Balance", "Status"], ...rowsX.map((i) => [i.no, i.orderId, i.customer, i.date, i.due, total(i), paidOf(i), total(i) - paidOf(i), i.status])]); show(`Exported ${rowsX.length} invoice(s)`); };
   const draft: Invoice = { no: "", orderId: cOrder, customer: "", event: "", date: cDate, due: cDue, lines: cLines, gstPct: Number(cGst) || 0, discount: Number(cDisc) || 0, status: "Draft", payments: [] };
   const discPct = sub({ ...draft, discount: 0 }) ? (draft.discount / sub({ ...draft, discount: 0 })) * 100 : 0;
   const create = () => {
     if (cLines.some((l) => !l.desc.trim() || l.qty <= 0 || l.price < 0)) return setCErr("Every line needs a description, quantity and price");
     if (draft.discount > sub({ ...draft, discount: 0 })) return setCErr("Discount cannot exceed sub-total");
     const o = ORDERS.find((x) => x.id === cOrder)!;
+    if (editNo) {
+      update(editNo, (i) => ({ ...i, orderId: cOrder, customer: o.customer, event: o.event, date: cDate, due: cDue, lines: cLines, gstPct: draft.gstPct, discount: draft.discount }));
+      setOpen(false); show(`Invoice ${editNo} updated`); return;
+    }
     const no = `INV-2026-${String(list.length + 1).padStart(4, "0")}`;
     setList((l) => [{ ...draft, no, customer: o.customer, event: o.event }, ...l]);
     setSel(no); setOpen(false); setPage(1);
@@ -131,6 +155,15 @@ export default function Invoices() {
             </div>
           }
         >
+          {checked.size > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-brand-soft px-4 py-2 text-[13px] font-semibold">
+              {checked.size} selected
+              <button onClick={() => bulk((i) => (i.status === "Draft" ? { ...i, status: "Sent" } : i), "Sent selected drafts")} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white">Send</button>
+              <button onClick={() => exportRows(list.filter((i) => checked.has(i.no)))} className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold">Export CSV</button>
+              <button onClick={() => remove([...checked])} className="rounded-lg border border-rose-200 bg-white px-3 py-1 text-xs font-bold text-rose-600">Delete</button>
+              <button onClick={() => setChecked(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className={tableCls}>
               <thead>
@@ -155,7 +188,13 @@ export default function Invoices() {
                       <Td>{inr(paidOf(i))}</Td>
                       <Td className={bal > 0 ? "font-semibold text-rose-600" : ""}>{inr(bal)}</Td>
                       <Td><Pill tone={TONE_OF[i.status]} dot>{i.status}</Pill></Td>
-                      <Td><button onClick={(e) => { e.stopPropagation(); setSel(i.no); }} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">View</button></Td>
+                      <Td><div className="flex items-center gap-2"><button onClick={(e) => { e.stopPropagation(); setSel(i.no); }} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">View</button>
+                        <div className="relative"><button aria-label="Row actions" onClick={(e) => { e.stopPropagation(); setMenu(menu === i.no ? null : i.no); }} onBlur={() => setTimeout(() => setMenu(null), 150)}><MoreVertical className="size-4 text-sub" /></button>
+                          {menu === i.no && (
+                            <div className="absolute right-0 top-6 z-30 w-32 rounded-xl border border-line bg-white p-1 text-left shadow-xl">
+                              {([["View", () => { setSel(i.no); show(`Showing ${i.no}`); }], ["Edit", () => openEdit(i)], ["Duplicate", () => duplicate(i)], ["Delete", () => remove([i.no])]] as [string, () => void][]).map(([l, f]) => <button key={l} onMouseDown={() => { setMenu(null); f(); }} className={cx("block w-full rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-brand-soft", l === "Delete" && "text-rose-600")}>{l}</button>)}
+                            </div>
+                          )}</div></div></Td>
                     </tr>
                   );
                 })}
@@ -176,13 +215,13 @@ export default function Invoices() {
             </div>
           }
         >
-          <InvoiceDoc inv={cur} onAddPayment={addPayment} />
+          <InvoiceDoc inv={cur} onAddPayment={addPayment} onSaveNotes={(t) => { update(cur.no, (i) => ({ ...i, notes: t })); show("Notes saved"); }} />
         </Panel>
       </div>
 
-      <SlideOver open={open} onClose={() => setOpen(false)} title="Create Invoice" width={520} footer={<>
+      <SlideOver open={open} onClose={() => setOpen(false)} title={editNo ? `Edit ${editNo}` : "Create Invoice"} width={520} footer={<>
         <button onClick={() => setOpen(false)} className="h-11 px-5 text-sm font-bold">Cancel</button>
-        <PrimaryButton icon={FileText} onClick={create}>Create Invoice</PrimaryButton>
+        <PrimaryButton icon={FileText} onClick={create}>{editNo ? "Save Changes" : "Create Invoice"}</PrimaryButton>
       </>}>
         <Field label="Order" required>
           <select className={inputCls} value={cOrder} onChange={(e) => setCOrder(e.target.value)}>
@@ -219,7 +258,9 @@ export default function Invoices() {
   );
 }
 
-function InvoiceDoc({ inv, onAddPayment }: { inv: Invoice; onAddPayment: () => void }) {
+function InvoiceDoc({ inv, onAddPayment, onSaveNotes }: { inv: Invoice; onAddPayment: () => void; onSaveNotes: (t: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
   const t = total(inv);
   const bal = t - paidOf(inv);
   return (
@@ -281,7 +322,17 @@ function InvoiceDoc({ inv, onAddPayment }: { inv: Invoice; onAddPayment: () => v
           </tbody>
         </table>
       </div>
-      <div className="rounded-xl border border-line p-4"><h3 className="text-sm font-extrabold">Notes</h3><p className="mt-1 text-sub">Thank you for choosing AlbumPro. We appreciate your business!</p></div>
+      <div className="rounded-xl border border-line p-4">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-extrabold">Notes</h3>
+          {!editing && <button onClick={() => { setDraftNote(inv.notes ?? "Thank you for choosing AlbumPro. We appreciate your business!"); setEditing(true); }} className="inline-flex items-center gap-1 text-xs font-bold text-brand print:hidden"><Pencil className="size-3" />Edit</button>}
+        </div>
+        {editing ? (
+          <div className="mt-2 space-y-2">
+            <textarea aria-label="Invoice notes" value={draftNote} onChange={(e) => setDraftNote(e.target.value)} className="h-20 w-full rounded-lg border border-line p-2 text-xs outline-none focus:border-brand" />
+            <div className="flex gap-2"><button onClick={() => { onSaveNotes(draftNote); setEditing(false); }} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white">Save</button><button onClick={() => setEditing(false)} className="rounded-lg border border-line px-3 py-1 text-xs font-bold">Cancel</button></div>
+          </div>
+        ) : <p className="mt-1 text-sub">{inv.notes ?? "Thank you for choosing AlbumPro. We appreciate your business!"}</p>}
+      </div>
     </div>
   );
 }

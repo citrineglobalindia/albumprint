@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Repeat, MinusCircle, Phone, CalendarDays, User, History } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -19,6 +19,7 @@ const FILE_TONE = { Locked: "violet", Approved: "green", Submitted: "amber", Dra
 
 export default function OrderDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const base = ORDERS.find((o) => o.id === id);
   const [workflow, setWorkflow] = useState(base?.workflow);
   const [hold, setHold] = useState(false);
@@ -26,7 +27,7 @@ export default function OrderDetail() {
   const [reason, setReason] = useState("");
   const [log, setLog] = useState<{ t: string; d: string; by: string; at: string }[]>([]);
   const [toast, show] = useToast();
-  if (!base) return <PageHeader title="Order not found" subtitle={`No order with ID ${id}.`}><Link to="/orders"><OutlineButton>Back to orders</OutlineButton></Link></PageHeader>;
+  if (!base) return <PageHeader title="Order not found" subtitle={`No order with ID ${id}.`}><OutlineButton onClick={() => nav("/orders")}>Back to orders</OutlineButton></PageHeader>;
   const o = base;
   const printingOnly = workflow === "Printing";
   const cur = STAGES.findIndex((s) => s.key === o.stage);
@@ -107,7 +108,7 @@ export default function OrderDetail() {
             ))}
             {cur >= 6 && <p className="text-xs text-sub">Final print file is locked and released to Printing (SRS ALB-FR-0120).</p>}
           </Panel>
-          <Panel title="Payment Summary" action={<Link to="/payments"><LinkAction>Payments →</LinkAction></Link>}>
+          <Panel title="Payment Summary" action={<LinkAction onClick={() => nav("/payments")}>Payments →</LinkAction>}>
             <div className="mb-3 flex items-center justify-between"><span className="text-sm text-sub">Status</span><PayPill s={o.pay} /></div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-sub">Order total</span><b>{inr(o.total)}</b></div>
