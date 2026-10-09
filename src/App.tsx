@@ -1,0 +1,43 @@
+import { Route, Routes } from "react-router-dom";
+import Shell from "./components/Shell";
+import Dashboard from "./pages/Dashboard";
+import Orders from "./pages/Orders";
+import Customers from "./pages/Customers";
+import Pipeline from "./pages/Pipeline";
+import ColourGrading from "./pages/ColourGrading";
+import Designing from "./pages/Designing";
+import Printing from "./pages/Printing";
+import QualityControl from "./pages/QualityControl";
+import Delivery from "./pages/Delivery";
+import Payments from "./pages/Payments";
+import Invoices from "./pages/Invoices";
+import Reports from "./pages/Reports";
+import Masters from "./pages/Masters";
+import UsersRoles from "./pages/UsersRoles";
+import SettingsPage from "./pages/Settings";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<Shell />}>
+        <Route index element={<Dashboard />} />
+        <Route path="orders" element={<Orders />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="pipeline" element={<Pipeline />} />
+        <Route path="colour-grading" element={<ColourGrading />} />
+        <Route path="designing" element={<Designing />} />
+        <Route path="designing/:orderId" element={<Designing />} />
+        <Route path="printing" element={<Printing />} />
+        <Route path="qc" element={<QualityControl />} />
+        <Route path="delivery" element={<Delivery />} />
+        <Route path="payments" element={<Payments />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="masters" element={<Masters />} />
+        <Route path="users" element={<UsersRoles />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="*" element={<div className="p-10 text-sub">Page not found</div>} />
+      </Route>
+    </Routes>
+  );
+}
