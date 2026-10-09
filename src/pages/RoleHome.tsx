@@ -1,4 +1,6 @@
 import { useNavigate } from "react-router-dom";
+import { useNewOrder } from "../components/NewOrderWizard";
+import { useStore } from "../lib/store";
 import {
   FilePlus2, FolderOpen, IndianRupee, PackageCheck, CalendarClock, Palette, PlayCircle, Hourglass, Undo2, CheckCircle2, AlarmClock,
   LayoutTemplate, Send, MessageSquare, Lock, Printer, Cog, BookOpen, Boxes, Truck, ShieldCheck, XCircle, Wrench, Timer, FileText, Receipt, RefreshCcw, Wallet, ArrowRight,
@@ -21,7 +23,7 @@ const due = (o: Order) => isOverdue(o.due) && o.stage !== "delivered";
 // KPI sets follow SRS widgets: §4.1 Reception, §8.1 Colour, §9.1 Designer, §12.1 Printing, §13.1 QC, §15 Accounts.
 const CFG: Partial<Record<RoleKey, Cfg>> = {
   reception: {
-    title: "Reception Desk", subtitle: "Register customers, create orders and track what is waiting on you.", cta: { label: "New Order", to: "/orders" },
+    title: "Reception Desk", subtitle: "Register customers, create orders and track what is waiting on you.", cta: { label: "New Order", to: "new-order" },
     kpis: [
       { label: "New Orders Today", icon: FilePlus2, tone: "blue", fn: (o) => today(o.pendingAt) || o.stage === "new_order" },
       { label: "Files Pending", icon: FolderOpen, tone: "orange", fn: st("new_order", "files_received") },
@@ -98,7 +100,9 @@ const CFG: Partial<Record<RoleKey, Cfg>> = {
 
 export default function RoleHome() {
   const { role, user } = useAuth();
+  useStore();
   const nav = useNavigate();
+  const newOrder = useNewOrder();
   const cfg = CFG[role!]!;
   const items: Kpi[] = cfg.kpis.map((k) => {
     const n = ORDERS.reduce((a, o) => { const r = k.fn(o); return a + (typeof r === "number" ? 0 : r ? 1 : 0); }, 0);
@@ -111,7 +115,7 @@ export default function RoleHome() {
     <>
       <PageHeader title={cfg.title} subtitle={`${cfg.subtitle} Signed in as ${user} · ${ROLES[role!].dept}.`}>
         <TodayChip />
-        {cfg.cta && <PrimaryButton icon={ArrowRight} onClick={() => nav(cfg.cta!.to)}>{cfg.cta.label}</PrimaryButton>}
+        {cfg.cta && <PrimaryButton icon={ArrowRight} onClick={() => (cfg.cta!.to === "new-order" ? newOrder.open() : nav(cfg.cta!.to))}>{cfg.cta.label}</PrimaryButton>}
       </PageHeader>
       <KpiRow items={items} />
       <Panel title={cfg.queueTitle} subtitle="Orders waiting on your department" action={<LinkAction onClick={() => nav(cfg.link)}>Open module →</LinkAction>} bodyClassName="px-2 pb-2">

@@ -53,6 +53,7 @@ export interface Customer {
   id: string; name: string; studio: string; mobile: string; email: string; city: string; state: string;
   type: "VIP" | "Regular" | "New"; status: "Active" | "Inactive"; activeOrders: number; lifetime: number;
   lastOrder: string; since: string; dues: number; tags: string[];
+  gstin?: string; address?: string; pin?: string; whatsapp?: string; notes?: string;
 }
 
 const customerSeed: [string, string, string, string, Customer["type"], number, number, string][] = [
@@ -77,7 +78,7 @@ export const CUSTOMERS: Customer[] = customerSeed.map(([name, studio, city, emai
 export interface Order {
   id: string; customer: string; mobile: string; event: string; workflow: WorkflowType; size: string; pages: number;
   stage: StageKey; priority: Priority; pendingAt: string; assignee: string; due: string; pay: PayStatus;
-  total: number; paid: number; progress: number;
+  total: number; paid: number; progress: number; hold?: "On Hold" | "Cancelled";
 }
 
 // First 12 mirror the screenshots; the remainder are generated deterministically.

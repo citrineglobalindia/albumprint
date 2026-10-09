@@ -18,3 +18,10 @@ body { background: var(--color-page); color: var(--color-ink); font-family: var(
 button { cursor: pointer; }
 .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-thin::-webkit-scrollbar-thumb { background: #cfd4ea; border-radius: 99px; }
+
+@media print {
+  .no-print, .app-sidebar, .app-topbar { display: none !important; }
+  html, body, #root { height: auto !important; background: #fff !important; }
+  .app-main { overflow: visible !important; padding: 0 !important; }
+  section { break-inside: avoid; box-shadow: none !important; }
+}

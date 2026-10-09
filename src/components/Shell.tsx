@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
-  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, CheckCheck, Keyboard,
+  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
 import { ORDERS, CUSTOMERS } from "../lib/data";
 import { useAuth, ROLES } from "../lib/auth";
 import { notifStore, useNotifs } from "../lib/notifStore";
+import { useNewOrder } from "./NewOrderWizard";
 
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -33,7 +34,7 @@ function Sidebar() {
   const { role } = useAuth();
   const items = NAV.filter((n) => ROLES[role!].nav.includes(n.to));
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col bg-side px-3 py-5 text-white">
+    <aside className="app-sidebar no-print flex w-[220px] shrink-0 flex-col bg-side px-3 py-5 text-white">
       <div className="mb-6 flex items-center gap-2.5 px-3">
         <span className="grid size-9 place-items-center rounded-xl bg-brand"><Aperture className="size-5" /></span>
         <span className="text-xl font-extrabold tracking-tight">AlbumPro</span>
@@ -50,51 +51,98 @@ function Sidebar() {
   );
 }
 
-function SearchBox() {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [hi, setHi] = useState(0);
+const RECENT_KEY = "albumpro.recent";
+const readRecent = (): string[] => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"); } catch { return []; } };
+const writeRecent = (q: string) => { const t = q.trim(); if (!t) return; try { localStorage.setItem(RECENT_KEY, JSON.stringify([t, ...readRecent().filter((x) => x !== t)].slice(0, 5))); } catch { /* ignore */ } };
+
+interface Cmd { key: string; group: "Actions" | "Pages" | "Orders" | "Customers"; label: string; sub?: string; icon: ComponentType<{ className?: string }>; run: () => void }
+
+/** Global ⌘K / Ctrl+K command palette: actions, pages, orders and customers with keyboard navigation. */
+function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const nav = useNavigate();
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); const el = document.getElementById("global-search") as HTMLInputElement | null; el?.focus(); el?.select(); setOpen(true); }
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, []);
+  const { role } = useAuth();
+  const newOrder = useNewOrder();
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
+  const [recent, setRecent] = useState<string[]>([]);
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) { setQ(""); setHi(0); setRecent(readRecent()); } }, [open]);
+  const allowed = role ? ROLES[role].nav : [];
   const term = q.trim().toLowerCase();
-  const orders = term ? ORDERS.filter((o) => o.id.toLowerCase().includes(term) || o.customer.toLowerCase().includes(term) || o.mobile.includes(term) || o.event.toLowerCase().includes(term)).slice(0, 5) : [];
-  const customers = term ? CUSTOMERS.filter((c) => c.name.toLowerCase().includes(term) || c.studio.toLowerCase().includes(term) || c.mobile.includes(term)).slice(0, 3) : [];
-  const results = [
-    ...orders.map((o) => ({ key: o.id, to: `/orders/${o.id}`, a: o.id, b: `${o.customer} · ${o.event}` })),
-    ...customers.map((c) => ({ key: c.id, to: "/customers", a: c.name, b: `${c.studio} · ${c.mobile}` })),
-  ];
-  const go = (to: string) => { setOpen(false); setQ(""); setHi(0); (document.getElementById("global-search") as HTMLInputElement | null)?.blur(); nav(to); };
+  const items = useMemo<Cmd[]>(() => {
+    const out: Cmd[] = [];
+    const can = (p: string) => allowed.includes(p);
+    const actions: Cmd[] = [
+      ...(can("/orders") ? [{ key: "a-order", group: "Actions" as const, label: "New Order", sub: "Create an album order", icon: Plus, run: () => newOrder.open() }] : []),
+      ...(can("/customers") ? [{ key: "a-cust", group: "Actions" as const, label: "Add Customer", sub: "Register a studio / customer", icon: UserPlus, run: () => nav("/customers?new=1") }] : []),
+      ...(can("/payments") ? [{ key: "a-pay", group: "Actions" as const, label: "Record Payment", sub: "Receive an advance or balance", icon: Wallet, run: () => nav("/payments?new=1") }] : []),
+      ...(can("/users") ? [{ key: "a-user", group: "Actions" as const, label: "Add User", sub: "Create a staff account", icon: UserCog, run: () => nav("/users?new=1") }] : []),
+      ...(can("/reports") ? [{ key: "a-rep", group: "Actions" as const, label: "Open Reports", sub: "Charts, drill-down and exports", icon: BarChart3, run: () => nav("/reports") }] : []),
+    ];
+    out.push(...actions.filter((a) => !term || (a.label + " " + a.sub).toLowerCase().includes(term)));
+    out.push(...NAV.filter((n) => can(n.to) && (!term || n.label.toLowerCase().includes(term))).map((n) => ({ key: "p-" + n.to, group: "Pages" as const, label: n.label, sub: n.to, icon: n.icon as ComponentType<{ className?: string }>, run: () => nav(n.to) })));
+    if (term && can("/orders")) out.push(...ORDERS.filter((o) => o.id.toLowerCase().includes(term) || o.customer.toLowerCase().includes(term) || o.mobile.includes(term) || o.event.toLowerCase().includes(term)).slice(0, 5).map((o) => ({ key: "o-" + o.id, group: "Orders" as const, label: o.id, sub: `${o.customer} · ${o.event}`, icon: ClipboardList, run: () => nav(`/orders/${o.id}`) })));
+    if (term && can("/customers")) out.push(...CUSTOMERS.filter((c) => c.name.toLowerCase().includes(term) || c.studio.toLowerCase().includes(term) || c.mobile.includes(term)).slice(0, 4).map((c) => ({ key: "c-" + c.id, group: "Customers" as const, label: c.name, sub: `${c.studio} · ${c.mobile}`, icon: Users, run: () => nav("/customers") })));
+    return out;
+  }, [term, allowed, nav, newOrder]);
+  useEffect(() => { setHi(0); }, [term]);
+  useEffect(() => { listRef.current?.querySelector<HTMLElement>(`[data-idx="${hi}"]`)?.scrollIntoView({ block: "nearest" }); }, [hi]);
+  if (!open) return null;
+  const run = (c: Cmd) => { writeRecent(q); onClose(); c.run(); };
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { setOpen(false); setQ(""); setHi(0); (e.target as HTMLInputElement).blur(); }
-    else if (e.key === "Enter") { const r = results[hi] ?? results[0]; if (r) { e.preventDefault(); go(r.to); } }
-    else if (e.key === "ArrowDown" && results.length) { e.preventDefault(); setHi((hi + 1) % results.length); }
-    else if (e.key === "ArrowUp" && results.length) { e.preventDefault(); setHi((hi - 1 + results.length) % results.length); }
+    if (e.key === "Escape") { e.preventDefault(); onClose(); }
+    else if (e.key === "ArrowDown" && items.length) { e.preventDefault(); setHi((hi + 1) % items.length); }
+    else if (e.key === "ArrowUp" && items.length) { e.preventDefault(); setHi((hi - 1 + items.length) % items.length); }
+    else if (e.key === "Enter") { const c = items[hi]; if (c) { e.preventDefault(); run(c); } }
   };
+  const groups = (["Actions", "Pages", "Orders", "Customers"] as const).map((g) => ({ g, rows: items.map((c, i) => ({ c, i })).filter(({ c }) => c.group === g) })).filter((x) => x.rows.length);
   return (
-    <div className="relative w-full max-w-[520px]">
-      <label className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-white px-3.5">
-        <Search className="size-4 text-sub" />
-        <input id="global-search" value={q} onChange={(e) => { setQ(e.target.value); setHi(0); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey} placeholder="Search orders, customers, mobile number..." className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
-        <kbd className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">⌘ K</kbd>
-      </label>
-      {open && term && (
-        <div className="absolute left-0 right-0 top-12 z-40 rounded-xl border border-line bg-white p-2 shadow-xl">
-          {results.length === 0 && <div className="px-3 py-2 text-sm text-sub">No results</div>}
-          {results.map((r, i) => <button key={r.key} onMouseDown={() => go(r.to)} onMouseEnter={() => setHi(i)} className={cx("flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm", i === hi ? "bg-brand-soft" : "hover:bg-brand-soft")}><b>{r.a}</b><span className="text-sub">{r.b}</span></button>)}
-          {results.length > 0 && <div className="px-3 pb-1 pt-2 text-[11px] text-sub">Enter to open · ↑↓ to move · Esc to close</div>}
+    <div className="no-print fixed inset-0 z-[70] flex items-start justify-center bg-ink/40 p-4 pt-[12vh]" onMouseDown={onClose}>
+      <div role="dialog" aria-label="Command palette" className="w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-white shadow-2xl" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKey}>
+        <label className="flex h-14 items-center gap-3 border-b border-line px-4">
+          <Search className="size-5 text-sub" />
+          <input id="palette-input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type a command, page, order or customer…" className="w-full bg-transparent text-[15px] outline-none placeholder:text-slate-400" />
+          <kbd className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">Esc</kbd>
+        </label>
+        <div ref={listRef} className="scroll-thin max-h-[52vh] overflow-y-auto p-2">
+          {!term && recent.length > 0 && (
+            <div className="mb-1">
+              <div className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-sub">Recent searches</div>
+              <div className="flex flex-wrap gap-1.5 px-3 pb-2">{recent.map((r) => <button key={r} onClick={() => setQ(r)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold hover:bg-brand-soft"><Clock className="size-3 text-sub" />{r}</button>)}</div>
+            </div>
+          )}
+          {groups.map(({ g, rows }) => (
+            <div key={g} role="group" aria-label={g}>
+              <div className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-sub">{g}</div>
+              {rows.map(({ c, i }) => (
+                <button key={c.key} data-idx={i} role="option" aria-selected={i === hi} onMouseMove={() => i !== hi && setHi(i)} onClick={() => run(c)} className={cx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm", i === hi ? "bg-brand-soft text-brand" : "hover:bg-slate-50")}>
+                  <c.icon className="size-4 shrink-0" /><b className="font-semibold">{c.label}</b><span className="truncate text-xs text-sub">{c.sub}</span>
+                  {i === hi && <CornerDownLeft className="ml-auto size-3.5 shrink-0" />}
+                </button>
+              ))}
+            </div>
+          ))}
+          {items.length === 0 && <div className="px-3 py-8 text-center text-sm text-sub">No results for “{q}”</div>}
         </div>
-      )}
+        <div className="flex items-center gap-4 border-t border-line bg-slate-50 px-4 py-2 text-[11px] text-sub"><span>↑↓ navigate</span><span>Enter run</span><span>Esc close</span><span className="ml-auto">Press ? for all shortcuts</span></div>
+      </div>
     </div>
   );
 }
 
-function Topbar() {
+function SearchBox({ openPalette }: { openPalette: () => void }) {
+  return (
+    <div className="relative w-full max-w-[520px]">
+      <label className="flex h-11 cursor-pointer items-center gap-2.5 rounded-xl border border-line bg-white px-3.5">
+        <Search className="size-4 text-sub" />
+        <input id="global-search" readOnly onFocus={(e) => { e.currentTarget.blur(); openPalette(); }} onClick={openPalette} placeholder="Search orders, customers, mobile number..." className="w-full cursor-pointer bg-transparent text-sm outline-none placeholder:text-slate-400" />
+        <kbd className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-sub">⌘ K</kbd>
+      </label>
+    </div>
+  );
+}
+
+function Topbar({ openPalette }: { openPalette: () => void }) {
   const { role, user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [bell, setBell] = useState(false);
@@ -102,6 +150,7 @@ function Topbar() {
   const nav = useNavigate();
   const loc = useLocation();
   const notifs = useNotifs();
+  const newOrder = useNewOrder();
   const unread = notifs.filter((n) => !n.read).length;
   useEffect(() => { setBell(false); setHelp(false); }, [loc.pathname]);
   useEffect(() => {
@@ -109,14 +158,15 @@ function Topbar() {
       const t = e.target as HTMLElement | null;
       const typing = !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
       if (e.key === "Escape") { setBell(false); setHelp(false); setOpen(false); }
+      else if (e.key === "n" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector("[role=dialog]")) { e.preventDefault(); newOrder.open(); }
       else if (e.key === "?" && !typing) { e.preventDefault(); setHelp((x) => !x); setBell(false); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [newOrder]);
   return (
-    <header className="flex items-center justify-between gap-4 px-7 pt-5">
-      <SearchBox />
+    <header className="app-topbar no-print flex items-center justify-between gap-4 px-7 pt-5">
+      <SearchBox openPalette={openPalette} />
       <div className="flex items-center gap-5">
         <div className="relative">
           <button onClick={() => { setBell(!bell); setHelp(false); }} className="relative text-ink" aria-label="Notifications" aria-expanded={bell}>
@@ -150,10 +200,10 @@ function Topbar() {
           {help && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setHelp(false)} />
-              <div role="dialog" aria-label="Help and shortcuts" className="absolute right-0 top-9 z-40 w-72 rounded-xl border border-line bg-white p-4 text-[13px] shadow-xl">
+              <div role="dialog" aria-label="Help and shortcuts" className="absolute right-0 top-9 z-40 w-80 rounded-xl border border-line bg-white p-4 text-[13px] shadow-xl">
                 <div className="mb-2 flex items-center gap-2 font-extrabold"><Keyboard className="size-4 text-brand" />Keyboard shortcuts</div>
                 <ul className="space-y-2">
-                  {[["⌘/Ctrl + K", "Focus global search"], ["Enter", "Open first search result"], ["↑ ↓", "Move through results"], ["Esc", "Close search, menus and popovers"], ["?", "Toggle this help"]].map(([k, d]) => <li key={k} className="flex items-center justify-between gap-3"><span className="text-sub">{d}</span><kbd className="whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold">{k}</kbd></li>)}
+                  {[["⌘/Ctrl + K", "Command palette"], ["↑ ↓ / Enter", "Move / run in palette"], ["n", "New order"], ["g d", "Go to Dashboard"], ["g o", "Go to Orders"], ["g c", "Go to Customers"], ["g p", "Go to Payments"], ["g r", "Go to Reports"], ["Esc", "Close palette, menus, popovers"], ["?", "Toggle this help"]].map(([k, d]) => <li key={k} className="flex items-center justify-between gap-3"><span className="text-sub">{d}</span><kbd className="whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold">{k}</kbd></li>)}
                 </ul>
                 <div className="mt-3 border-t border-line pt-3">
                   <a href="mailto:support@albumpro.com?subject=AlbumPro%20help" className="font-bold text-brand hover:underline">Contact support</a>
@@ -182,14 +232,52 @@ function Topbar() {
   );
 }
 
+const GO: Record<string, string> = { d: "/", o: "/orders", c: "/customers", p: "/payments", r: "/reports", i: "/invoices", u: "/users", s: "/settings", n: "/notifications" };
+
+function titleFor(path: string) {
+  if (path.startsWith("/orders/")) return `Order ${path.split("/")[2]}`;
+  if (path.startsWith("/designing/")) return `Designing ${path.split("/")[2]}`;
+  return NAV.find((n) => (n.to === "/" ? path === "/" : path === n.to || path.startsWith(n.to + "/")))?.label ?? "AlbumPro";
+}
+
 export default function Shell() {
+  const [palette, setPalette] = useState(false);
+  const { role } = useAuth();
+  const nav = useNavigate();
+  const loc = useLocation();
+  const newOrder = useNewOrder();
+  const pending = useRef<number | undefined>(undefined);
+  const gMode = useRef(false);
+  useEffect(() => { document.title = `${titleFor(loc.pathname)} · AlbumPro`; }, [loc.pathname]);
+  useEffect(() => {
+    const allowed = role ? ROLES[role].nav : [];
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((x) => !x); return; }
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (gMode.current) {
+        gMode.current = false; window.clearTimeout(pending.current);
+        const to = GO[k];
+        if (to && allowed.includes(to)) { e.preventDefault(); nav(to); }
+        return;
+      }
+      if (palette) return;
+      if (k === "g") { gMode.current = true; pending.current = window.setTimeout(() => { gMode.current = false; }, 1200); }
+      else if (k === "n" && allowed.includes("/orders")) { e.preventDefault(); newOrder.open(); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [role, nav, newOrder, palette]);
   return (
     <div className="flex h-full">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="scroll-thin flex-1 overflow-y-auto px-7 pb-8 pt-5"><Outlet /></main>
+        <Topbar openPalette={() => setPalette(true)} />
+        <main className="app-main scroll-thin flex-1 overflow-y-auto px-7 pb-8 pt-5"><Outlet /></main>
       </div>
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
     </div>
   );
 }

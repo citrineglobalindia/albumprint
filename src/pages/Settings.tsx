@@ -1,17 +1,20 @@
-import { useMemo, useState } from "react";
-import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye, Search, Undo2, GripVertical, ArrowUp, ArrowDown, MonitorSmartphone, Check, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { Field, FilterSelect, Panel, Pill, PageHeader, SearchInput, SlideOver, Td, Th, Toggle, inputCls, tableCls, trCls, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
+import { STAGES } from "../lib/data";
+import { TODAY } from "../lib/format";
 
 type Val = string | boolean;
 type Fld =
   | { k: string; l: string; t: "text" | "number" | "password" | "textarea"; hint?: string }
   | { k: string; l: string; t: "select"; o: string[]; hint?: string }
+  | { k: string; l: string; t: "slider"; min: number; max: number; step?: number; unit: string; zero?: string; hint?: string }
   | { k: string; l: string; t: "toggle"; hint: string };
 interface Group { title: string; desc?: string; cols?: 1 | 2; fields: Fld[] }
-interface SectionDef { key: string; label: string; icon: ComponentType<{ className?: string }>; title: string; desc: string; groups?: Group[] }
+interface SectionDef { key: string; label: string; icon: ComponentType<{ className?: string }>; title: string; desc: string; groups?: Group[]; keywords?: string }
 
 const SECTIONS: SectionDef[] = [
   { key: "general", label: "General", icon: Cog, title: "General Settings", desc: "Base information and system-wide configuration" },
@@ -20,7 +23,7 @@ const SECTIONS: SectionDef[] = [
       { k: "legal", l: "Legal Name", t: "text" }, { k: "gstin", l: "GSTIN", t: "text", hint: "15-character GSTIN, format validated" },
       { k: "pan", l: "PAN", t: "text" }, { k: "state", l: "State of Supply", t: "select", o: ["Karnataka", "Telangana", "Maharashtra", "Tamil Nadu", "Delhi"] },
       { k: "caddr", l: "Registered Address", t: "textarea" }] }] },
-  { key: "workflow", label: "Workflow Settings", icon: Workflow, title: "Workflow Settings", desc: "Controls how orders move through the production route", groups: [
+  { key: "workflow", label: "Workflow Settings", icon: Workflow, title: "Workflow Settings", desc: "Controls how orders move through the production route", keywords: "stages sla hours order of stages enable disable", groups: [
     { title: "Approvals", desc: "Admin approval gates in the Design + Printing route", fields: [
       { k: "wf_cg", l: "", t: "toggle", hint: "Require Admin approval after Colour Grading" },
       { k: "wf_design", l: "", t: "toggle", hint: "Require Admin design review before client proof" },
@@ -29,7 +32,7 @@ const SECTIONS: SectionDef[] = [
     { title: "Turnaround", cols: 2, fields: [
       { k: "tat_cg", l: "Colour Grading TAT (days)", t: "number" }, { k: "tat_design", l: "Designing TAT (days)", t: "number" },
       { k: "tat_print", l: "Printing TAT (days)", t: "number" }, { k: "disc_limit", l: "Discount approval threshold (%)", t: "number" }] }] },
-  { key: "notifications", label: "Notifications", icon: Bell, title: "Notifications", desc: "Choose which events notify staff and clients", groups: [
+  { key: "notifications", label: "Notifications", icon: Bell, title: "Notifications", desc: "Choose which events notify staff and clients", keywords: "matrix channel whatsapp email sms in-app events", groups: [
     { title: "Staff Alerts", fields: [
       { k: "n_assign", l: "", t: "toggle", hint: "Notify assignee when an order is assigned" },
       { k: "n_overdue", l: "", t: "toggle", hint: "Alert Admin when an order passes its due date" },
@@ -60,23 +63,33 @@ const SECTIONS: SectionDef[] = [
     { title: "Numbering & Tax", cols: 2, fields: [
       { k: "inv_prefix", l: "Invoice Prefix", t: "text" }, { k: "inv_next", l: "Next Invoice Number", t: "number" },
       { k: "inv_gst", l: "Default GST %", t: "select", o: ["0%", "5%", "12%", "18%", "28%"] }, { k: "inv_terms", l: "Payment Terms (days)", t: "number" },
-      { k: "inv_igst", l: "", t: "toggle", hint: "Use IGST for inter-state customers" }, { k: "inv_round", l: "", t: "toggle", hint: "Round off invoice total" }] }] },
+      { k: "inv_igst", l: "", t: "toggle", hint: "Use IGST for inter-state customers" }, { k: "inv_round", l: "", t: "toggle", hint: "Round off invoice total" }] },
+    { title: "Footer & Terms", fields: [{ k: "inv_footer", l: "Invoice footer", t: "textarea" }, { k: "inv_tc", l: "Terms & conditions", t: "textarea" }] }], keywords: "preview prefix footer terms gst" },
   { key: "payment", label: "Payment Settings", icon: CreditCard, title: "Payment Settings", desc: "Accepted modes, advances, dues and refunds", groups: [
     { title: "Modes", fields: [
       { k: "pm_upi", l: "", t: "toggle", hint: "UPI" }, { k: "pm_cash", l: "", t: "toggle", hint: "Cash" }, { k: "pm_bank", l: "", t: "toggle", hint: "Bank Transfer" }, { k: "pm_online", l: "", t: "toggle", hint: "Online payment gateway" }] },
     { title: "Rules", cols: 2, fields: [
       { k: "adv_pct", l: "Minimum advance (%)", t: "number" }, { k: "upi_id", l: "UPI ID", t: "text" },
       { k: "rcp_prefix", l: "Receipt Prefix", t: "text" }, { k: "refund_appr", l: "Refunds approved by", t: "select", o: ["Admin", "Admin + Accounts"] }] }] },
-  { key: "security", label: "Security", icon: ShieldCheck, title: "Security", desc: "Authentication, MFA, sessions and password policy (SRS section 2)", groups: [
+  { key: "security", label: "Security", icon: ShieldCheck, title: "Security", desc: "Authentication, MFA, sessions and password policy (SRS section 2)", keywords: "password policy sessions timeout lockout active sessions revoke", groups: [
     { title: "Authentication", fields: [
       { k: "mfa", l: "", t: "toggle", hint: "Require MFA for all users" }, { k: "mfa_admin", l: "", t: "toggle", hint: "Step-up OTP for exports, overrides and permission changes" },
       { k: "remember", l: "", t: "toggle", hint: "Allow Remember Device (trusted device policy)" }, { k: "captcha", l: "", t: "toggle", hint: "Risk-based CAPTCHA on login" }] },
     { title: "Sessions & Password Policy", cols: 2, fields: [
-      { k: "timeout", l: "Session timeout (minutes)", t: "number" }, { k: "max_fail", l: "Lock account after failed attempts", t: "number" },
-      { k: "pw_min", l: "Minimum password length", t: "number" }, { k: "pw_exp", l: "Password expiry (days)", t: "number" },
+      { k: "timeout", l: "Session timeout", t: "select", o: ["15 minutes", "30 minutes", "1 hour", "2 hours", "4 hours"] }, { k: "max_fail", l: "Lock account after failed attempts", t: "slider", min: 3, max: 10, unit: "attempts" },
+      { k: "pw_min", l: "Minimum password length", t: "slider", min: 6, max: 20, unit: "characters" }, { k: "pw_exp", l: "Password expiry", t: "slider", min: 0, max: 365, step: 15, unit: "days", zero: "Never" },
       { k: "pw_cx", l: "", t: "toggle", hint: "Require upper, lower, number and symbol" }, { k: "pw_hist", l: "", t: "toggle", hint: "Block reuse of last 5 passwords" }] }] },
   { key: "audit", label: "Activity Log", icon: History, title: "Activity Log", desc: "Audit trail of sensitive actions" },
 ];
+
+interface StageCfg { key: string; enabled: boolean; sla: number }
+const SLA_DEFAULT: Record<string, number> = { new_order: 2, files_received: 4, colour_grading: 24, admin_approval: 8, designing: 72, client_review: 48, final_approval: 8, printing: 48, qc: 8, ready_for_delivery: 24, delivered: 4 };
+const LOCKED_STAGES = ["new_order", "delivered"];
+const DEFAULT_STAGES: StageCfg[] = STAGES.map((s) => ({ key: s.key, enabled: true, sla: SLA_DEFAULT[s.key] ?? 24 }));
+const EVENTS = ["Order Created", "Design Submitted", "Proof Ready", "Correction Received", "QC Failed", "Payment Due", "Dispatched", "Delivered"];
+const CHANNELS = ["WhatsApp", "Email", "SMS", "In-app"];
+const DEFAULT_MATRIX: Record<string, string[]> = Object.fromEntries(EVENTS.map((e, i) => [e, ["In-app", ...(i % 2 === 0 ? ["WhatsApp"] : []), ...(i < 5 ? ["Email"] : []), ...(e === "Payment Due" ? ["SMS"] : [])]]));
+const parse = <T,>(s: string | boolean | undefined, d: T): T => { try { return JSON.parse(String(s)) as T; } catch { return d; } };
 
 const INIT: Record<string, Val> = {
   name: "Priya's Memories Photography", website: "www.priyasmemories.com", phone: "+91 98765 43210", email: "info@priyasmemories.com",
@@ -89,9 +102,10 @@ const INIT: Record<string, Val> = {
   wa_num: "+91 98765 43210", wa_id: "", wa_token: "", wa_tpl: "order_update", wa_on: false,
   st_prov: "Cloud (S3)", st_max: "50", st_ret: "12", st_types: "JPG, PNG, PSD, PDF, TIFF", st_backup: true,
   tpl_inv: "Modern", tpl_rcp: "A5", tpl_foot: "Thank you for choosing us.", tpl_terms: "Advance is non-refundable once design work starts.",
-  inv_prefix: "INV-2026-", inv_next: "19", inv_gst: "18%", inv_terms: "9", inv_igst: true, inv_round: false,
+  inv_prefix: "INV-2026-", inv_next: "19", inv_gst: "18%", inv_terms: "9", inv_igst: true, inv_round: false, inv_footer: "Thank you for choosing us. Payment due within the terms above.", inv_tc: "Advance is non-refundable once design work starts. Goods once delivered are not returnable.",
+  wf_stages: JSON.stringify(DEFAULT_STAGES), notif_matrix: JSON.stringify(DEFAULT_MATRIX),
   pm_upi: true, pm_cash: true, pm_bank: true, pm_online: false, adv_pct: "50", upi_id: "priya@upi", rcp_prefix: "RCP", refund_appr: "Admin",
-  mfa: true, mfa_admin: true, remember: true, captcha: true, timeout: "30", max_fail: "5", pw_min: "8", pw_exp: "90", pw_cx: true, pw_hist: true,
+  mfa: true, mfa_admin: true, remember: true, captcha: true, timeout: "30 minutes", max_fail: "5", pw_min: "8", pw_exp: "90", pw_cx: true, pw_hist: true,
 };
 
 const LOG: [string, string, string, string][] = [
@@ -110,7 +124,10 @@ const STORE = "albumpro.settings";
 const ERR = "mt-1 block text-xs font-semibold text-rose-600";
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const load = (): Record<string, Val> => {
-  try { const raw = localStorage.getItem(STORE); if (raw) return { ...INIT, ...JSON.parse(raw) }; } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (raw) { const m = { ...INIT, ...JSON.parse(raw) } as Record<string, Val>; if (/^\d+$/.test(String(m.timeout))) m.timeout = `${m.timeout} minutes`; return m; }
+  } catch { /* ignore */ }
   return INIT;
 };
 type Errs = Record<string, string>;
@@ -125,37 +142,179 @@ const validate = (v: Record<string, Val>): Errs => {
   if (s("from_email") && !EMAIL_RE.test(s("from_email"))) e.from_email = "Enter a valid email address";
   if (s("smtp_user") && !EMAIL_RE.test(s("smtp_user"))) e.smtp_user = "Enter a valid email address";
   if (Number(s("pw_min")) < 6 && s("pw_min")) e.pw_min = "Minimum length cannot be below 6";
+  if (parse<StageCfg[]>(v.wf_stages, []).some((x) => x.enabled && !(Number.isInteger(x.sla) && x.sla >= 1))) e.wf_stages = "Every enabled stage needs an SLA of at least 1 hour";
+  if (!s("inv_prefix")) e.inv_prefix = "Invoice prefix is required";
   if (s("adv_pct") && !(Number(s("adv_pct")) >= 0 && Number(s("adv_pct")) <= 100)) e.adv_pct = "Enter a percentage between 0 and 100";
   if (s("disc_limit") && !(Number(s("disc_limit")) >= 0 && Number(s("disc_limit")) <= 100)) e.disc_limit = "Enter a percentage between 0 and 100";
   return e;
 };
-const FIELD_SEC: Record<string, string> = { name: "general", email: "general", gstin: "company", pan: "company", disc_limit: "workflow", smtp_port: "email", smtp_user: "email", from_email: "email", adv_pct: "payment", pw_min: "security" };
+const GENERAL_KEYS = ["name", "website", "phone", "email", "address", "currency", "tax", "prefix", "nextNo", "autoAssign", "clientLink", "deliveryNoPay", "notify", "logo"];
+const KEY_SEC: Record<string, string> = Object.fromEntries([
+  ...GENERAL_KEYS.map((k) => [k, "general"]),
+  ...SECTIONS.flatMap((x) => (x.groups ?? []).flatMap((g) => g.fields.map((f) => [f.k, x.key]))),
+  ["wf_stages", "workflow"], ["notif_matrix", "notifications"],
+]);
+const matchSection = (x: SectionDef, term: string) => {
+  const hay = [x.label, x.title, x.desc, x.keywords ?? "", ...(x.groups ?? []).flatMap((g) => [g.title, g.desc ?? "", ...g.fields.flatMap((f) => [f.l, "hint" in f ? f.hint ?? "" : ""])]), x.key === "general" ? "company name website phone logo currency tax prefix order number behaviour" : ""].join(" ").toLowerCase();
+  return term.split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+};
 
-const TEMPLATE_PREVIEW = [["Album Premium 12x36", "1", "₹8,500"], ["Extra pages (10)", "1", "₹1,200"], ["Box - Premium", "1", "₹1,500"]];
+const LINES: [string, number][] = [["Album Premium 12x36", 8500], ["Extra pages (10)", 1200], ["Box - Premium", 1500]];
+const money = (n: number) => "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+/** Live invoice sample: re-renders as prefix / numbering / GST / terms / footer change. */
+function InvoicePreview({ v, receipt }: { v: Record<string, Val>; receipt?: boolean }) {
+  const s = (k: string) => String(v[k] ?? "");
+  const rate = parseFloat(s("inv_gst")) / 100 || 0;
+  const sub = LINES.reduce((a, [, p]) => a + p, 0);
+  const gst = Math.round(sub * rate * 100) / 100;
+  const raw = sub + gst, total = v.inv_round ? Math.round(raw) : raw, roundOff = total - raw;
+  const due = new Date(TODAY); due.setDate(due.getDate() + (Number(s("inv_terms")) || 0));
+  const no = receipt ? `${s("rcp_prefix")}-0042` : `${s("inv_prefix")}${s("inv_next").padStart(4, "0")}`;
+  return (
+    <div data-testid="invoice-preview" className="rounded-xl border border-line bg-white p-5 text-[13px] shadow-sm">
+      <div className="flex items-start justify-between gap-3"><div><div className="text-base font-extrabold">{s("name")}</div><div className="whitespace-pre-line text-xs text-sub">{s("address")}</div><div className="text-xs text-sub">GSTIN {s("gstin")}</div></div><b className="text-brand">{receipt ? "PAYMENT RECEIPT" : "TAX INVOICE"}</b></div>
+      <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-sub"><span data-testid="invoice-number" className="font-bold text-ink">{no}</span><span>{receipt ? "Mode: UPI" : `Due ${due.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} (${s("inv_terms")} days)`}</span></div>
+      <table className="mt-3 w-full"><tbody>
+        {LINES.map(([a, p]) => <tr key={a} className="border-t border-line"><td className="py-1.5">{a}</td><td>1</td><td className="text-right">{money(p)}</td></tr>)}
+        <tr className="border-t border-line"><td className="py-1.5" colSpan={2}>Subtotal</td><td className="text-right">{money(sub)}</td></tr>
+        {v.inv_igst ? <tr><td className="py-1" colSpan={2}>IGST ({s("inv_gst")})</td><td className="text-right">{money(gst)}</td></tr> : <><tr><td className="py-1" colSpan={2}>CGST ({(rate * 50).toFixed(1).replace(".0", "")}%)</td><td className="text-right">{money(gst / 2)}</td></tr><tr><td className="py-1" colSpan={2}>SGST ({(rate * 50).toFixed(1).replace(".0", "")}%)</td><td className="text-right">{money(gst / 2)}</td></tr></>}
+        {v.inv_round && roundOff !== 0 && <tr><td className="py-1" colSpan={2}>Round off</td><td className="text-right">{roundOff > 0 ? "+" : ""}{roundOff.toFixed(2)}</td></tr>}
+        <tr className="border-t border-line font-extrabold"><td className="py-1.5" colSpan={2}>Total</td><td className="text-right" data-testid="invoice-total">{money(total)}</td></tr>
+      </tbody></table>
+      <p className="mt-4 text-xs" data-testid="invoice-footer">{s(receipt ? "tpl_foot" : "inv_footer")}</p>
+      <p className="mt-2 text-[11px] text-sub" data-testid="invoice-terms">{s(receipt ? "tpl_terms" : "inv_tc")}</p>
+    </div>
+  );
+}
+
+/** SRS §18.2: drag-reorderable workflow stages with enable toggles and SLA hours. */
+function StageEditor({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: string }) {
+  const stages = parse<StageCfg[]>(value, DEFAULT_STAGES);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const put = (l: StageCfg[]) => onChange(JSON.stringify(l));
+  const label = (k: string) => STAGES.find((x) => x.key === k)?.label ?? k;
+  const move = (from: string, to: string) => { if (from === to) return; const a = stages.findIndex((x) => x.key === from), b = stages.findIndex((x) => x.key === to); const c = [...stages]; const [m] = c.splice(a, 1); c.splice(b, 0, m!); put(c); };
+  const total = stages.filter((x) => x.enabled).reduce((a, x) => a + (x.sla || 0), 0);
+  return (
+    <div className="rounded-2xl border border-line p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h3 className="text-base font-extrabold">Production stages & SLA</h3><p className="text-xs text-sub">Drag to reorder, switch stages off to skip them, and set the SLA target in hours (SRS 18.2).</p></div>
+        <span data-testid="sla-total" className="text-xs font-bold text-sub">Total SLA {total} h (~{(total / 24).toFixed(1)} days)</span></div>
+      <ol className="mt-3 space-y-1.5" data-testid="stage-list">
+        {stages.map((st, i) => {
+          const locked = LOCKED_STAGES.includes(st.key);
+          return (
+            <li key={st.key} data-testid="stage-row" draggable onDragStart={(e) => { setDrag(st.key); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", st.key); }}
+              onDragOver={(e) => { if (drag) { e.preventDefault(); setOver(st.key); } }} onDrop={(e) => { e.preventDefault(); if (drag) move(drag, st.key); setDrag(null); setOver(null); }} onDragEnd={() => { setDrag(null); setOver(null); }}
+              className={cx("flex items-center gap-3 rounded-xl border px-3 py-2", st.enabled ? "border-line bg-white" : "border-dashed border-line bg-slate-50 text-sub", drag === st.key && "opacity-40", over === st.key && drag && drag !== st.key && "border-brand")}>
+              <GripVertical className="size-4 cursor-grab text-sub" aria-label={`Drag ${label(st.key)}`} />
+              <span className="w-6 text-xs font-bold text-sub">{i + 1}</span>
+              <span className={cx("flex-1 text-sm font-bold", !st.enabled && "line-through")}>{label(st.key)}{locked && <span className="ml-2 text-[11px] font-semibold text-sub">required</span>}</span>
+              <label className="flex items-center gap-1.5 text-xs text-sub">SLA<input type="number" min={1} aria-label={`SLA hours for ${label(st.key)}`} disabled={!st.enabled} value={st.sla} onChange={(e) => put(stages.map((x) => (x.key === st.key ? { ...x, sla: Number(e.target.value) } : x)))} className="h-8 w-16 rounded-lg border border-line px-2 text-right text-sm text-ink outline-none focus:border-brand disabled:opacity-50" />h</label>
+              <button disabled={i === 0} onClick={() => move(st.key, stages[i - 1]!.key)} aria-label={`Move ${label(st.key)} up`} className="text-sub hover:text-brand disabled:opacity-30"><ArrowUp className="size-4" /></button>
+              <button disabled={i === stages.length - 1} onClick={() => move(st.key, stages[i + 1]!.key)} aria-label={`Move ${label(st.key)} down`} className="text-sub hover:text-brand disabled:opacity-30"><ArrowDown className="size-4" /></button>
+              <span title={locked ? "This stage cannot be disabled" : undefined} className={locked ? "opacity-50" : ""}><Toggle on={st.enabled} onChange={(x) => { if (!locked) put(stages.map((y) => (y.key === st.key ? { ...y, enabled: x } : y))); }} /></span>
+            </li>
+          );
+        })}
+      </ol>
+      {error && <span className={ERR}>{error}</span>}
+    </div>
+  );
+}
+
+function NotifMatrix({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const m = parse<Record<string, string[]>>(value, DEFAULT_MATRIX);
+  const flip = (e: string, c: string) => onChange(JSON.stringify({ ...m, [e]: (m[e] ?? []).includes(c) ? (m[e] ?? []).filter((x) => x !== c) : [...(m[e] ?? []), c] }));
+  const colAll = (c: string) => EVENTS.every((e) => (m[e] ?? []).includes(c));
+  const flipCol = (c: string) => { const all = colAll(c); onChange(JSON.stringify(Object.fromEntries(EVENTS.map((e) => [e, all ? (m[e] ?? []).filter((x) => x !== c) : [...new Set([...(m[e] ?? []), c])]])))); };
+  return (
+    <div className="rounded-2xl border border-line p-5">
+      <h3 className="text-base font-extrabold">Event x channel matrix</h3>
+      <p className="mb-3 text-xs text-sub">Choose which channels fire for each event.</p>
+      <div className="overflow-x-auto"><table className={tableCls} data-testid="notif-matrix">
+        <thead><tr><Th>Event</Th>{CHANNELS.map((c) => <Th key={c} className="text-center"><label className="inline-flex flex-col items-center gap-1 normal-case">{c}<span className="inline-flex items-center gap-1 text-[10px] font-semibold text-sub"><input type="checkbox" aria-label={`All ${c}`} checked={colAll(c)} onChange={() => flipCol(c)} className="size-3.5 accent-[#3f4fe0]" />All</span></label></Th>)}</tr></thead>
+        <tbody>{EVENTS.map((e) => <tr key={e} className={trCls}><Td className="font-semibold">{e}</Td>{CHANNELS.map((c) => <Td key={c} className="text-center"><span aria-label={`${e}: ${c}`} className="inline-block"><Toggle on={(m[e] ?? []).includes(c)} onChange={() => flip(e, c)} /></span></Td>)}</tr>)}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
+interface Sess { id: string; device: string; where: string; when: string; current?: boolean }
+const SEED_SESSIONS: Sess[] = [
+  { id: "s1", device: "Chrome · Windows 11", where: "Bengaluru, IN · 103.21.44.8", when: "Active now", current: true },
+  { id: "s2", device: "Safari · iPhone 15", where: "Bengaluru, IN · 49.37.12.90", when: "Last active 25 min ago" },
+  { id: "s3", device: "Edge · Windows 10", where: "Mumbai, IN · 117.200.5.34", when: "Last active 3 hours ago" },
+  { id: "s4", device: "Chrome · Android", where: "Hyderabad, IN · 157.48.99.2", when: "Last active yesterday" },
+];
+
+function SecurityExtras({ v, show }: { v: Record<string, Val>; show: (m: string) => void }) {
+  const [sessions, setSessions] = useState(SEED_SESSIONS);
+  const [pw, setPw] = useState("");
+  const min = Number(v.pw_min) || 8;
+  const rules = [
+    { l: `At least ${min} characters`, ok: pw.length >= min },
+    ...(v.pw_cx ? [{ l: "Uppercase letter", ok: /[A-Z]/.test(pw) }, { l: "Lowercase letter", ok: /[a-z]/.test(pw) }, { l: "Number", ok: /\d/.test(pw) }, { l: "Symbol", ok: /[^A-Za-z0-9]/.test(pw) }] : []),
+  ];
+  return (<>
+    <div className="rounded-2xl border border-line p-5">
+      <h3 className="text-base font-extrabold">Test the password policy</h3>
+      <p className="mb-3 text-xs text-sub">Type a sample password to see which rules of the current policy it passes (nothing is stored).</p>
+      <input data-testid="pw-test" className={inputCls} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Try a password…" />
+      <ul className="mt-2 grid gap-x-4 sm:grid-cols-2 text-xs" data-testid="pw-rules">{rules.map((r) => <li key={r.l} className={cx("flex items-center gap-1.5", r.ok ? "text-emerald-600" : "text-sub")}>{r.ok ? <Check className="size-3.5" /> : <X className="size-3.5" />}{r.l}</li>)}</ul>
+      <p className="mt-2 text-xs text-sub">Passwords expire {Number(v.pw_exp) ? `every ${v.pw_exp} days` : "never"}; accounts lock after {String(v.max_fail)} failed attempts; sessions end after {String(v.timeout)} of inactivity.</p>
+    </div>
+    <div className="rounded-2xl border border-line p-5">
+      <div className="mb-3 flex items-center justify-between"><div><h3 className="text-base font-extrabold">Active sessions</h3><p className="text-xs text-sub">Devices currently signed in to your account.</p></div>
+        {sessions.length > 1 && <button onClick={() => { setSessions((l) => l.filter((x) => x.current)); show("Signed out of all other sessions"); }} className="h-9 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50">Revoke all others</button>}</div>
+      <ul className="space-y-2" data-testid="settings-sessions">{sessions.map((x) => (
+        <li key={x.id} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5 text-[13px]"><MonitorSmartphone className="size-5 text-sub" /><span className="flex-1"><b>{x.device}</b>{x.current && <Pill tone="green" className="ml-2">This device</Pill>}<span className="block text-xs text-sub">{x.where} · {x.when}</span></span>
+          {!x.current && <button onClick={() => { setSessions((l) => l.filter((y) => y.id !== x.id)); show(`Session on ${x.device} revoked`); }} className="h-8 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50">Revoke</button>}</li>
+      ))}</ul>
+    </div>
+  </>);
+}
 
 export default function Settings() {
   const [sec, setSec] = useState("general");
-  const [v, setV] = useState<Record<string, Val>>(load);
-  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState<Record<string, Val>>(load);
+  const [v, setV] = useState<Record<string, Val>>(saved);
   const [errs, setErrs] = useState<Errs>({});
   const [toast, show] = useToast();
   const [logQ, setLogQ] = useState("");
   const [logUser, setLogUser] = useState("All Users");
   const [logAction, setLogAction] = useState("All Actions");
   const [preview, setPreview] = useState<null | "invoice" | "receipt">(null);
-  const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); setDirty(true); if (errs[k]) setErrs((e) => { const c = { ...e }; delete c[k]; return c; }); };
+  const [q, setQ] = useState("");
+
+  const dirtyKeys = useMemo(() => Object.keys({ ...saved, ...v }).filter((k) => v[k] !== saved[k]), [v, saved]);
+  const dirtySecs = useMemo(() => new Set(dirtyKeys.map((k) => KEY_SEC[k]).filter(Boolean) as string[]), [dirtyKeys]);
+  const dirty = dirtyKeys.length > 0;
+  useEffect(() => {
+    if (!dirty) return;
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [dirty]);
+
+  const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); if (errs[k]) setErrs((e) => { const c = { ...e }; delete c[k]; return c; }); };
+  const matches = useMemo(() => SECTIONS.filter((x) => !q.trim() || matchSection(x, q.trim().toLowerCase())), [q]);
+  useEffect(() => { if (matches.length && !matches.some((x) => x.key === sec)) setSec(matches[0]!.key); }, [matches, sec]);
   const s = SECTIONS.find((x) => x.key === sec)!;
   const str = (k: string) => String(v[k] ?? "");
 
-  const save = () => {
+  const saveAll = () => {
     const e = validate(v);
     setErrs(e);
     const bad = Object.keys(e);
-    if (bad.length) { setSec(FIELD_SEC[bad[0]!] ?? sec); show(`Fix ${bad.length} invalid field${bad.length > 1 ? "s" : ""} before saving`); return; }
-    try { localStorage.setItem(STORE, JSON.stringify(v)); } catch { show("Saved for this session only (browser storage unavailable)"); setDirty(false); return; }
-    setDirty(false);
-    show(`${s.label} settings saved`);
+    if (bad.length) { setSec(KEY_SEC[bad[0]!] ?? sec); show(`Fix ${bad.length} invalid field${bad.length > 1 ? "s" : ""} before saving`); return; }
+    const n = dirtySecs.size;
+    try { localStorage.setItem(STORE, JSON.stringify(v)); } catch { show("Saved for this session only (browser storage unavailable)"); setSaved(v); return; }
+    setSaved(v);
+    show(n ? `Saved changes in ${n} section${n > 1 ? "s" : ""}` : "Settings saved");
   };
+  const discard = () => { setV(saved); setErrs({}); show("Unsaved changes discarded"); };
   const sendTestEmail = () => {
     if (!str("smtp_host").trim() || !EMAIL_RE.test(str("from_email"))) { show("Enter an SMTP host and a valid From Email first"); return; }
     show(`Test email sent to ${str("from_email")} via ${str("smtp_host")}:${str("smtp_port")}`);
@@ -170,27 +329,66 @@ export default function Settings() {
   const actions = useMemo(() => ["All Actions", ...new Set(LOG.map((r) => r[2]))], []);
   const logRows = LOG.filter((r) => (logUser === "All Users" || r[1] === logUser) && (logAction === "All Actions" || r[2] === logAction) && r.join(" ").toLowerCase().includes(logQ.toLowerCase()));
 
+  const renderGroup = (g: Group) => (
+    <div key={g.title} className="rounded-2xl border border-line p-5">
+      <h3 className="text-base font-extrabold">{g.title}</h3>
+      {g.desc && <p className="text-xs text-sub">{g.desc}</p>}
+      <div className={cx("mt-4", g.cols === 2 ? "grid gap-x-4 md:grid-cols-2" : "space-y-4")}>
+        {g.fields.map((f) =>
+          f.t === "toggle" ? (
+            <div key={f.k} className="flex items-center justify-between gap-4 py-1.5"><span className="text-sm font-semibold">{f.hint}</span><Toggle on={Boolean(v[f.k])} onChange={(x) => set(f.k, x)} /></div>
+          ) : f.t === "slider" ? (
+            <Field key={f.k} label={f.l} hint={f.hint}>
+              <div className="flex items-center gap-3"><input type="range" aria-label={f.l} min={f.min} max={f.max} step={f.step ?? 1} value={Number(v[f.k]) || f.min} onChange={(e) => set(f.k, e.target.value)} className="h-2 flex-1 accent-[#3f4fe0]" />
+                <output data-testid={`val-${f.k}`} className="w-28 text-right text-sm font-bold">{Number(v[f.k]) === 0 && f.zero ? f.zero : `${v[f.k]} ${f.unit}`}</output></div>
+              {errs[f.k] && <span className={ERR}>{errs[f.k]}</span>}
+            </Field>
+          ) : (
+            <Field key={f.k} label={f.l} hint={f.hint}>
+              {f.t === "textarea" ? <textarea className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />
+                : f.t === "select" ? <FilterSelect value={str(f.k)} onChange={(x) => set(f.k, x)} options={f.o} />
+                : <input type={f.t} className={inputCls} value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />}
+              {errs[f.k] && <span className={ERR}>{errs[f.k]}</span>}
+            </Field>
+          ),
+        )}
+      </div>
+      {sec === "email" && g.title === "SMTP" && <button onClick={sendTestEmail} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test email</button>}
+      {sec === "whatsapp" && <button onClick={sendTestWa} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test WhatsApp message</button>}
+      {sec === "templates" && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button onClick={() => setPreview("invoice")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview invoice</button>
+          <button onClick={() => setPreview("receipt")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview receipt</button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="min-w-0">
       {toast}
       <PageHeader title="Settings" subtitle="Configure system preferences and behaviour">
-        {dirty && <span className="text-xs font-bold text-amber-600">Unsaved changes</span>}
-        <button onClick={save} className={cx("inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark", dirty && "ring-4 ring-brand/20")}><Save className="size-4" />Save Changes</button>
+        {dirty && <span data-testid="dirty-note" className="text-xs font-bold text-amber-600">Unsaved changes in {dirtySecs.size} section{dirtySecs.size === 1 ? "" : "s"}</span>}
+        {dirty && <button onClick={discard} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><Undo2 className="size-4" />Discard</button>}
+        <button onClick={saveAll} className={cx("inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark", dirty && "ring-4 ring-brand/20")}><Save className="size-4" />Save All</button>
       </PageHeader>
 
       <div className="grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
         <Panel title="Settings" bodyClassName="pt-2">
+          <label className="mb-2 flex h-9 items-center gap-2 rounded-lg border border-line px-2.5 focus-within:border-brand"><Search className="size-4 text-sub" /><input aria-label="Search settings" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search settings…" className="w-full bg-transparent text-sm outline-none" />{q && <button onClick={() => setQ("")} aria-label="Clear settings search"><X className="size-3.5 text-sub" /></button>}</label>
           <nav className="space-y-0.5">
-            {SECTIONS.map((x) => (
+            {matches.map((x) => (
               <button key={x.key} onClick={() => setSec(x.key)} className={cx("flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13.5px] font-semibold", x.key === sec ? "bg-brand-soft text-brand" : "text-ink hover:bg-slate-50")}>
-                <x.icon className="size-[18px] text-sub" />{x.label}
+                <x.icon className="size-[18px] text-sub" /><span className="flex-1">{x.label}</span>{dirtySecs.has(x.key) && <span data-testid={`dirty-${x.key}`} title="Unsaved changes" className="size-2 rounded-full bg-amber-500" />}
               </button>
             ))}
+            {matches.length === 0 && <p className="px-3 py-4 text-xs text-sub">No settings match “{q}”.</p>}
           </nav>
         </Panel>
 
         <Panel title={s.title} subtitle={s.desc} bodyClassName="space-y-4">
           {sec === "general" && <General v={v} set={set} errs={errs} show={show} />}
+          {sec === "workflow" && <StageEditor value={str("wf_stages")} onChange={(x) => set("wf_stages", x)} error={errs.wf_stages} />}
           {sec === "audit" && (
             <div>
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -213,49 +411,21 @@ export default function Settings() {
               </div>
             </div>
           )}
-          {s.groups?.map((g) => (
-            <div key={g.title} className="rounded-2xl border border-line p-5">
-              <h3 className="text-base font-extrabold">{g.title}</h3>
-              {g.desc && <p className="text-xs text-sub">{g.desc}</p>}
-              <div className={cx("mt-4", g.cols === 2 ? "grid gap-x-4 md:grid-cols-2" : "space-y-4")}>
-                {g.fields.map((f) =>
-                  f.t === "toggle" ? (
-                    <div key={f.k} className="flex items-center justify-between gap-4 py-1.5"><span className="text-sm font-semibold">{f.hint}</span><Toggle on={Boolean(v[f.k])} onChange={(x) => set(f.k, x)} /></div>
-                  ) : (
-                    <Field key={f.k} label={f.l} hint={f.hint}>
-                      {f.t === "textarea" ? <textarea className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />
-                        : f.t === "select" ? <FilterSelect value={str(f.k)} onChange={(x) => set(f.k, x)} options={f.o} />
-                        : <input type={f.t} className={inputCls} value={str(f.k)} onChange={(e) => set(f.k, e.target.value)} />}
-                      {errs[f.k] && <span className={ERR}>{errs[f.k]}</span>}
-                    </Field>
-                  ),
-                )}
-              </div>
-              {sec === "email" && g.title === "SMTP" && <button onClick={sendTestEmail} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test email</button>}
-              {sec === "whatsapp" && <button onClick={sendTestWa} className="mt-2 inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Send className="size-4" />Send test WhatsApp message</button>}
-              {sec === "templates" && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => setPreview("invoice")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview invoice</button>
-                  <button onClick={() => setPreview("receipt")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-[13px] font-bold hover:bg-brand-soft"><Eye className="size-4" />Preview receipt</button>
-                </div>
-              )}
+          {sec === "invoice" ? (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+              <div className="space-y-4">{s.groups?.map(renderGroup)}</div>
+              <div className="xl:sticky xl:top-2 xl:self-start"><div className="mb-2 text-xs font-bold uppercase tracking-wide text-sub">Live preview</div><InvoicePreview v={v} /></div>
             </div>
-          ))}
+          ) : s.groups?.map(renderGroup)}
+          {sec === "notifications" && <NotifMatrix value={str("notif_matrix")} onChange={(x) => set("notif_matrix", x)} />}
+          {sec === "security" && <SecurityExtras v={v} show={show} />}
         </Panel>
       </div>
 
       <SlideOver open={!!preview} onClose={() => setPreview(null)} width={520} title={preview === "invoice" ? `Invoice preview - ${str("tpl_inv")}` : `Receipt preview - ${str("tpl_rcp")}`}
         footer={<><button onClick={() => setPreview(null)} className="h-11 px-5 text-sm font-bold">Close</button><button onClick={() => { window.print(); }} className="h-11 rounded-xl bg-brand px-5 text-sm font-bold text-white">Print sample</button></>}>
-        <div className="rounded-xl border border-line p-5 text-[13px]">
-          <div className="flex items-start justify-between"><div><div className="text-base font-extrabold">{str("name")}</div><div className="whitespace-pre-line text-xs text-sub">{str("address")}</div><div className="text-xs text-sub">GSTIN {str("gstin")}</div></div><b className="text-brand">{preview === "invoice" ? "TAX INVOICE" : "PAYMENT RECEIPT"}</b></div>
-          <div className="mt-3 text-xs text-sub">{preview === "invoice" ? `${str("inv_prefix")}${str("inv_next").padStart(4, "0")}` : `${str("rcp_prefix")}-0042`} · Due in {str("inv_terms")} days</div>
-          <table className="mt-3 w-full"><tbody>{TEMPLATE_PREVIEW.map(([a, b, c]) => <tr key={a} className="border-t border-line"><td className="py-1.5">{a}</td><td>{b}</td><td className="text-right">{c}</td></tr>)}
-            <tr className="border-t border-line font-bold"><td className="py-1.5" colSpan={2}>GST ({str("inv_gst")})</td><td className="text-right">₹2,200</td></tr>
-            <tr className="font-extrabold"><td className="py-1.5" colSpan={2}>Total</td><td className="text-right">₹13,400</td></tr></tbody></table>
-          <p className="mt-4 text-xs">{str("tpl_foot")}</p>
-          <p className="mt-2 text-[11px] text-sub">{str("tpl_terms")}</p>
-        </div>
-        <p className="mt-3 text-xs text-sub">Edit the footer, terms and template choice on the Document Templates page, then save.</p>
+        <InvoicePreview v={v} receipt={preview === "receipt"} />
+        <p className="mt-3 text-xs text-sub">Edit prefix, footer and terms under Invoice Settings and Document Templates, then save.</p>
       </SlideOver>
     </div>
   );

@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
-import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, CalendarDays, Plus, Image as ImageIcon, Pencil, UploadCloud, Send } from "lucide-react";
-import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Plus, Image as ImageIcon, Pencil, UploadCloud, Send, X, FileArchive, AlertCircle } from "lucide-react";
+import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, LineTabs, TodayChip, ProgressBar, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { ORDERS, ASSIGNEES, PRIORITIES, type Priority } from "../lib/data";
+import { MultiSelect, Combobox } from "../components/controls";
+import { useStore, moveOrder, useSlashFocus } from "../lib/store";
 import { fmtDate, TODAY } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { ActionMenu } from "../components/ActionMenu";
@@ -21,36 +23,53 @@ const INITIAL: Job[] = ORDERS.slice(0, 40).map((o, i) => ({
   notes: i === 0 ? ["Client requested warm & natural tones.", "Keep skin tones natural.", "Deliver both colour and B&W versions."] : ["Standard grading, keep skin tones natural."],
 }));
 
+// Graded-file upload rules: JPG / TIFF / ZIP, up to 5 GB per file.
+const MAX_BYTES = 5 * 1024 ** 3;
+const OK_EXT = /\.(jpe?g|tiff?|zip)$/i;
+const fmtSize = (b: number) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+interface UFile { uid: number; name: string; size: number; progress: number }
+let uidSeq = 1;
+const fileCount = (id: string) => 180 + ((Number(id.replace(/\D/g, "")) * 97) % 460);
+
 const inTab = (j: Job, t: Tab) => t === "queue" ? ["New", "Pending", "In Progress", "Overdue", "Rework"].includes(j.status) : t === "progress" ? j.status === "In Progress" : t === "submitted" ? j.status === "Submitted" : t === "approved" ? j.status === "Approved" : j.status === "Rework";
 
 export default function ColourGrading() {
   const [jobs, setJobs] = useState<Job[]>(INITIAL);
   const [tab, setTab] = useState<Tab>("queue");
   const [q, setQ] = useState("");
-  const [col, setCol] = useState("All Colorists");
-  const [prio, setPrio] = useState("All Priorities");
+  const [col, setCol] = useState<string[]>([]);
+  const [prio, setPrio] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState(INITIAL[0]!.id);
   const [dtab, setDtab] = useState<"preview" | "details" | "notes" | "history">("preview");
-  const [uploaded, setUploaded] = useState<Record<string, number>>({});
+  const [uploads, setUploads] = useState<Record<string, UFile[]>>({});
+  const [rejected, setRejected] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const searchWrap = useRef<HTMLDivElement>(null);
+  useSlashFocus(searchWrap);
+  useStore();
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [history, setHistory] = useState<Record<string, string[]>>({});
   const pageSize = 12;
   const [toast, show] = useToast();
   const [creating, setCreating] = useState(false);
-  const EMPTY = { order: "", colorist: COLORISTS[0]!, priority: "Normal" as Priority, due: "", notes: "" };
+  const EMPTY = { order: "", colorist: "", priority: "Normal" as Priority, due: "", notes: "" };
   const [f, setF] = useState(EMPTY);
   const [errs, setErrs] = useState<Record<string, string>>({});
-  const available = ORDERS.filter((o) => !jobs.some((j) => j.id === o.id));
+  const available = ORDERS.filter((o) => (o.stage === "files_received" || o.stage === "new_order") && o.workflow !== "Printing" && !o.hold && !jobs.some((j) => j.id === o.id));
+  const picked = ORDERS.find((o) => o.id === f.order);
   const saveJob = () => {
     const e: Record<string, string> = {};
     if (!f.order) e.order = "Pick an order";
+    if (!f.colorist) e.colorist = "Assign a colorist";
     if (!f.due) e.due = "Choose a due date";
     setErrs(e);
     if (Object.keys(e).length) return;
     const o = ORDERS.find((x) => x.id === f.order)!;
-    const j: Job = { id: o.id, customer: o.customer, event: o.event, files: 200, colorist: f.colorist, priority: f.priority, due: f.due, status: "New", notes: [f.notes.trim() || "Standard grading, keep skin tones natural."] };
+    const j: Job = { id: o.id, customer: o.customer, event: o.event, files: fileCount(o.id), colorist: f.colorist, priority: f.priority, due: f.due, status: "New", notes: [f.notes.trim() || "Standard grading, keep skin tones natural."] };
+    moveOrder(o.id, "colour_grading");
     setJobs((p) => [j, ...p]); setActiveId(j.id); setTab("queue"); setPage(1); setCreating(false); setF(EMPTY); setErrs({});
     show(`Job ${j.id} added to ${j.colorist}'s queue`);
   };
@@ -62,8 +81,8 @@ export default function ColourGrading() {
   const base = useMemo(() => jobs.filter((j) => {
     const s = q.trim().toLowerCase();
     if (s && ![j.id, j.customer, j.event].some((v) => v.toLowerCase().includes(s))) return false;
-    if (col !== "All Colorists" && j.colorist !== col) return false;
-    if (prio !== "All Priorities" && j.priority !== prio) return false;
+    if (col.length && !col.includes(j.colorist)) return false;
+    if (prio.length && !prio.includes(j.priority)) return false;
     return true;
   }), [jobs, q, col, prio]);
   const list = base.filter((j) => inTab(j, tab));
@@ -90,17 +109,33 @@ export default function ColourGrading() {
     if (j.status === "In Progress" || j.status === "Rework") return { label: "Continue", run: () => setActiveId(j.id) };
     return { label: "View", run: () => setActiveId(j.id) };
   };
-  const canSubmit = cur.status === "In Progress" || cur.status === "Rework";
+  const curFiles = uploads[cur.id] ?? [];
+  const uploading = curFiles.some((x) => x.progress < 100);
+  const canSubmit = (cur.status === "In Progress" || cur.status === "Rework") && curFiles.length >= 1 && !uploading;
+  const anyUploading = Object.values(uploads).some((l) => l.some((x) => x.progress < 100));
+  useEffect(() => {
+    if (!anyUploading) return;
+    const t = window.setInterval(() => setUploads((u) => Object.fromEntries(Object.entries(u).map(([k, l]) => [k, l.map((x) => (x.progress < 100 ? { ...x, progress: Math.min(100, x.progress + 8 + Math.round(Math.random() * 14)) } : x))]))), 220);
+    return () => window.clearInterval(t);
+  }, [anyUploading]);
+  const addFiles = (list: FileList | File[]) => {
+    const ok: UFile[] = []; const bad: string[] = [];
+    Array.from(list).forEach((fl) => {
+      if (!OK_EXT.test(fl.name)) bad.push(`${fl.name} — only JPG, TIFF or ZIP allowed`);
+      else if (fl.size > MAX_BYTES) bad.push(`${fl.name} — ${fmtSize(fl.size)} exceeds the 5 GB limit`);
+      else ok.push({ uid: uidSeq++, name: fl.name, size: fl.size, progress: 0 });
+    });
+    setRejected(bad);
+    if (ok.length) { setUploads((u) => ({ ...u, [cur.id]: [...(u[cur.id] ?? []), ...ok] })); show(`${ok.length} file${ok.length > 1 ? "s" : ""} added to ${cur.id}`); }
+  };
+  const doneCount = (id: string) => (uploads[id] ?? []).filter((x) => x.progress >= 100).length;
 
   const tabs: { key: Tab; label: string }[] = [{ key: "queue", label: "My Queue" }, { key: "progress", label: "In Progress" }, { key: "submitted", label: "Submitted" }, { key: "approved", label: "Approved" }, { key: "rework", label: "Rework" }];
 
   return (
     <div>
       <PageHeader title="Colour Grading" subtitle="Manage and process colour grading jobs for all orders.">
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-2">
-          <CalendarDays className="size-6 text-sub" />
-          <div className="text-xs leading-tight text-sub">Today<div className="text-sm font-semibold text-ink">{TODAY.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</div></div>
-        </div>
+        <TodayChip />
         <PrimaryButton onClick={() => setCreating(true)}>New Job</PrimaryButton>
         <MoreButton />
       </PageHeader>
@@ -110,11 +145,12 @@ export default function ColourGrading() {
         <Panel bodyClassName="!p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((j) => inTab(j, t.key)).length }))} />
-            <SearchInput className="w-64" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by order ID, customer, event..." />
+            <div ref={searchWrap} className="w-64"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by order ID, customer, event...  ( / )" /></div>
           </div>
           <div className="mt-3 flex justify-end gap-3">
-            <FilterSelect value={col} onChange={(v) => { setCol(v); setPage(1); }} options={["All Colorists", ...COLORISTS.filter((c) => ASSIGNEES.includes(c))]} />
-            <FilterSelect value={prio} onChange={(v) => { setPrio(v); setPage(1); }} options={["All Priorities", ...PRIORITIES]} />
+            <MultiSelect className="w-40" label="Colorist" options={COLORISTS} value={col} onChange={(v) => { setCol(v); setPage(1); }} />
+            <MultiSelect className="w-36" label="Priority" options={PRIORITIES} value={prio} onChange={(v) => { setPrio(v); setPage(1); }} />
+            {(col.length > 0 || prio.length > 0) && <button onClick={() => { setCol([]); setPrio([]); }} className="text-xs font-bold text-brand">Clear</button>}
           </div>
           {checked.size > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
@@ -173,12 +209,12 @@ export default function ColourGrading() {
           {dtab === "preview" && (
             <div className="mt-4 grid grid-cols-3 gap-2">
               {[0, 1, 2, 3, 4].map((i) => <Thumb key={i} seed={cur.id.length + i + Number(cur.id.slice(-2))} size={110} className="!aspect-[4/3] !h-auto !w-full" rounded="rounded-lg" />)}
-              <div className="grid aspect-[4/3] place-items-center rounded-lg bg-slate-700 text-lg font-extrabold text-white">+{Math.max(0, cur.files + (uploaded[cur.id] ?? 0) - 5)}</div>
+              <div className="grid aspect-[4/3] place-items-center rounded-lg bg-slate-700 text-lg font-extrabold text-white">+{Math.max(0, cur.files + doneCount(cur.id) - 5)}</div>
             </div>
           )}
           {dtab === "details" && (
             <dl className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
-              {([["Order ID", cur.id], ["Customer", cur.customer], ["Event", cur.event], ["Files", String(cur.files + (uploaded[cur.id] ?? 0))], ["Colorist", cur.colorist], ["Priority", cur.priority], ["Due", fmtDate(cur.due)], ["Status", cur.status]] as const).map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+              {([["Order ID", cur.id], ["Customer", cur.customer], ["Event", cur.event], ["Files", String(cur.files + doneCount(cur.id))], ["Colorist", cur.colorist], ["Priority", cur.priority], ["Due", fmtDate(cur.due)], ["Status", cur.status]] as const).map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
             </dl>
           )}
           {dtab === "history" && (
@@ -206,16 +242,42 @@ export default function ColourGrading() {
             </div>
           )}
 
-          <button onClick={() => { setUploaded((u) => ({ ...u, [cur.id]: (u[cur.id] ?? 0) + 24 })); show(`24 graded files uploaded to ${cur.id}`); }} className="mt-4 flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-brand/50 bg-brand-soft/40 px-4 py-4 text-center">
-            <span className="inline-flex items-center gap-2 font-extrabold"><UploadCloud className="size-5 text-brand" />Upload Graded Files</span>
-            <span className="text-xs text-sub">Drag & drop files here or click to upload</span>
-            <span className="text-xs text-slate-400">Supports JPG, TIFF, ZIP (Max 5GB){uploaded[cur.id] ? ` · ${uploaded[cur.id]} files added` : ""}</span>
-          </button>
+          <div data-testid="dropzone" role="button" tabIndex={0} aria-label="Upload graded files"
+            onClick={() => fileInput.current?.click()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && fileInput.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+            className={cx("mt-4 flex w-full cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-4 text-center transition", dragOver ? "border-brand bg-brand-soft ring-2 ring-brand/40" : "border-brand/50 bg-brand-soft/40")}>
+            <span className="inline-flex items-center gap-2 font-extrabold"><UploadCloud className="size-5 text-brand" />{dragOver ? "Drop to upload" : "Upload Graded Files"}</span>
+            <span className="text-xs text-sub">Drag & drop files here or click to browse</span>
+            <span className="text-xs text-slate-400">Supports JPG, TIFF, ZIP · max 5 GB per file</span>
+          </div>
+          <input ref={fileInput} data-testid="file-input" type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,.zip" className="hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+          {rejected.length > 0 && (
+            <ul data-testid="rejected" className="mt-2 space-y-1 rounded-lg bg-rose-50 p-2.5 text-xs font-semibold text-rose-600">
+              {rejected.map((r) => <li key={r} className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3.5 shrink-0" />{r}</li>)}
+            </ul>
+          )}
+          {curFiles.length > 0 && (
+            <ul data-testid="file-list" className="mt-2 space-y-2">
+              {curFiles.map((x) => (
+                <li key={x.uid} className="rounded-lg border border-line px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    {/zip$/i.test(x.name) ? <FileArchive className="size-4 text-sub" /> : <ImageIcon className="size-4 text-sub" />}
+                    <span className="min-w-0 flex-1 truncate font-semibold">{x.name}</span>
+                    <span className="text-sub">{fmtSize(x.size)} / 5 GB</span>
+                    <span className={cx("w-9 text-right font-bold", x.progress >= 100 ? "text-emerald-600" : "text-brand")}>{x.progress >= 100 ? "Done" : `${x.progress}%`}</span>
+                    <button aria-label={`Remove ${x.name}`} onClick={() => setUploads((u) => ({ ...u, [cur.id]: (u[cur.id] ?? []).filter((y) => y.uid !== x.uid) }))} className="text-sub hover:text-rose-600"><X className="size-4" /></button>
+                  </div>
+                  <ProgressBar value={x.progress} tone={x.progress >= 100 ? "green" : "blue"} className="mt-1.5" />
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="mt-3 flex gap-2">
             {cur.status === "New" && <button onClick={() => act(cur, "In Progress", "Grading started")} className="h-11 flex-1 rounded-xl border border-brand text-sm font-bold text-brand hover:bg-brand-soft">Start Job</button>}
             {cur.status === "In Progress" && <button onClick={() => setDtab("preview")} className="h-11 flex-1 rounded-xl border border-brand text-sm font-bold text-brand hover:bg-brand-soft">Continue</button>}
-            <button disabled={!canSubmit} title={canSubmit ? "" : "Upload graded files first"} onClick={() => act(cur, "Submitted", "Submitted for Admin approval")} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40">
+            <button disabled={!canSubmit} title={canSubmit ? "" : uploading ? "Wait for uploads to finish" : "Start the job and upload at least one graded file"} onClick={() => act(cur, "Submitted", "Submitted for Admin approval")} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40">
               <Send className="size-4" />Submit for Admin Approval
             </button>
           </div>
@@ -223,15 +285,26 @@ export default function ColourGrading() {
       </div>
       <SlideOver open={creating} onClose={() => setCreating(false)} title="New Grading Job"
         footer={<><OutlineButton onClick={() => setCreating(false)}>Cancel</OutlineButton><PrimaryButton onClick={saveJob}>Create Job</PrimaryButton></>}>
-        <Field label="Order" required hint={errs.order}>
-          <select aria-label="Order" className={cx(inputCls, errs.order && "border-rose-400")} value={f.order} onChange={(e) => setF({ ...f, order: e.target.value })}>
-            <option value="">Select an order…</option>
-            {available.map((o) => <option key={o.id} value={o.id}>{o.id} — {o.customer} ({o.event})</option>)}
-          </select>
+        <Field label="Order" required>
+          <Combobox error={!!errs.order} placeholder="Search files-received / new orders…" value={f.order}
+            onChange={(v) => { const o = ORDERS.find((x) => x.id === v); setF({ ...f, order: v, due: o?.due ?? f.due }); }}
+            options={available.map((o) => ({ value: o.id, label: o.id, sub: `${o.customer} · ${o.event}` }))} />
+          {errs.order && <p role="alert" className="mt-1 text-xs font-semibold text-rose-600">{errs.order}</p>}
+          <span className="mt-1 block text-xs text-sub">Only Design + Printing orders in New Order / Files Received. Printing Only orders skip colour grading.</span>
         </Field>
-        <Field label="Assignee"><FilterSelect value={f.colorist} onChange={(v) => setF({ ...f, colorist: v })} options={COLORISTS} /></Field>
-        <Field label="Priority"><FilterSelect value={f.priority} onChange={(v) => setF({ ...f, priority: v as Priority })} options={PRIORITIES} /></Field>
-        <Field label="Due date" required hint={errs.due}><input type="date" className={cx(inputCls, errs.due && "border-rose-400")} value={f.due} onChange={(e) => setF({ ...f, due: e.target.value })} /></Field>
+        {picked && (
+          <dl data-testid="job-autofill" className="mb-4 grid grid-cols-3 gap-3 rounded-xl bg-slate-50 p-3 text-[13px]">
+            <div><dt className="text-xs text-sub">Customer</dt><dd className="font-semibold">{picked.customer}</dd></div>
+            <div><dt className="text-xs text-sub">Event</dt><dd className="font-semibold">{picked.event}</dd></div>
+            <div><dt className="text-xs text-sub">Files</dt><dd className="font-semibold">{fileCount(picked.id)}</dd></div>
+          </dl>
+        )}
+        <Field label="Assignee" required>
+          <Combobox error={!!errs.colorist} placeholder="Pick a colorist…" value={f.colorist} onChange={(v) => setF({ ...f, colorist: v })} options={COLORISTS.map((c) => ({ value: c, label: c }))} />
+          {errs.colorist && <p role="alert" className="mt-1 text-xs font-semibold text-rose-600">{errs.colorist}</p>}
+        </Field>
+        <Field label="Priority"><div className="flex flex-wrap gap-1.5">{PRIORITIES.map((p) => <button type="button" key={p} aria-pressed={f.priority === p} onClick={() => setF({ ...f, priority: p })} className={cx("rounded-full border px-3 py-1 text-xs font-bold", f.priority === p ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{p}</button>)}</div></Field>
+        <Field label="Due date" required><input type="date" className={cx(inputCls, errs.due && "border-rose-400")} value={f.due} onChange={(e) => setF({ ...f, due: e.target.value })} />{errs.due && <p role="alert" className="mt-1 text-xs font-semibold text-rose-600">{errs.due}</p>}</Field>
         <Field label="Instructions"><textarea rows={4} className={cx(inputCls, "h-auto py-2")} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
       </SlideOver>
       {toast}

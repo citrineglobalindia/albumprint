@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Aperture, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Aperture, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, Clock, ShieldAlert } from "lucide-react";
 import { useAuth, ROLES, type RoleKey } from "../lib/auth";
 import { cx, inputCls } from "../components/ui";
 
@@ -9,7 +9,9 @@ type Step = "credentials" | "otp" | "forgot" | "sent";
 export default function Login() {
   const { role, login } = useAuth();
   const nav = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
+  const loc = useLocation();
+  const from = (loc.state as { from?: string } | null)?.from ?? "/";
+  const expired = !!(loc.state as { from?: string } | null)?.from || new URLSearchParams(loc.search).get("expired") === "1";
   const [step, setStep] = useState<Step>("credentials");
   const [pick, setPick] = useState<RoleKey>("admin");
   const [email, setEmail] = useState(ROLES.admin.email);
@@ -22,6 +24,17 @@ export default function Login() {
   const [err, setErr] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
+  // SRS §2: lock the account after 5 failed attempts for 30 seconds (simulated, survives reload).
+  const [lockLeft, setLockLeft] = useState(() => { try { return Math.max(0, Math.ceil((Number(localStorage.getItem("albumpro.lockUntil")) - Date.now()) / 1000)); } catch { return 0; } });
+  useEffect(() => {
+    if (lockLeft <= 0) return;
+    const t = window.setTimeout(() => {
+      setLockLeft((c) => c - 1);
+      if (lockLeft - 1 <= 0) { setFails(0); setErr(""); try { localStorage.removeItem("albumpro.lockUntil"); } catch { /* ignore */ } }
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [lockLeft]);
+  const locked = lockLeft > 0;
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
@@ -33,7 +46,14 @@ export default function Login() {
   const choose = (r: RoleKey) => { setPick(r); setEmail(ROLES[r].email); setErr(""); };
   const submit = () => {
     // ALB-FR-0009..0012: identifier + password, risk-based CAPTCHA after repeated failures.
-    if (pw.length < 6) { setFails((f) => f + 1); setErr("Enter your password (demo: any 6+ characters)."); return; }
+    if (locked) return;
+    if (!email.trim() || pw.length < 6) {
+      const n = fails + 1;
+      setFails(n);
+      if (n >= 5) { try { localStorage.setItem("albumpro.lockUntil", String(Date.now() + 30000)); } catch { /* ignore */ } setLockLeft(30); setErr(""); return; }
+      setErr(`${!email.trim() ? "Enter your email or mobile." : "Incorrect password (demo: any 6+ characters)."} ${5 - n} attempt${5 - n === 1 ? "" : "s"} left before lockout.`);
+      return;
+    }
     if (fails >= 2 && !human) { setErr("Please confirm you are not a robot."); return; }
     setErr(""); remember ? finish() : setStep("otp");
   };
@@ -57,8 +77,10 @@ export default function Login() {
             <>
               <h2 className="text-2xl font-extrabold">Sign in</h2>
               <p className="mb-5 mt-1 text-sm text-sub">Use your work email or mobile number.</p>
+              {expired && <div role="status" data-testid="session-banner" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-semibold text-amber-800"><Clock className="mt-0.5 size-4 shrink-0" />Your session has expired. Please sign in again{from !== "/" ? ` to continue to ${from}` : ""}.</div>}
+              {locked && <div role="alert" data-testid="lockout-banner" className="mb-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-semibold text-rose-700"><ShieldAlert className="mt-0.5 size-4 shrink-0" />Too many failed attempts. Account locked, try again in {lockLeft}s.</div>}
               <div className="mb-4">
-                <div className="mb-1.5 text-[13px] font-semibold">Demo: sign in as</div>
+                <div className="mb-1.5 text-[13px] font-semibold">Demo: sign in as <span className="font-normal text-sub">(use a different role)</span></div>
                 <div className="flex flex-wrap gap-1.5">
                   {(Object.keys(ROLES) as RoleKey[]).map((r) => (
                     <button key={r} onClick={() => choose(r)} className={cx("rounded-lg border px-3 py-1.5 text-xs font-bold", pick === r ? "border-brand bg-brand text-white" : "border-line bg-white hover:bg-brand-soft")}>{ROLES[r].label}</button>
@@ -66,18 +88,18 @@ export default function Login() {
                 </div>
               </div>
               <label className="mb-4 block"><span className="mb-1.5 block text-[13px] font-semibold">Work Email / Mobile</span>
-                <span className="relative block"><Mail className="absolute left-3 top-3 size-4 text-sub" /><input className={cx(inputCls, "pl-9")} value={email} onChange={(e) => setEmail(e.target.value)} /></span></label>
+                <span className="relative block"><Mail className="absolute left-3 top-3 size-4 text-sub" /><input className={cx(inputCls, "pl-9")} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Work email or mobile" /></span></label>
               <label className="mb-3 block"><span className="mb-1.5 block text-[13px] font-semibold">Password</span>
                 <span className="relative block"><Lock className="absolute left-3 top-3 size-4 text-sub" />
                   <input className={cx(inputCls, "px-9")} type={show ? "text" : "password"} value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" />
-                  <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-3 text-sub" aria-label="Toggle password">{show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button></span></label>
+                  <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-3 text-sub" aria-label={show ? "Hide password" : "Show password"}>{show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button></span></label>
               <div className="mb-4 flex items-center justify-between text-[13px]">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />Remember this device</label>
                 <button onClick={() => setStep("forgot")} className="font-bold text-brand">Forgot password?</button>
               </div>
               {fails >= 2 && <label className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-slate-50 p-3 text-sm"><input type="checkbox" checked={human} onChange={(e) => setHuman(e.target.checked)} />I'm not a robot</label>}
               {err && <p className="mb-3 text-sm font-medium text-rose-600">{err}</p>}
-              <button onClick={submit} className="h-11 w-full rounded-xl bg-brand font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark">Sign in</button>
+              <button onClick={submit} disabled={locked} className="h-11 w-full rounded-xl bg-brand font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50">{locked ? `Locked · ${lockLeft}s` : "Sign in"}</button>
             </>
           )}
 

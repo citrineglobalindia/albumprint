@@ -1,166 +1,146 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "../components/Toast";
 import { ActionMenu } from "../components/ActionMenu";
-import { ArrowUpDown, CalendarDays, ClipboardList, Clock, Filter, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Plus } from "lucide-react";
+import { ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
 import {
-  PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, CountTabs,
-  Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, cx, type Kpi,
+  PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, CountTabs,
+  Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
 } from "../components/ui";
-import {
-  ORDERS, CUSTOMERS, STAGES, ASSIGNEES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone,
-  type Order, type StageKey, type Priority, type WorkflowType,
-} from "../lib/data";
-import { fmtDate, isOverdue, TODAY } from "../lib/format";
+import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
+import { InlinePop } from "../components/InlinePop";
+import { useNewOrder } from "../components/NewOrderWizard";
+import { ORDERS, CUSTOMERS, STAGES, ASSIGNEES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
+import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
+import { useStore, notify, patchOrder, useSlashFocus, packRange, unpackRange } from "../lib/store";
 
-type Hold = "On Hold" | "Cancelled";
-type Row = Order & { hold?: Hold };
 type TabKey = "all" | "new" | "progress" | "client" | "print" | "out" | "delivered" | "hold" | "cancelled";
-
 const GROUP: Record<TabKey, StageKey[] | null> = {
   all: null, new: ["new_order", "files_received"], progress: ["colour_grading", "admin_approval", "designing", "printing", "qc"],
   client: ["client_review"], print: ["final_approval"], out: ["ready_for_delivery"], delivered: ["delivered"], hold: null, cancelled: null,
 };
-
-function inTab(o: Row, t: TabKey) {
+function inTab(o: Order, t: TabKey) {
   if (t === "all") return true;
   if (t === "hold") return o.hold === "On Hold";
   if (t === "cancelled") return o.hold === "Cancelled";
   return !o.hold && GROUP[t]!.includes(o.stage);
 }
-
-type SortKey = "customer" | "stage" | "priority" | "pendingAt" | "assignee" | "due";
 const PRIO_RANK: Record<Priority, number> = { Low: 0, Normal: 1, High: 2, Urgent: 3, VIP: 4 };
+const COLS = [
+  { key: "id", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "workflow", label: "Workflow Type" },
+  { key: "size", label: "Album Size" }, { key: "stage", label: "Current Stage" }, { key: "priority", label: "Priority" }, { key: "pendingAt", label: "Order Date" },
+  { key: "assignee", label: "Assigned To" }, { key: "due", label: "Due Date" }, { key: "pay", label: "Payment Status" },
+];
+const PAY = ["Paid", "Partial", "Unpaid", "Overdue"];
+const STAGE_LABELS = STAGES.map((s) => s.label);
+const isLate = (o: Order) => o.stage !== "delivered" && !o.hold && isOverdue(o.due);
+const csv = (v: string | null) => (v ? v.split(",").filter(Boolean) : []);
 
-// SRS §4.3 / §6.1 — order intake fields (ALB-FR-OR-xxxx)
-const emptyForm = {
-  customer: "", orderType: "Design + Printing" as WorkflowType, orderDate: "2026-10-03", expectedDelivery: "", eventName: "", eventType: "Wedding",
-  bride: "", groom: "", priority: "Normal" as Priority, albumType: "Wedding Album", size: "12x36", orientation: "Landscape", pages: "30",
-  copies: "1", paper: "Matte", cover: "Leatherette", lamination: "Matte", binding: "Flush Mount", box: "Yes", notes: "",
-};
+interface ViewState { q: string; wf: string[]; size: string[]; prio: string[]; pay: string[]; asg: string[]; evt: string[]; stages: string[]; late: boolean; range: ReturnType<typeof packRange>; hidden: string[]; sort: SortState }
 
 export default function Orders() {
-  const [rows, setRows] = useState<Row[]>(ORDERS);
-  const [tab, setTab] = useState<TabKey>("all");
-  const [q, setQ] = useState("");
-  const [wf, setWf] = useState("All Workflow Types");
-  const [size, setSize] = useState("All Album Sizes");
-  const [prio, setPrio] = useState("All Priority");
-  const [pay, setPay] = useState("All Payment Status");
-  const [asg, setAsg] = useState("All Assigned To");
-  const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 } | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  useStore();
+  const newOrder = useNewOrder();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [toast, show] = useToast();
-  const [range, setRange] = useState("All Time");
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [evt, setEvt] = useState("All Events");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [overdueOnly, setOverdueOnly] = useState(false);
-  const [editing, setEditing] = useState<Row | null>(null);
-  const [ef, setEf] = useState({ priority: "Normal" as Priority, assignee: "Priya", due: "", size: "12x36" });
+  const init = useRef(params).current;
+  const [tab, setTab] = useState<TabKey>(() => (init.get("tab") as TabKey) || "all");
+  const [q, setQ] = useState("");
+  const [wf, setWf] = useState<string[]>([]);
+  const [size, setSize] = useState<string[]>([]);
+  const [prio, setPrio] = useState<string[]>(() => csv(init.get("priority")));
+  const [pay, setPay] = useState<string[]>(() => csv(init.get("pay")));
+  const [asg, setAsg] = useState<string[]>([]);
+  const [evt, setEvt] = useState<string[]>([]);
+  const [stages, setStages] = useState<string[]>(() => csv(init.get("stage")).map((k) => STAGES.find((s) => s.key === k)?.label).filter(Boolean) as string[]);
+  const [late, setLate] = useState(() => init.get("overdue") === "1");
+  const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
+  const [hidden, setHidden] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortState>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [drawer, setDrawer] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Order | null>(null);
+  const [ef, setEf] = useState({ size: "12x36", due: "" });
   const [eerr, setEerr] = useState("");
-  const [bulkAsg, setBulkAsg] = useState("Assign to…");
+  const searchWrap = useRef<HTMLDivElement>(null);
+  useSlashFocus(searchWrap);
+
   useEffect(() => {
     if (params.get("new") === "1") {
-      const c = params.get("customer");
-      if (c) setForm((f) => ({ ...f, customer: c }));
-      setCreate(true);
-      setParams({}, { replace: true });
+      const name = params.get("customer");
+      newOrder.open({ customerId: name ? CUSTOMERS.find((c) => c.name === name || c.id === name)?.id : undefined });
     }
-  }, [params, setParams]);
-  const [create, setCreate] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [err, setErr] = useState("");
+    if (params.toString()) setParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const reset = () => { setQ(""); setWf("All Workflow Types"); setSize("All Album Sizes"); setPrio("All Priority"); setPay("All Payment Status"); setAsg("All Assigned To"); setEvt("All Events"); setFrom(""); setTo(""); setOverdueOnly(false); setRange("All Time"); setPage(1); };
+  const show_ = (c: string) => !hidden.includes(c);
+  const reset = () => { setQ(""); setWf([]); setSize([]); setPrio([]); setPay([]); setAsg([]); setEvt([]); setStages([]); setLate(false); setRange(presetRange("All Time")); setPage(1); };
 
-  const base = useMemo(() => rows.filter((o) => {
+  const base = ORDERS.filter((o) => {
     const s = q.trim().toLowerCase();
     if (s && ![o.id, o.customer, o.mobile, o.event].some((v) => v.toLowerCase().includes(s))) return false;
-    if (wf !== "All Workflow Types" && o.workflow !== wf) return false;
-    if (size !== "All Album Sizes" && o.size !== size) return false;
-    if (prio !== "All Priority" && o.priority !== prio) return false;
-    if (pay !== "All Payment Status" && o.pay !== pay) return false;
-    if (asg !== "All Assigned To" && o.assignee !== asg) return false;
-    if (evt !== "All Events" && o.event !== evt) return false;
-    if (overdueOnly && !(o.stage !== "delivered" && !o.hold && isOverdue(o.due))) return false;
-    if (from && o.pendingAt < from) return false;
-    if (to && o.pendingAt > to) return false;
-    if (range !== "All Time") {
-      const n = range === "Last 7 Days" ? 7 : range === "Last 30 Days" ? 30 : 90;
-      if (new Date(o.pendingAt) < new Date(TODAY.getTime() - n * 86400000)) return false;
-    }
+    if (wf.length && !wf.includes(o.workflow)) return false;
+    if (size.length && !size.includes(o.size)) return false;
+    if (prio.length && !prio.includes(o.priority)) return false;
+    if (pay.length && !pay.includes(o.pay)) return false;
+    if (asg.length && !asg.includes(o.assignee)) return false;
+    if (evt.length && !evt.includes(o.event)) return false;
+    if (stages.length && !stages.includes(stageLabel(o.stage))) return false;
+    if (late && !isLate(o)) return false;
+    if (!inRange(o.pendingAt, range)) return false;
     return true;
-  }), [rows, q, wf, size, prio, pay, asg, evt, overdueOnly, from, to, range]);
+  });
 
   const count = (t: TabKey) => base.filter((o) => inTab(o, t)).length;
-  const filtered = useMemo(() => {
-    const l = base.filter((o) => inTab(o, tab));
-    if (!sort) return l;
-    const v = (o: Row) => sort.k === "priority" ? PRIO_RANK[o.priority] : sort.k === "stage" ? STAGES.findIndex((s) => s.key === o.stage) : o[sort.k];
-    return [...l].sort((a, b) => (v(a) > v(b) ? 1 : v(a) < v(b) ? -1 : 0) * sort.dir);
-  }, [base, tab, sort]);
-
+  const filtered = sortRows(base.filter((o) => inTab(o, tab)), sort, (o, k) =>
+    k === "priority" ? PRIO_RANK[o.priority] : k === "stage" ? STAGES.findIndex((s) => s.key === o.stage) : (o as unknown as Record<string, string>)[k] ?? "");
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
   const allSel = pageRows.length > 0 && pageRows.every((o) => sel.has(o.id));
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const sortBy = (k: SortKey) => setSort((p) => (p?.k === k ? (p.dir === 1 ? { k, dir: -1 } : null) : { k, dir: 1 }));
-  const SortTh = ({ k, children }: { k: SortKey; children: string }) => (
-    <Th><button onClick={() => sortBy(k)} className="inline-flex items-center gap-1 font-bold uppercase">{children}<ArrowUpDown className={cx("size-3", sort?.k === k ? "text-brand" : "text-slate-400")} /></button></Th>
-  );
+  const onSort = (s: SortState) => { setSort(s); setPage(1); };
+  const th = (k: string, label: string) => show_(k) && <SortTh key={k} k={k} sort={sort} onSort={onSort}>{label}</SortTh>;
 
   const kpis: Kpi[] = [
-    { label: "Total Orders", value: rows.length, delta: 12, icon: ClipboardList, tone: "blue" },
-    { label: "New Orders", value: rows.filter((o) => inTab(o, "new")).length, delta: 25, icon: PlusCircle, tone: "orange" },
-    { label: "In Progress", value: rows.filter((o) => inTab(o, "progress")).length, delta: 8, icon: MonitorPlay, tone: "pink" },
-    { label: "Client Review Pending", value: rows.filter((o) => inTab(o, "client")).length, delta: 20, icon: Users, tone: "pink" },
-    { label: "Ready for Printing", value: rows.filter((o) => inTab(o, "print")).length, delta: 50, icon: ShieldCheck, tone: "green" },
-    { label: "Overdue", value: rows.filter((o) => o.stage !== "delivered" && !o.hold && isOverdue(o.due)).length, delta: 75, icon: Clock, tone: "red", invert: true },
+    { label: "Total Orders", value: ORDERS.length, delta: 12, icon: ClipboardList, tone: "blue" },
+    { label: "New Orders", value: ORDERS.filter((o) => inTab(o, "new")).length, delta: 25, icon: PlusCircle, tone: "orange" },
+    { label: "In Progress", value: ORDERS.filter((o) => inTab(o, "progress")).length, delta: 8, icon: MonitorPlay, tone: "pink" },
+    { label: "Client Review Pending", value: ORDERS.filter((o) => inTab(o, "client")).length, delta: 20, icon: Users, tone: "pink" },
+    { label: "Ready for Printing", value: ORDERS.filter((o) => inTab(o, "print")).length, delta: 50, icon: ShieldCheck, tone: "green" },
+    { label: "Overdue", value: ORDERS.filter(isLate).length, delta: 75, icon: Clock, tone: "red", invert: true },
   ];
 
-  const setF = (k: keyof typeof emptyForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const submit = () => {
-    if (!form.customer || !form.expectedDelivery) { setErr("Customer and expected delivery date are required."); return; }
-    const c = CUSTOMERS.find((x) => x.name === form.customer);
-    const next = Math.max(...rows.map((r) => Number(r.id.slice(3)))) + 1;
-    const o: Row = {
-      id: `IDP${String(next).padStart(5, "0")}`, customer: form.customer, mobile: c?.mobile ?? "—", event: form.eventType, workflow: form.orderType,
-      size: form.size, pages: Number(form.pages) || 30, stage: "new_order", priority: form.priority, pendingAt: form.orderDate, assignee: "Priya",
-      due: form.expectedDelivery, pay: "Unpaid", total: 0, paid: 0, progress: 0,
-    };
-    setRows((r) => [o, ...r]); setCreate(false); setForm(emptyForm); setErr(""); setTab("all"); setPage(1); show(`Order ${o.id} created`);
-  };
-
-  const bulk = (fn: (o: Row) => Row, msg: string) => { const n = sel.size; setRows((r) => r.map((o) => (sel.has(o.id) ? fn(o) : o))); setSel(new Set()); show(`${msg} (${n} orders)`); };
-  const openEdit = (o: Row) => { setEf({ priority: o.priority, assignee: o.assignee, due: o.due, size: o.size }); setEerr(""); setEditing(o); };
+  const bulk = (fn: (o: Order) => Partial<Order>, msg: string) => { const n = sel.size; ORDERS.forEach((o) => { if (sel.has(o.id)) Object.assign(o, fn(o)); }); notify(); setSel(new Set()); show(`${msg} (${n} orders)`); };
+  const setHold = (o: Order, h: Order["hold"]) => { patchOrder(o.id, { hold: h }); show(h === "On Hold" ? `${o.id} put on hold` : h === "Cancelled" ? `${o.id} cancelled` : `${o.id} resumed`); };
+  const openEdit = (o: Order) => { setEf({ due: o.due, size: o.size }); setEerr(""); setEditing(o); };
   const saveEdit = () => {
     if (!ef.due) { setEerr("Due date is required."); return; }
-    setRows((r) => r.map((x) => (x.id === editing!.id ? { ...x, ...ef } : x)));
-    show(`Order ${editing!.id} updated`); setEditing(null);
+    patchOrder(editing!.id, ef); show(`Order ${editing!.id} updated`); setEditing(null);
   };
-  const moreCount = (evt !== "All Events" ? 1 : 0) + (from ? 1 : 0) + (to ? 1 : 0) + (overdueOnly ? 1 : 0);
 
-  const sel2 = (k: keyof typeof emptyForm, opts: string[]) => <FilterSelect value={form[k]} onChange={(v) => setF(k, v)} options={opts} />;
+  const chips = [
+    ...(range.preset !== "All Time" ? [{ label: `Date: ${range.preset === "Custom" ? `${fmtShort(range.from)} – ${fmtShort(range.to)}` : range.preset}`, onRemove: () => setRange(presetRange("All Time")) }] : []),
+    ...([["Stage", stages, setStages], ["Workflow", wf, setWf], ["Size", size, setSize], ["Priority", prio, setPrio], ["Payment", pay, setPay], ["Assignee", asg, setAsg], ["Event", evt, setEvt]] as [string, string[], (v: string[]) => void][])
+      .filter(([, v]) => v.length).map(([l, v, set]) => ({ label: `${l}: ${v.join(", ")}`, onRemove: () => { set([]); setPage(1); } })),
+    ...(late ? [{ label: "Overdue only", onRemove: () => setLate(false) }] : []),
+    ...(q.trim() ? [{ label: `Search: “${q.trim()}”`, onRemove: () => setQ("") }] : []),
+  ];
+  const view: ViewState = { q, wf, size, prio, pay, asg, evt, stages, late, range: packRange(range), hidden, sort };
+  const applyView = (v: ViewState) => { setQ(v.q); setWf(v.wf); setSize(v.size); setPrio(v.prio); setPay(v.pay); setAsg(v.asg); setEvt(v.evt); setStages(v.stages); setLate(v.late); setRange(unpackRange(v.range)); setHidden(v.hidden); setSort(v.sort); setPage(1); show("View applied"); };
+  const f = (set: (v: string[]) => void) => (v: string[]) => { set(v); setPage(1); };
+
+  const d = drawer ? ORDERS.find((o) => o.id === drawer) ?? null : null;
+  const visibleCols = COLS.filter((c) => show_(c.key)).length + 2;
 
   return (
     <div>
       <PageHeader title="Orders" subtitle="Manage and track all album orders from design to delivery.">
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-2">
-          <CalendarDays className="size-6 text-sub" />
-          <div className="text-xs leading-tight text-sub">
-            <select aria-label="Date range" value={range} onChange={(e) => { setRange(e.target.value); setPage(1); show(`Showing: ${e.target.value}`); }} className="-ml-1 cursor-pointer bg-transparent text-xs text-sub outline-none">
-              {["All Time", "Last 7 Days", "Last 30 Days", "Last 90 Days"].map((r) => <option key={r}>{r}</option>)}
-            </select>
-            <div className="text-sm font-semibold text-ink">{fmtDate("2026-10-01")} - {fmtDate("2026-10-30")}</div>
-          </div>
-        </div>
-        <OutlineButton onClick={() => setMoreOpen(true)} icon={Filter} className="!h-11 !rounded-xl !px-4 !text-sm !font-bold">More Filters{moreCount ? ` (${moreCount})` : ""}</OutlineButton>
-        <PrimaryButton onClick={() => setCreate(true)}>Create Order</PrimaryButton>
+        <DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} />
+        <MoreButton />
+        <PrimaryButton onClick={() => newOrder.open()}>Create Order</PrimaryButton>
       </PageHeader>
 
       <KpiRow items={kpis} />
@@ -174,118 +154,143 @@ export default function Orders() {
           { key: "cancelled", label: "Cancelled", count: count("cancelled"), tone: "red" },
         ]} />
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <SearchInput className="min-w-[240px] flex-1" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by Order ID, customer name, mobile, event..." />
-          <FilterSelect value={wf} onChange={(v) => { setWf(v); setPage(1); }} options={["All Workflow Types", "Design + Printing", "Printing"]} />
-          <FilterSelect value={size} onChange={(v) => { setSize(v); setPage(1); }} options={["All Album Sizes", ...ALBUM_SIZES]} />
-          <FilterSelect value={prio} onChange={(v) => { setPrio(v); setPage(1); }} options={["All Priority", ...PRIORITIES]} />
-          <FilterSelect value={pay} onChange={(v) => { setPay(v); setPage(1); }} options={["All Payment Status", "Paid", "Partial", "Unpaid", "Overdue"]} />
-          <FilterSelect value={asg} onChange={(v) => { setAsg(v); setPage(1); }} options={["All Assigned To", ...ASSIGNEES]} />
-          <button onClick={reset} className="ml-auto inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <div ref={searchWrap} className="min-w-[240px] flex-1"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by Order ID, customer, mobile, event...  ( / )" /></div>
+          <MultiSelect className="w-36" label="Stage" options={STAGE_LABELS} value={stages} onChange={f(setStages)} />
+          <MultiSelect className="w-40" label="Workflow Type" options={["Design + Printing", "Printing"]} value={wf} onChange={f(setWf)} />
+          <MultiSelect className="w-32" label="Album Size" options={ALBUM_SIZES} value={size} onChange={f(setSize)} />
+          <MultiSelect className="w-28" label="Priority" options={PRIORITIES} value={prio} onChange={f(setPrio)} />
+          <MultiSelect className="w-32" label="Payment" options={PAY} value={pay} onChange={f(setPay)} />
+          <MultiSelect className="w-32" label="Assignee" options={ASSIGNEES} value={asg} onChange={f(setAsg)} />
+          <MultiSelect className="w-28" label="Event" options={EVENTS} value={evt} onChange={f(setEvt)} />
+          <button aria-pressed={late} onClick={() => { setLate(!late); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", late ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}><AlarmClock className="size-4" />Overdue</button>
+          <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
+          <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
+          <button onClick={reset} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
         </div>
+        <div className="mt-3"><FilterChips chips={chips} onClearAll={reset} /></div>
 
         {sel.size > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
+          <div className="mt-1 mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
             <b>{sel.size} selected</b>
-            <OutlineButton onClick={() => bulk((o) => ({ ...o, hold: "On Hold" }), "Put on hold")}>Put On Hold</OutlineButton>
-            <OutlineButton onClick={() => bulk((o) => ({ ...o, hold: "Cancelled" }), "Cancelled")}>Cancel</OutlineButton>
-            <OutlineButton onClick={() => bulk((o) => ({ ...o, priority: "High" }), "Priority set to High")}>Set High priority</OutlineButton>
-            <select aria-label="Bulk assign" value={bulkAsg} onChange={(e) => { const v = e.target.value; setBulkAsg("Assign to…"); bulk((o) => ({ ...o, assignee: v }), `Assigned to ${v}`); }} className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] font-semibold">
-              <option>Assign to…</option>{ASSIGNEES.map((a) => <option key={a}>{a}</option>)}
-            </select>
+            <OutlineButton onClick={() => bulk(() => ({ hold: "On Hold" }), "Put on hold")}>Put On Hold</OutlineButton>
+            <OutlineButton onClick={() => bulk(() => ({ hold: undefined }), "Resumed")}>Resume</OutlineButton>
+            <OutlineButton onClick={() => bulk(() => ({ hold: "Cancelled" }), "Cancelled")}>Cancel</OutlineButton>
+            <OutlineButton onClick={() => bulk(() => ({ priority: "High" }), "Priority set to High")}>Set High priority</OutlineButton>
+            <div className="w-44"><Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulk(() => ({ assignee: v }), `Assigned to ${v}`)} /></div>
             <button onClick={() => setSel(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
           </div>
         )}
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-2 overflow-x-auto">
           <table className={tableCls}>
             <thead>
               <tr>
-                <Th><input type="checkbox" checked={allSel} onChange={() => setSel((p) => { const n = new Set(p); pageRows.forEach((o) => allSel ? n.delete(o.id) : n.add(o.id)); return n; })} /></Th>
-                <Th>Order ID</Th><SortTh k="customer">Customer</SortTh><Th>Event</Th><Th>Workflow Type</Th><Th>Album Size</Th>
-                <SortTh k="stage">Current Stage</SortTh><SortTh k="priority">Priority</SortTh><SortTh k="pendingAt">Pending At</SortTh>
-                <SortTh k="assignee">Assigned To</SortTh><SortTh k="due">Due Date</SortTh><Th>Payment Status</Th><Th className="text-right">Actions</Th>
+                <Th><input type="checkbox" aria-label="Select page" checked={allSel} onChange={() => setSel((p) => { const n = new Set(p); pageRows.forEach((o) => allSel ? n.delete(o.id) : n.add(o.id)); return n; })} /></Th>
+                {th("id", "Order ID")}{th("customer", "Customer")}{th("event", "Event")}{th("workflow", "Workflow Type")}{th("size", "Album Size")}
+                {th("stage", "Current Stage")}{th("priority", "Priority")}{th("pendingAt", "Order Date")}{th("assignee", "Assigned To")}{th("due", "Due Date")}{th("pay", "Payment Status")}
+                <Th className="text-right">Actions</Th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((o) => (
-                <tr key={o.id} className={cx(trCls, sel.has(o.id) && "bg-brand-soft/60")}>
-                  <Td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} /></Td>
-                  <Td className="font-bold">{o.id}</Td>
-                  <Td><div className="flex items-center gap-3"><Thumb seed={o.customer} size={36} /><div className="leading-tight"><div className="font-semibold">{o.customer}</div><div className="text-xs text-sub">{o.mobile}</div></div></div></Td>
-                  <Td>{o.event}</Td><Td>{o.workflow}</Td><Td>{o.size}</Td>
-                  <Td>{o.hold ? <Pill tone={o.hold === "On Hold" ? "pink" : "red"} dot>{o.hold}</Pill> : <Pill tone={stageTone(o.stage)} dot>{stageLabel(o.stage)}</Pill>}</Td>
-                  <Td><PriorityPill p={o.priority} /></Td><Td>{fmtDate(o.pendingAt)}</Td>
-                  <Td><span className="inline-flex items-center gap-2"><Avatar name={o.assignee} size={24} />{o.assignee}</span></Td>
-                  <Td className={cx("font-medium", isOverdue(o.due) && o.stage !== "delivered" ? "text-rose-600" : "")}>{fmtDate(o.due)}</Td>
-                  <Td><PayPill s={o.pay} /></Td>
+                <tr key={o.id} data-row={o.id} onClick={() => setDrawer(o.id)} className={cx(trCls, "cursor-pointer", sel.has(o.id) && "bg-brand-soft/60")}>
+                  <Td><input type="checkbox" checked={sel.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} /></Td>
+                  {show_("id") && <Td className="font-bold">{o.id}</Td>}
+                  {show_("customer") && <Td><div className="flex items-center gap-3"><Thumb seed={o.customer} size={36} /><div className="leading-tight"><div className="font-semibold">{o.customer}</div><div className="text-xs text-sub">{o.mobile}</div></div></div></Td>}
+                  {show_("event") && <Td>{o.event}</Td>}
+                  {show_("workflow") && <Td>{o.workflow}</Td>}
+                  {show_("size") && <Td>{o.size}</Td>}
+                  {show_("stage") && <Td>{o.hold ? <Pill tone={o.hold === "On Hold" ? "pink" : "red"} dot>{o.hold}</Pill> : <Pill tone={stageTone(o.stage)} dot>{stageLabel(o.stage)}</Pill>}</Td>}
+                  {show_("priority") && (
+                    <Td>
+                      <InlinePop title="Change priority" label={`Change priority of ${o.id}`} trigger={<PriorityPill p={o.priority} />}>
+                        {(close) => PRIORITIES.map((p) => (
+                          <button key={p} onClick={() => { patchOrder(o.id, { priority: p }); show(`${o.id} priority set to ${p}`); close(); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 hover:bg-brand-soft"><PriorityPill p={p} />{p === o.priority && <Check className="size-4 text-brand" />}</button>
+                        ))}
+                      </InlinePop>
+                    </Td>
+                  )}
+                  {show_("pendingAt") && <Td>{fmtDate(o.pendingAt)}</Td>}
+                  {show_("assignee") && (
+                    <Td>
+                      <InlinePop title="Reassign to" label={`Reassign ${o.id}`} trigger={<span className="inline-flex items-center gap-2"><Avatar name={o.assignee} size={24} />{o.assignee}</span>}>
+                        {(close) => <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={o.assignee} onChange={(v) => { patchOrder(o.id, { assignee: v }); show(`${o.id} reassigned to ${v}`); close(); }} />}
+                      </InlinePop>
+                    </Td>
+                  )}
+                  {show_("due") && <Td className={cx("font-medium", isLate(o) && "text-rose-600")}>{fmtDate(o.due)}</Td>}
+                  {show_("pay") && <Td><PayPill s={o.pay} /></Td>}
                   <Td className="text-right">
-                    <span className="inline-flex items-center gap-2"><RowViewButton to={`/orders/${o.id}`} />
+                    <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}><RowViewButton to={`/orders/${o.id}`} />
                       <ActionMenu items={[
+                        { label: "Quick view", onClick: () => setDrawer(o.id) },
                         { label: "View details", onClick: () => nav(`/orders/${o.id}`) },
                         { label: "Edit", onClick: () => openEdit(o) },
-                        { label: "Resume", hidden: !o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: undefined } : x))); show(`${o.id} resumed`); } },
-                        { label: "Put On Hold", hidden: !!o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: "On Hold" } : x))); show(`${o.id} put on hold`); } },
-                        { label: "Cancel Order", danger: true, hidden: !!o.hold, onClick: () => { setRows((r) => r.map((x) => (x.id === o.id ? { ...x, hold: "Cancelled" } : x))); show(`${o.id} cancelled`); } },
+                        { label: "Resume", hidden: !o.hold, onClick: () => setHold(o, undefined) },
+                        { label: "Put On Hold", hidden: !!o.hold, onClick: () => setHold(o, "On Hold") },
+                        { label: "Cancel Order", danger: true, hidden: !!o.hold, onClick: () => setHold(o, "Cancelled") },
                       ]} /></span>
                   </Td>
                 </tr>
               ))}
-              {pageRows.length === 0 && <tr><td colSpan={13} className="py-10 text-center text-sub">No orders match the current filters.</td></tr>}
+              {pageRows.length === 0 && <tr><td colSpan={visibleCols} className="py-10 text-center text-sub">No orders match the current filters.</td></tr>}
             </tbody>
           </table>
         </div>
         <Pagination page={page} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} noun="orders" />
-        <div className="mt-1 text-xs text-sub">{sel.size} selected · today {fmtDate(TODAY)}</div>
+        <div className="mt-1 text-xs text-sub">{sel.size} selected · today {fmtDate(TODAY)} · press <kbd className="rounded border border-line px-1">/</kbd> to search, <kbd className="rounded border border-line px-1">n</kbd> for new order</div>
       </Panel>
 
-      <SlideOver open={create} onClose={() => setCreate(false)} title="Create Order" width={560}
-        footer={<><OutlineButton onClick={() => setCreate(false)}>Cancel</OutlineButton><PrimaryButton icon={Plus} onClick={submit}>Create Order</PrimaryButton></>}>
-        {err && <div className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-600">{err}</div>}
-        <h3 className="mb-3 text-sm font-extrabold">Order details</h3>
-        <Field label="Customer" required>
-          <input list="cust-list" className={inputCls} value={form.customer} onChange={(e) => setF("customer", e.target.value)} placeholder="Search or select customer" />
-          <datalist id="cust-list">{CUSTOMERS.map((c) => <option key={c.id} value={c.name} />)}</datalist>
-        </Field>
-        <div className="grid grid-cols-2 gap-x-4">
-          <Field label="Order Type" required>{sel2("orderType", ["Design + Printing", "Printing"])}</Field>
-          <Field label="Priority">{sel2("priority", PRIORITIES)}</Field>
-          <Field label="Order Date" required><input type="date" className={inputCls} value={form.orderDate} onChange={(e) => setF("orderDate", e.target.value)} /></Field>
-          <Field label="Expected Delivery" required><input type="date" className={inputCls} value={form.expectedDelivery} onChange={(e) => setF("expectedDelivery", e.target.value)} /></Field>
-          <Field label="Event Name"><input className={inputCls} value={form.eventName} onChange={(e) => setF("eventName", e.target.value)} /></Field>
-          <Field label="Event Type">{sel2("eventType", EVENTS)}</Field>
-          <Field label="Bride Name"><input className={inputCls} value={form.bride} onChange={(e) => setF("bride", e.target.value)} /></Field>
-          <Field label="Groom Name"><input className={inputCls} value={form.groom} onChange={(e) => setF("groom", e.target.value)} /></Field>
-        </div>
-        <h3 className="mb-3 mt-2 text-sm font-extrabold">Album specification</h3>
-        <div className="grid grid-cols-2 gap-x-4">
-          <Field label="Album Type">{sel2("albumType", ["Wedding Album", "Pre Wedding Album", "Reception Album", "Engagement Album", "Highlight Book"])}</Field>
-          <Field label="Album Size">{sel2("size", ALBUM_SIZES)}</Field>
-          <Field label="Orientation">{sel2("orientation", ["Landscape", "Portrait", "Square"])}</Field>
-          <Field label="No. of Pages"><input type="number" min={10} className={inputCls} value={form.pages} onChange={(e) => setF("pages", e.target.value)} /></Field>
-          <Field label="No. of Copies"><input type="number" min={1} className={inputCls} value={form.copies} onChange={(e) => setF("copies", e.target.value)} /></Field>
-          <Field label="Paper Type">{sel2("paper", ["Matte", "Glossy", "Lustre", "Silk", "Canvas"])}</Field>
-          <Field label="Cover Type">{sel2("cover", ["Leatherette", "Fabric", "Acrylic", "Photo Cover", "Wood"])}</Field>
-          <Field label="Lamination">{sel2("lamination", ["Matte", "Glossy", "Velvet", "None"])}</Field>
-          <Field label="Binding">{sel2("binding", ["Flush Mount", "Layflat", "Spiral", "Perfect Bound"])}</Field>
-          <Field label="Box / Case">{sel2("box", ["Yes", "No"])}</Field>
-        </div>
-        <Field label="Special Instructions"><textarea rows={3} className={cx(inputCls, "h-auto py-2")} value={form.notes} onChange={(e) => setF("notes", e.target.value)} /></Field>
-      </SlideOver>
-
-      <SlideOver open={moreOpen} onClose={() => setMoreOpen(false)} title="More Filters" width={380}
-        footer={<><OutlineButton onClick={() => { setEvt("All Events"); setFrom(""); setTo(""); setOverdueOnly(false); setPage(1); }}>Reset</OutlineButton><PrimaryButton icon={Filter} onClick={() => { setMoreOpen(false); setPage(1); show("Filters applied"); }}>Apply</PrimaryButton></>}>
-        <Field label="Order date from"><input type="date" className={inputCls} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field label="Order date to"><input type="date" className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
-        <Field label="Event type"><FilterSelect value={evt} onChange={setEvt} options={["All Events", ...EVENTS]} /></Field>
-        <label className="flex items-center gap-2 text-[13px] font-semibold"><input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />Overdue only</label>
+      <SlideOver open={!!d} onClose={() => setDrawer(null)} title={d ? `${d.id} · ${d.customer}` : ""} width={520}
+        footer={d && <><OutlineButton onClick={() => setDrawer(null)}>Close</OutlineButton><PrimaryButton icon={ExternalLink} onClick={() => nav(`/orders/${d.id}`)}>Open full page</PrimaryButton></>}>
+        {d && (
+          <div data-testid="order-drawer">
+            <div className="flex flex-wrap items-center gap-2">
+              {d.hold ? <Pill tone={d.hold === "On Hold" ? "pink" : "red"} dot>{d.hold}</Pill> : <Pill tone={stageTone(d.stage)} dot>{stageLabel(d.stage)}</Pill>}
+              <PriorityPill p={d.priority} /><PayPill s={d.pay} />
+              {isLate(d) && <Pill tone="red">Overdue</Pill>}
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+              {([["Customer", d.customer], ["Mobile", d.mobile], ["Event", d.event], ["Workflow", d.workflow], ["Album", `${d.size} · ${d.pages} pages`], ["Order date", fmtDate(d.pendingAt)], ["Due date", fmtDate(d.due)], ["Assigned to", d.assignee], ["Order value", inr(d.total)], ["Paid", `${inr(d.paid)} (${d.pay})`]] as const).map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+            </dl>
+            <h3 className="mb-2 mt-6 text-sm font-extrabold">Progress · {d.progress}%</h3>
+            <ol className="space-y-1.5">
+              {STAGES.map((s, i) => {
+                const cur = STAGES.findIndex((x) => x.key === d.stage);
+                const skipped = d.workflow === "Printing" && ["colour_grading", "admin_approval", "designing", "client_review", "final_approval"].includes(s.key);
+                return (
+                  <li key={s.key} className={cx("flex items-center gap-2.5 text-[13px]", skipped && "opacity-40")}>
+                    <span className={cx("grid size-5 place-items-center rounded-full text-[10px] font-bold", i < cur ? "bg-emerald-500 text-white" : i === cur ? "bg-brand text-white" : "bg-slate-100 text-sub")}>{i < cur ? <Check className="size-3" /> : i + 1}</span>
+                    <span className={cx(i === cur && "font-extrabold text-brand")}>{s.label}</span>{skipped && <span className="text-xs text-sub">(not required)</span>}
+                  </li>
+                );
+              })}
+            </ol>
+            <h3 className="mb-2 mt-6 text-sm font-extrabold">Quick actions</h3>
+            <div className="space-y-3">
+              <div>
+                <span className="mb-1 block text-xs font-semibold text-sub">Priority</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRIORITIES.map((p) => <button key={p} aria-pressed={d.priority === p} onClick={() => { patchOrder(d.id, { priority: p }); show(`${d.id} priority set to ${p}`); }} className={cx("rounded-full border px-3 py-1 text-xs font-bold", d.priority === p ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{p}</button>)}
+                </div>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-semibold text-sub">Reassign</span>
+                <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={d.assignee} onChange={(v) => { patchOrder(d.id, { assignee: v }); show(`${d.id} reassigned to ${v}`); }} />
+              </div>
+              <div className="flex gap-2">
+                {d.hold ? <OutlineButton icon={PlayCircle} onClick={() => setHold(d, undefined)}>Resume</OutlineButton> : <OutlineButton icon={PauseCircle} onClick={() => setHold(d, "On Hold")}>Put on hold</OutlineButton>}
+                <OutlineButton onClick={() => openEdit(d)}>Edit dates / size</OutlineButton>
+              </div>
+            </div>
+          </div>
+        )}
       </SlideOver>
 
       <SlideOver open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.id ?? ""}`} width={420}
-        footer={<><OutlineButton onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Plus} onClick={saveEdit}>Save changes</PrimaryButton></>}>
+        footer={<><OutlineButton onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Check} onClick={saveEdit}>Save changes</PrimaryButton></>}>
         {eerr && <div className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-600">{eerr}</div>}
-        <Field label="Priority"><FilterSelect value={ef.priority} onChange={(v) => setEf({ ...ef, priority: v as Priority })} options={PRIORITIES} /></Field>
-        <Field label="Assigned to"><FilterSelect value={ef.assignee} onChange={(v) => setEf({ ...ef, assignee: v })} options={ASSIGNEES} /></Field>
-        <Field label="Album size"><FilterSelect value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} options={ALBUM_SIZES} /></Field>
+        <Field label="Album size"><Combobox options={ALBUM_SIZES.map((s) => ({ value: s, label: s }))} value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} /></Field>
         <Field label="Due date" required><input type="date" className={inputCls} value={ef.due} onChange={(e) => setEf({ ...ef, due: e.target.value })} /></Field>
       </SlideOver>
       {toast}
