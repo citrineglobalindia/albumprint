@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useToast } from "../components/Toast";
 import { ActionMenu } from "../components/ActionMenu";
 import { Users, ShieldCheck, Crown, Phone, Repeat, IndianRupee, Mail, MapPin, CalendarDays, Tag, X, MoreHorizontal, ChevronDown, StickyNote, Pencil, RotateCcw, Check, AlertCircle, Plus, Undo2 } from "lucide-react";
@@ -62,6 +62,8 @@ export default function Customers() {
   const newOrder = useNewOrder();
   const [toast, show] = useToast();
   const [adding, setAdding] = useState(false);
+  const [sp, setSp] = useSearchParams();
+  useEffect(() => { if (sp.get("new")) { setAdding(true); setSp({}, { replace: true }); } }, [sp, setSp]);
   const [editId, setEditId] = useState<string | null>(null);
   const [segment, setSegment] = useState<string | null>(null);
   const [segOpen, setSegOpen] = useState(false);
