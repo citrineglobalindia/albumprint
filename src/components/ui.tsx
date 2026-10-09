@@ -55,17 +55,7 @@ export function OutlineButton({ children, icon: Icon, onClick, className }: { ch
   );
 }
 
-export function TodayChip() {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-2">
-      <CalendarDays className="size-6 text-sub" />
-      <div className="text-xs leading-tight text-sub">
-        Today
-        <div className="text-sm font-semibold text-ink">{TODAY.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</div>
-      </div>
-    </div>
-  );
-}
+export { TodayChip } from "./controls";
 
 /** Page-level "More" menu: print, refresh, and CSV export of every table on the page. */
 export function MoreButton() {

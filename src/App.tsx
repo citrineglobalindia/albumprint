@@ -19,6 +19,7 @@ import Login from "./pages/Login";
 import RoleHome from "./pages/RoleHome";
 import OrderDetail from "./pages/OrderDetail";
 import Notifications from "./pages/Notifications";
+import { NewOrderProvider } from "./components/NewOrderWizard";
 import { AuthProvider, RequireAuth, useAuth } from "./lib/auth";
 
 function Home() {
@@ -29,6 +30,7 @@ function Home() {
 export default function App() {
   return (
     <AuthProvider>
+    <NewOrderProvider>
     <Routes>
       <Route path="login" element={<Login />} />
       <Route element={<RequireAuth><Shell /></RequireAuth>}>
@@ -53,6 +55,7 @@ export default function App() {
         <Route path="*" element={<div className="p-10 text-sub">Page not found</div>} />
       </Route>
     </Routes>
+    </NewOrderProvider>
     </AuthProvider>
   );
 }
