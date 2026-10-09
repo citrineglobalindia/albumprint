@@ -155,7 +155,7 @@ export default function Dashboard() {
                     <Td><PriorityPill p={o.priority} /></Td>
                     <Td>{o.assignee}</Td>
                     <Td className={isOverdue(o.due) ? "font-semibold text-rose-600" : ""}>{fmtDate(o.due)}</Td>
-                    <Td><RowViewButton onClick={() => nav("/orders")} /></Td>
+                    <Td><RowViewButton to={`/orders/${o.id}`} /></Td>
                   </tr>
                 ))}
               </tbody>

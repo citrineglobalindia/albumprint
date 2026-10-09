@@ -99,8 +99,13 @@ const extraNames = ["Candid Clicks", "Divine Moments", "Wedding Bliss", "Artisan
 export const ORDERS: Order[] = Array.from({ length: 72 }, (_, i) => {
   const n = 72 - i;
   const s = i < orderSeed.length ? orderSeed[i]! : null;
-  const stage = s ? s[5] : STAGES[(i * 7 + 3) % STAGES.length]!.key;
   const wf: WorkflowType = s ? s[3] : i % 3 === 0 ? "Printing" : "Design + Printing";
+  let stage: StageKey = s ? s[5] : STAGES[(i * 7 + 3) % STAGES.length]!.key;
+  // SRS §5.2: Printing Only orders skip grading/design/proofing stages.
+  if (wf === "Printing") {
+    if (stage === "colour_grading" || stage === "admin_approval") stage = "files_received";
+    else if (["designing", "client_review", "final_approval"].includes(stage)) stage = "printing";
+  }
   const total = 30000 + ((i * 7919) % 60000);
   const pay: PayStatus = s ? s[10] : (["Paid", "Partial", "Unpaid", "Overdue"] as PayStatus[])[i % 4]!;
   const paid = pay === "Paid" ? total : pay === "Partial" ? Math.round(total * 0.5) : 0;

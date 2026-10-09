@@ -162,7 +162,7 @@ export default function Orders() {
                   <Td className={cx("font-medium", isOverdue(o.due) && o.stage !== "delivered" ? "text-rose-600" : "")}>{fmtDate(o.due)}</Td>
                   <Td><PayPill s={o.pay} /></Td>
                   <Td className="relative text-right">
-                    <span className="inline-flex items-center gap-2"><RowViewButton />
+                    <span className="inline-flex items-center gap-2"><RowViewButton to={`/orders/${o.id}`} />
                       <button aria-label="More" onClick={(e) => { e.stopPropagation(); setMenu(menu === o.id ? null : o.id); }} className="grid size-8 place-items-center rounded-lg hover:bg-slate-100"><MoreVertical className="size-4" /></button></span>
                     {menu === o.id && (
                       <div className={cx("absolute right-3 z-20 w-36 rounded-lg border border-line bg-white py-1 text-left shadow-lg", i > pageRows.length - 3 && i > 2 ? "bottom-8" : "top-10")}>

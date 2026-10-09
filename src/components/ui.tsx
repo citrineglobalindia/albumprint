@@ -1,6 +1,7 @@
 import { type ReactNode, type ComponentType } from "react";
 import { ChevronLeft, ChevronRight, ChevronDown, Search, ArrowUp, ArrowDown, ImageIcon, CalendarDays, Plus } from "lucide-react";
 import clsx from "clsx";
+import { useNavigate } from "react-router-dom";
 import { initials, TODAY } from "../lib/format";
 import type { Priority, Tone, PayStatus } from "../lib/data";
 
@@ -259,8 +260,9 @@ export const Td = ({ children, className }: { children?: ReactNode; className?: 
 );
 export const trCls = "border-t border-line hover:bg-brand-soft/50";
 
-export function RowViewButton({ onClick }: { onClick?: () => void }) {
-  return <button onClick={onClick} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold text-ink hover:bg-brand-soft">View</button>;
+export function RowViewButton({ onClick, to }: { onClick?: () => void; to?: string }) {
+  const nav = useNavigate();
+  return <button onClick={to ? () => nav(to) : onClick} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold text-ink hover:bg-brand-soft">View</button>;
 }
 
 export function ProgressBar({ value, tone = "blue", className }: { value: number; tone?: Tone; className?: string }) {

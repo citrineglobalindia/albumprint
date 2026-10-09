@@ -15,12 +15,26 @@ import Reports from "./pages/Reports";
 import Masters from "./pages/Masters";
 import UsersRoles from "./pages/UsersRoles";
 import SettingsPage from "./pages/Settings";
+import Login from "./pages/Login";
+import RoleHome from "./pages/RoleHome";
+import OrderDetail from "./pages/OrderDetail";
+import Notifications from "./pages/Notifications";
+import { AuthProvider, RequireAuth, useAuth } from "./lib/auth";
+
+function Home() {
+  const { role } = useAuth();
+  return role === "admin" ? <Dashboard /> : <RoleHome />;
+}
 
 export default function App() {
   return (
+    <AuthProvider>
     <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Dashboard />} />
+      <Route path="login" element={<Login />} />
+      <Route element={<RequireAuth><Shell /></RequireAuth>}>
+        <Route index element={<Home />} />
+        <Route path="orders/:id" element={<OrderDetail />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="orders" element={<Orders />} />
         <Route path="customers" element={<Customers />} />
         <Route path="pipeline" element={<Pipeline />} />
@@ -39,5 +53,6 @@ export default function App() {
         <Route path="*" element={<div className="p-10 text-sub">Page not found</div>} />
       </Route>
     </Routes>
+    </AuthProvider>
   );
 }

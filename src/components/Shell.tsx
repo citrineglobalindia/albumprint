@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, Link } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
-  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture,
+  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
 import { ORDERS, CUSTOMERS } from "../lib/data";
+import { useAuth, ROLES } from "../lib/auth";
 
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -23,10 +24,13 @@ export const NAV = [
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/masters", label: "Masters", icon: Boxes },
   { to: "/users", label: "Users & Roles", icon: UserCog },
+  { to: "/notifications", label: "Notifications", icon: MessagesSquare },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 function Sidebar() {
+  const { role } = useAuth();
+  const items = NAV.filter((n) => ROLES[role!].nav.includes(n.to));
   return (
     <aside className="flex w-[220px] shrink-0 flex-col bg-side px-3 py-5 text-white">
       <div className="mb-6 flex items-center gap-2.5 px-3">
@@ -34,7 +38,7 @@ function Sidebar() {
         <span className="text-xl font-extrabold tracking-tight">AlbumPro</span>
       </div>
       <nav className="scroll-thin flex flex-1 flex-col gap-1 overflow-y-auto">
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => cx("flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition", isActive ? "bg-brand text-white shadow-lg shadow-brand/30" : "text-slate-300 hover:bg-side-hover hover:text-white")}>
             <Icon className="size-[18px]" />
             {label}
@@ -70,7 +74,7 @@ function SearchBox() {
       {open && term && (
         <div className="absolute left-0 right-0 top-12 z-40 rounded-xl border border-line bg-white p-2 shadow-xl">
           {orders.length + customers.length === 0 && <div className="px-3 py-2 text-sm text-sub">No results</div>}
-          {orders.map((o) => <button key={o.id} onMouseDown={() => go("/orders")} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-brand-soft"><b>{o.id}</b><span className="text-sub">{o.customer} · {o.event}</span></button>)}
+          {orders.map((o) => <button key={o.id} onMouseDown={() => go(`/orders/${o.id}`)} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-brand-soft"><b>{o.id}</b><span className="text-sub">{o.customer} · {o.event}</span></button>)}
           {customers.map((c) => <button key={c.id} onMouseDown={() => go("/customers")} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-brand-soft"><b>{c.name}</b><span className="text-sub">{c.studio} · {c.mobile}</span></button>)}
         </div>
       )}
@@ -79,20 +83,33 @@ function SearchBox() {
 }
 
 function Topbar() {
+  const { role, user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const nav = useNavigate();
   return (
     <header className="flex items-center justify-between gap-4 px-7 pt-5">
       <SearchBox />
       <div className="flex items-center gap-5">
-        <button className="relative text-ink" aria-label="Notifications">
+        <Link to="/notifications" className="relative text-ink" aria-label="Notifications">
           <Bell className="size-5" />
           <span className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-rose-500 text-[10px] font-bold text-white">3</span>
-        </button>
+        </Link>
         <button aria-label="Help"><CircleHelp className="size-5" /></button>
-        <button className="flex items-center gap-2.5">
-          <Avatar name="Admin" size={38} />
-          <span className="text-left leading-tight"><span className="block text-sm font-bold">Admin</span><span className="block text-[11px] text-sub">Super Admin</span></span>
-          <ChevronDown className="size-4 text-sub" />
-        </button>
+        <div className="relative">
+          <button onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} className="flex items-center gap-2.5">
+            <Avatar name={user} size={38} />
+            <span className="text-left leading-tight"><span className="block text-sm font-bold">{user}</span><span className="block text-[11px] text-sub">{ROLES[role!].label}</span></span>
+            <ChevronDown className="size-4 text-sub" />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-12 z-40 w-60 rounded-xl border border-line bg-white p-1.5 shadow-xl">
+              <div className="px-3 py-2 text-xs text-sub">{ROLES[role!].email}<br />{ROLES[role!].dept}</div>
+              <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"><MonitorSmartphone className="mt-0.5 size-4 text-sub" /><span><b className="block text-[13px]">Active session</b>Chrome · this device · just now</span></div>
+              <button onMouseDown={() => { logout(); nav("/login"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft"><LogOut className="size-4" />Logout</button>
+              <button onMouseDown={() => { logout(); nav("/login"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold text-rose-600 hover:bg-rose-50"><LogOut className="size-4" />Logout all sessions</button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Users, ShieldCheck, Crown, Phone, Repeat, IndianRupee, Mail, MapPin, CalendarDays, Tag, X, Filter, MoreHorizontal, ChevronDown, User, StickyNote } from "lucide-react";
 import {
   PageHeader, PrimaryButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, FilterSelect, LineTabs, Pagination,
-  tableCls, Th, Td, trCls, cx, OutlineButton, type Kpi,
+  tableCls, Th, Td, trCls, cx, OutlineButton, SlideOver, Field, inputCls, type Kpi,
 } from "../components/ui";
 import { CUSTOMERS, type Customer } from "../lib/data";
 import { inr, fmtDate } from "../lib/format";
@@ -29,7 +29,25 @@ const kpis: Kpi[] = [
 
 const TypePill = ({ t }: { t: Customer["type"] }) => <Pill tone={t === "VIP" ? "amber" : t === "New" ? "blue" : "slate"} icon={t === "VIP" ? Crown : undefined}>{t}</Pill>;
 
+const EMPTY = { name: "", studio: "", mobile: "", whatsapp: "", email: "", address: "", city: "", state: "", pin: "", gstin: "", notes: "" };
+
 export default function Customers() {
+  const [all, setAll] = useState<Customer[]>(CUSTOMERS);
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState(EMPTY);
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const save = () => {
+    // SRS §4.2: name 2-150 chars, valid mobile; optional email / GSTIN format-validated.
+    const e: Record<string, string> = {};
+    if (f.studio.trim().length < 2) e.studio = "Enter 2–150 characters";
+    if (!/^\+?[0-9 ]{10,14}$/.test(f.mobile.trim())) e.mobile = "Enter a valid mobile number";
+    if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) e.email = "Invalid email";
+    if (f.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(f.gstin.toUpperCase())) e.gstin = "Invalid GSTIN";
+    setErrs(e);
+    if (Object.keys(e).length) return;
+    const c: Customer = { id: `IDC${String(1249 + all.length - CUSTOMERS.length).padStart(6, "0")}`, name: f.name || f.studio, studio: f.studio, mobile: f.mobile, email: f.email, city: f.city, state: f.state, type: "New", status: "Active", activeOrders: 0, lifetime: 0, lastOrder: "2026-10-03", since: "2026-10-03", dues: 0, tags: [] };
+    setAll([c, ...all]); setActiveId(c.id); setAdding(false); setF(EMPTY);
+  };
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
   const [type, setType] = useState("All Customer Types");
@@ -44,7 +62,7 @@ export default function Customers() {
   const [draft, setDraft] = useState("");
 
   const inTab = (c: Customer, t: Tab) => t === "all" || (t === "active" ? c.status === "Active" : t === "inactive" ? c.status === "Inactive" : t === "vip" ? c.type === "VIP" : c.type === "New");
-  const base = useMemo(() => CUSTOMERS.filter((c) => {
+  const base = useMemo(() => all.filter((c) => {
     const s = q.trim().toLowerCase();
     if (s && ![c.name, c.mobile, c.email, c.studio, c.id].some((v) => v.toLowerCase().includes(s))) return false;
     if (type !== "All Customer Types" && c.type !== type) return false;
@@ -54,7 +72,7 @@ export default function Customers() {
   }), [q, type, city, status]);
   const list = base.filter((c) => inTab(c, tab));
   const rows = list.slice((page - 1) * pageSize, page * pageSize);
-  const cur = CUSTOMERS.find((c) => c.id === activeId) ?? null;
+  const cur = all.find((c) => c.id === activeId) ?? null;
   const allChecked = rows.length > 0 && rows.every((c) => checked.has(c.id));
   const tabs: { key: Tab; label: string }[] = [{ key: "all", label: "All Customers" }, { key: "active", label: "Active" }, { key: "vip", label: "VIP" }, { key: "new", label: "New" }, { key: "inactive", label: "Inactive" }];
   const myNotes = cur ? [...(notes[cur.id] ?? []), "Discussed new album design samples. Client liked the premium matte finish. Follow up next week for final approval."] : [];
@@ -62,7 +80,7 @@ export default function Customers() {
   return (
     <div>
       <PageHeader title="Customers" subtitle="Manage your studio clients, track orders, and build long-term relationships.">
-        <PrimaryButton>Add Customer</PrimaryButton>
+        <PrimaryButton onClick={() => setAdding(true)}>Add Customer</PrimaryButton>
         <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold">More <ChevronDown className="size-4" /></button>
       </PageHeader>
       <KpiRow items={kpis} />
@@ -169,6 +187,13 @@ export default function Customers() {
           <Panel><p className="py-10 text-center text-sm text-sub">Select a customer to view details.</p></Panel>
         )}
       </div>
+      <SlideOver open={adding} onClose={() => setAdding(false)} title="Add Customer" footer={<><OutlineButton className="!h-10" onClick={() => setAdding(false)}>Cancel</OutlineButton><PrimaryButton onClick={save}>Save Customer</PrimaryButton></>}>
+        {([["studio", "Customer / Studio Name", true], ["name", "Contact Person"], ["mobile", "Mobile Number", true], ["whatsapp", "WhatsApp Number"], ["email", "Email"], ["address", "Address"], ["city", "City"], ["state", "State"], ["pin", "PIN"], ["gstin", "GSTIN / Tax ID"], ["notes", "Customer Notes"]] as [keyof typeof EMPTY, string, boolean?][]).map(([k, label, req]) => (
+          <Field key={k} label={label} required={req} hint={errs[k]}>
+            <input className={cx(inputCls, errs[k] && "border-rose-400")} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+          </Field>
+        ))}
+      </SlideOver>
     </div>
   );
 }
