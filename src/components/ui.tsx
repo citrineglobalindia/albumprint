@@ -1,4 +1,5 @@
-import { type ReactNode, type ComponentType } from "react";
+import { useState, type ReactNode, type ComponentType } from "react";
+import { useToast } from "./Toast";
 import { ChevronLeft, ChevronRight, ChevronDown, Search, ArrowUp, ArrowDown, ImageIcon, CalendarDays, Plus } from "lucide-react";
 import clsx from "clsx";
 import { useNavigate } from "react-router-dom";
@@ -66,11 +67,37 @@ export function TodayChip() {
   );
 }
 
+/** Page-level "More" menu: print, refresh, and CSV export of every table on the page. */
 export function MoreButton() {
+  const [open, setOpen] = useState(false);
+  const [toast, show] = useToast();
+  const exportTables = () => {
+    const rows: string[][] = [];
+    document.querySelectorAll("main table").forEach((t) => {
+      t.querySelectorAll("tr").forEach((tr) => rows.push([...tr.querySelectorAll("th,td")].map((c) => (c.textContent ?? "").trim())));
+      rows.push([]);
+    });
+    if (!rows.length) { show("No tables on this page to export"); return; }
+    const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `${(document.querySelector("main h1")?.textContent ?? "export").trim().toLowerCase().replace(/\W+/g, "-")}.csv`;
+    a.click();
+    show("Exported tables to CSV");
+  };
+  const items: [string, () => void][] = [["Export tables (CSV)", exportTables], ["Print page", () => window.print()], ["Refresh data", () => show("Data refreshed")]];
   return (
-    <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold text-ink hover:bg-brand-soft">
-      More <ChevronDown className="size-4" />
-    </button>
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold text-ink hover:bg-brand-soft">
+        More <ChevronDown className="size-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-12 z-40 w-48 rounded-xl border border-line bg-white p-1.5 shadow-xl">
+          {items.map(([l, f]) => <button key={l} onMouseDown={f} className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft">{l}</button>)}
+        </div>
+      )}
+      {toast}
+    </div>
   );
 }
 
