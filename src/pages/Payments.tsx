@@ -105,6 +105,7 @@ export default function Payments() {
   useEffect(() => {
     const id = sp.get("pay");
     if (id) { openForm(id); setSp({}, { replace: true }); }
+    else if (sp.get("new")) { openForm(); setSp({}, { replace: true }); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

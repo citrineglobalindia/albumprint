@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History } from "lucide-react";
+import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical } from "lucide-react";
 import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
-import { ORDERS } from "../lib/data";
+import { Combobox } from "../components/controls";
+import { Err, FieldBox, Kbd, strOpts } from "../components/pageKit";
+import { ORDERS, STAFF } from "../lib/data";
 import { fmtDate } from "../lib/format";
 
 type DStatus = "In Designing" | "With Client" | "Corrections Requested" | "Approved";
@@ -11,17 +13,22 @@ const STATUS_TONE = { "In Designing": "green", "With Client": "amber", "Correcti
 
 const TEMPLATES = ["Classic Elegance", "Modern Minimal", "Royal Heritage", "Cinematic", "Pastel Dreams", "Traditional", "Dark Luxe", "Nature Bliss"];
 const TPL_TABS = ["Design Templates", "Layouts", "Backgrounds", "Stickers", "Frames", "Elements"];
-const SPREAD_LABELS = ["Cover", "Spread 1", "Spread 2", "Spread 3", "Spread 4", "Spread 5", "Spread 6", "Spread 7", "Spread 8"];
+const ZMIN = 40, ZMAX = 150, ZFIT = 85;
 
-interface Correction { id: string; page: number; text: string; by: string; status: "Open" | "In Progress" | "Resolved" }
+interface Correction { id: string; page: number; text: string; by: string; status: "Open" | "In Progress" | "Resolved"; assignee: string }
 const CORRECTIONS0: Correction[] = [
-  { id: "COR-001", page: 12, text: "Warm up the skin tones on the right photo.", by: "Client", status: "Open" },
-  { id: "COR-002", page: 5, text: "Replace the bottom-left photo with the sangeet shot.", by: "Client", status: "In Progress" },
-  { id: "COR-003", page: 1, text: "Cover title font too thin - use bolder script.", by: "Admin", status: "Open" },
+  { id: "COR-001", page: 12, text: "Warm up the skin tones on the right photo.", by: "Client", status: "Open", assignee: "Ramesh" },
+  { id: "COR-002", page: 5, text: "Replace the bottom-left photo with the sangeet shot.", by: "Client", status: "In Progress", assignee: "Ramesh" },
+  { id: "COR-003", page: 1, text: "Cover title font too thin - use bolder script.", by: "Admin", status: "Open", assignee: "Ameer Khan" },
 ];
+const DESIGNERS = [...new Set([...STAFF.filter((s) => s.role === "Designer").map((s) => s.name.split(" ").slice(0, 2).join(" ")), "Admin"])];
 const BG_SWATCHES = ["#fbf7f0", "#ffffff", "#f3e8ff", "#fde68a", "#fecdd3", "#bae6fd", "#bbf7d0", "#1e293b"];
-interface Overlay { id: number; page: number; kind: "text" | "image"; text: string; x: number; y: number }
-const COMMENTS = [
+
+interface Overlay { id: number; kind: "text" | "image"; text: string; x: number; y: number; w: number; h: number }
+interface Spread { id: number; bg?: string; overlays: Overlay[] }
+interface Doc { spreads: Spread[]; tpl: number }
+interface Comment { by: string; when: string; page: number; text: string }
+const COMMENTS0: Comment[] = [
   { by: "Chidanan da", when: "2 Oct 2026, 06:10 PM", page: 1, text: "Love the cover! Please add both names in gold foil." },
   { by: "Chidanan da", when: "3 Oct 2026, 09:40 AM", page: 12, text: "Skin tones look slightly dull on this page." },
 ];
@@ -41,46 +48,145 @@ const PageArt = ({ seed, mirror }: { seed: number; mirror?: boolean }) => (
   </div>
 );
 
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const typing = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("input,textarea,select,[contenteditable=true]");
+const nowLabel = () => "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
 export default function Designing() {
   const { orderId } = useParams();
   const order = ORDERS.find((o) => o.id === (orderId ?? "IDP00072")) ?? ORDERS.find((o) => o.id === "IDP00072")!;
 
+  const initDoc = (): Doc => ({ tpl: 0, spreads: Array.from({ length: Math.ceil(order.pages / 2) + 1 }, (_, i) => ({ id: i, overlays: [] })) });
+  const [doc, setDoc] = useState<Doc>(initDoc);
+  const [past, setPast] = useState<Doc[]>([]);
+  const [future, setFuture] = useState<Doc[]>([]);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const dragBase = useRef<Doc | null>(null);
+
   const [page, setPage] = useState(0);
-  const [zoom, setZoom] = useState(85);
-  const [history, setHistory] = useState<number[]>([0]);
-  const [hIdx, setHIdx] = useState(0);
+  const [zoom, setZoom] = useState(ZFIT);
+  const [selOv, setSelOv] = useState<number | null>(null);
+  const [editOv, setEditOv] = useState<number | null>(null);
   const [tplTab, setTplTab] = useState("Design Templates");
-  const [tpl, setTpl] = useState(0);
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
   const [status, setStatus] = useState<DStatus>("In Designing");
   const [corrections, setCorrections] = useState(CORRECTIONS0);
+  const [comments, setComments] = useState(COMMENTS0);
+  const [cDraft, setCDraft] = useState("");
+  const [cPage, setCPage] = useState("1");
+  const [cErr, setCErr] = useState("");
+  const [corrOpen, setCorrOpen] = useState(false);
+  const [crPage, setCrPage] = useState("1");
+  const [crText, setCrText] = useState("");
+  const [crAssignee, setCrAssignee] = useState(DESIGNERS[0]!);
+  const [crErr, setCrErr] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState([{ text: "Include couple name on cover and check colour tone for page 12.", by: "Admin", when: "2 hours ago" }]);
   const [noteDraft, setNoteDraft] = useState("");
   const [adding, setAdding] = useState(false);
-  const [pagesAdded, setPagesAdded] = useState(0);
   const [toast, setToast] = useState("");
   const [saveMenu, setSaveMenu] = useState(false);
   const [versions, setVersions] = useState(1);
   const [bgOpen, setBgOpen] = useState(false);
-  const [bg, setBg] = useState<Record<number, string>>({});
-  const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [noteMenu, setNoteMenu] = useState<number | null>(null);
   const [editNote, setEditNote] = useState<number | null>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
   const [events, setEvents] = useState([
     { when: "1 Oct 2026, 10:24 AM", text: "Design started by Ramesh" },
     { when: "2 Oct 2026, 06:10 PM", text: "Client comment received on page 1" },
     { when: "3 Oct 2026, 04:15 PM", text: "Last edit saved" },
   ]);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
-  const spreads = Math.ceil(order.pages / 2) + 1 + pagesAdded;
+  const spreads = doc.spreads;
+  const cur = spreads[Math.min(page, spreads.length - 1)]!;
+  const pageNo = page === 0 ? 1 : page * 2;
   const openCorr = corrections.filter((c) => c.status !== "Resolved").length;
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
-  const log = (text: string) => setEvents((e) => [...e, { when: "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }), text }]);
+  const log = (text: string) => setEvents((e) => [...e, { when: nowLabel(), text }]);
+
+  /* ───────── history ───────── */
+  const commit = (next: Doc) => { setPast((p) => [...p.slice(-99), docRef.current]); setFuture([]); setDoc(next); };
+  const undo = () => {
+    if (!past.length) return;
+    const prev = past[past.length - 1]!;
+    setPast(past.slice(0, -1)); setFuture((f) => [docRef.current, ...f]); setDoc(prev);
+    setPage((p) => Math.min(p, prev.spreads.length - 1)); setSelOv(null); setEditOv(null);
+  };
+  const redo = () => {
+    if (!future.length) return;
+    const nxt = future[0]!;
+    setFuture(future.slice(1)); setPast((p) => [...p, docRef.current]); setDoc(nxt);
+    setPage((p) => Math.min(p, nxt.spreads.length - 1)); setSelOv(null); setEditOv(null);
+  };
+  const mapCur = (d: Doc, fn: (s: Spread) => Spread): Doc => ({ ...d, spreads: d.spreads.map((s, i) => (i === page ? fn(s) : s)) });
+  const setOverlay = (d: Doc, id: number, fn: (o: Overlay) => Overlay): Doc => mapCur(d, (s) => ({ ...s, overlays: s.overlays.map((o) => (o.id === id ? fn(o) : o)) }));
+
   const addOverlay = (kind: "text" | "image") => {
-    setOverlays((o) => [...o, { id: Date.now(), page, kind, text: kind === "text" ? "Double-click to edit" : "Image placeholder", x: 12 + (o.length % 5) * 8, y: 15 + (o.length % 5) * 10 }]);
+    const n = cur.overlays.length;
+    const ov: Overlay = { id: Date.now(), kind, text: kind === "text" ? "Double-click to edit" : "Image placeholder", x: 12 + (n % 5) * 8, y: 15 + (n % 5) * 10, w: kind === "image" ? 14 : 24, h: kind === "image" ? 28 : 10 };
+    commit(mapCur(doc, (s) => ({ ...s, overlays: [...s.overlays, ov] })));
+    setSelOv(ov.id);
     flash(kind === "text" ? "Text box added" : "Image placeholder added");
   };
+  const removeOverlay = (id: number) => { commit(mapCur(doc, (s) => ({ ...s, overlays: s.overlays.filter((o) => o.id !== id) }))); setSelOv(null); setEditOv(null); flash("Element deleted"); };
+  const applyTpl = (i: number) => { if (i !== doc.tpl) commit({ ...doc, tpl: i }); };
+  const setBg = (c?: string) => commit(mapCur(doc, (s) => ({ ...s, bg: c })));
+  const addSpread = () => { commit({ ...doc, spreads: [...doc.spreads, { id: Math.max(...doc.spreads.map((s) => s.id)) + 1, overlays: [] }] }); setPage(doc.spreads.length); flash("Page spread added"); };
+  const reorder = (from: number, to: number) => {
+    if (from === to || to < 1 || from < 1) return;
+    const arr = [...doc.spreads]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!);
+    commit({ ...doc, spreads: arr }); setPage(to); flash(`Moved spread ${from + 1} to position ${to + 1}`);
+  };
+
+  /* ───────── pointer drag / resize on canvas ───────── */
+  const drag = useRef<{ id: number; mode: "move" | "resize"; sx: number; sy: number; o: Overlay; moved: boolean } | null>(null);
+  const startDrag = (e: React.PointerEvent, o: Overlay, mode: "move" | "resize") => {
+    if (editOv === o.id && mode === "move") return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setSelOv(o.id);
+    drag.current = { id: o.id, mode, sx: e.clientX, sy: e.clientY, o, moved: false };
+    dragBase.current = docRef.current;
+  };
+  const moveDrag = (e: React.PointerEvent) => {
+    const d = drag.current; const r = canvasRef.current?.getBoundingClientRect();
+    if (!d || !r) return;
+    const dx = ((e.clientX - d.sx) / r.width) * 100, dy = ((e.clientY - d.sy) / r.height) * 100;
+    if (Math.abs(dx) + Math.abs(dy) > 0.15) d.moved = true;
+    setDoc((cd) => setOverlay(cd, d.id, (o) => d.mode === "move"
+      ? { ...o, x: clamp(d.o.x + dx, 0, 100 - Math.min(o.w, 90)), y: clamp(d.o.y + dy, 0, 100 - Math.min(o.h, 90)) }
+      : { ...o, w: clamp(d.o.w + dx, 5, 100 - o.x), h: clamp(d.o.h + dy, 5, 100 - o.y) }));
+  };
+  const endDrag = () => {
+    const d = drag.current; drag.current = null;
+    if (d?.moved && dragBase.current) { const base = dragBase.current; setPast((p) => [...p.slice(-99), base]); setFuture([]); }
+    dragBase.current = null;
+  };
+
+  /* ───────── keyboard + wheel zoom ───────── */
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && k === "z" && !typing(e.target)) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      else if (mod && k === "y" && !typing(e.target)) { e.preventDefault(); redo(); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && selOv !== null && !typing(e.target)) { e.preventDefault(); removeOverlay(selOv); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  });
+  useEffect(() => {
+    const el = stageRef.current; if (!el) return;
+    const h = (e: WheelEvent) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); setZoom((z) => clamp(z + (e.deltaY < 0 ? 5 : -5), ZMIN, ZMAX)); };
+    el.addEventListener("wheel", h, { passive: false });
+    return () => el.removeEventListener("wheel", h);
+  }, []);
+
+  /* ───────── misc actions ───────── */
   const download = (name: string, body: string, type = "text/plain") => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([body], { type }));
@@ -96,25 +202,32 @@ export default function Designing() {
     setSaveMenu(false);
     if (k === "draft") { flash("Draft saved"); log("Draft saved"); }
     else if (k === "version") { setVersions((v) => v + 1); flash(`Saved as version v${versions + 1}`); log(`Saved as version v${versions + 1}`); }
-    else { setOverlays([]); setBg({}); setTpl(0); setHistory([0]); setHIdx(0); flash("Unsaved changes discarded"); }
+    else { setDoc(initDoc()); setPast([]); setFuture([]); setPage(0); setSelOv(null); flash("Unsaved changes discarded"); }
   };
-
-  const applyTpl = (i: number) => {
-    setTpl(i);
-    setHistory((h) => [...h.slice(0, hIdx + 1), i]);
-    setHIdx((x) => x + 1);
-  };
-  const undo = () => { if (hIdx > 0) { setHIdx(hIdx - 1); setTpl(history[hIdx - 1]!); } };
-  const redo = () => { if (hIdx < history.length - 1) { setHIdx(hIdx + 1); setTpl(history[hIdx + 1]!); } };
-
-  const spreadIdxs = useMemo(() => Array.from({ length: spreads }, (_, i) => i), [spreads]);
-  const pageNo = page === 0 ? 1 : page * 2;
 
   const canSend = status === "In Designing" || status === "Corrections Requested";
   const send = () => {
     if (!canSend) return;
     if (openCorr > 0 && status === "Corrections Requested") { flash("Resolve open corrections first"); return; }
     setStatus("With Client"); flash("Proof sent to client for review");
+  };
+  const nextCorrId = (cs: Correction[]) => `COR-${String(Math.max(0, ...cs.map((c) => Number(c.id.slice(4)))) + 1).padStart(3, "0")}`;
+  const postComment = () => {
+    const pg = Number(cPage);
+    if (cDraft.trim().length < 3) return setCErr("Write a comment (at least 3 characters)");
+    if (!Number.isInteger(pg) || pg < 1 || pg > order.pages) return setCErr(`Page must be between 1 and ${order.pages}`);
+    setComments((c) => [...c, { by: "Admin (you)", when: nowLabel(), page: pg, text: cDraft.trim() }]);
+    setCDraft(""); setCErr(""); log(`Comment added on page ${pg}`); flash("Comment posted");
+  };
+  const addCorrection = () => {
+    const e: Record<string, string> = {};
+    const pg = Number(crPage);
+    if (!Number.isInteger(pg) || pg < 1 || pg > order.pages) e.page = `Page must be between 1 and ${order.pages}`;
+    if (crText.trim().length < 5) e.text = "Describe the correction (at least 5 characters)";
+    setCrErr(e);
+    if (Object.keys(e).length) return;
+    setCorrections((cs) => [...cs, { id: nextCorrId(cs), page: pg, text: crText.trim(), by: "Admin", status: "Open", assignee: crAssignee }]);
+    setCrText(""); setCorrOpen(false); log(`Correction added on page ${pg}, assigned to ${crAssignee}`); flash(`Correction assigned to ${crAssignee}`);
   };
 
   const tools: { I: typeof Type; l: string; run: () => void }[] = [
@@ -127,11 +240,12 @@ export default function Designing() {
     { I: Ruler, l: "Album Size", v: `${order.size} (Landscape)` },
     { I: FileText, l: "Total Pages", v: String(order.pages) },
     { I: BookOpen, l: "Current Page", v: String(pageNo) },
-    { I: Palette, l: "Design Style", v: TEMPLATES[tpl]! },
+    { I: Palette, l: "Design Style", v: TEMPLATES[doc.tpl]! },
     { I: User, l: "Designer", v: "Ramesh" },
     { I: Clock, l: "Created On", v: "1 Oct 2026, 10:24 AM" },
     { I: History, l: "Last Updated", v: "3 Oct 2026, 04:15 PM" },
   ];
+  const spreadIdxs = useMemo(() => spreads.map((_, i) => i), [spreads]);
 
   return (
     <div className="min-w-0">
@@ -164,18 +278,29 @@ export default function Designing() {
         <Panel className="flex max-h-[760px] flex-col" bodyClassName="flex min-h-0 flex-1 flex-col p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-[15px] font-extrabold">Pages ({order.pages})</h3>
-            <button onClick={() => { setPagesAdded((n) => n + 1); flash("Page spread added"); }} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-bold text-brand"><Plus className="size-3" />Add</button>
+            <button onClick={addSpread} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-bold text-brand"><Plus className="size-3" />Add</button>
           </div>
-          <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
-            {spreadIdxs.map((i) => (
-              <button key={i} onClick={() => setPage(i)} className={cx("w-full rounded-xl border-2 p-1.5 text-left", page === i ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line")}>
-                <div className="flex h-[64px] gap-0.5 overflow-hidden rounded-md">
-                  <div className="flex-1"><PageArt seed={i} /></div>
-                  {i > 0 && <div className="flex-1"><PageArt seed={i + 3} mirror /></div>}
-                </div>
-                <div className="mt-1 flex gap-2 text-[11px]"><b>{i + 1}</b><span className="text-sub">{SPREAD_LABELS[i] ?? `Spread ${i}`}</span></div>
-              </button>
-            ))}
+          <p className="mb-2 text-[10px] text-sub">Drag spreads to reorder</p>
+          <div data-testid="page-strip" className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+            {spreadIdxs.map((i) => {
+              const s = spreads[i]!;
+              return (
+                <button key={s.id} data-spread={i} draggable={i > 0}
+                  onDragStart={(e) => { if (i === 0) return; setDragFrom(i); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragOver={(e) => { if (dragFrom !== null && i > 0) { e.preventDefault(); setDragOver(i); } }}
+                  onDragLeave={() => setDragOver((d) => (d === i ? null : d))}
+                  onDrop={(e) => { e.preventDefault(); if (dragFrom !== null) reorder(dragFrom, i); setDragFrom(null); setDragOver(null); }}
+                  onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
+                  onClick={() => { setPage(i); setSelOv(null); }}
+                  className={cx("w-full rounded-xl border-2 p-1.5 text-left transition", page === i ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line", dragOver === i && dragFrom !== i && "!border-dashed !border-brand bg-brand-soft/60", dragFrom === i && "opacity-40")}>
+                  <div className="flex h-[64px] gap-0.5 overflow-hidden rounded-md" style={{ background: s.bg }}>
+                    <div className="flex-1"><PageArt seed={s.id} /></div>
+                    {i > 0 && <div className="flex-1"><PageArt seed={s.id + 3} mirror /></div>}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px]"><b>{i + 1}</b><span className="text-sub">{i === 0 ? "Cover" : `Spread ${i}`}</span>{s.overlays.length > 0 && <span className="rounded bg-brand-soft px-1 text-[9px] font-bold text-brand">{s.overlays.length}</span>}{i > 0 && <GripVertical className="ml-auto size-3 text-slate-300" />}</div>
+                </button>
+              );
+            })}
           </div>
         </Panel>
 
@@ -183,20 +308,21 @@ export default function Designing() {
           <Panel bodyClassName="p-3">
             <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-sub">
               <div className="flex gap-1">
-                <button onClick={undo} disabled={hIdx === 0} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Undo2 className="size-4 text-ink" />Undo</button>
-                <button onClick={redo} disabled={hIdx >= history.length - 1} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Redo2 className="size-4 text-ink" />Redo</button>
-                <button onClick={() => setZoom(85)} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100"><Maximize className="size-4 text-ink" />Fit</button>
+                <button onClick={undo} disabled={!past.length} title="Ctrl+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Undo2 className="size-4 text-ink" />Undo</button>
+                <button onClick={redo} disabled={!future.length} title="Ctrl+Shift+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Redo2 className="size-4 text-ink" />Redo</button>
+                <button onClick={() => setZoom(ZFIT)} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100"><Maximize className="size-4 text-ink" />Fit</button>
+                <button onClick={() => selOv !== null && removeOverlay(selOv)} disabled={selOv === null} title="Delete" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Trash2 className="size-4 text-ink" />Delete</button>
               </div>
               <div className="flex items-center gap-1 rounded-lg border border-line p-1 text-sm font-bold text-ink">
-                <button aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(40, z - 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Minus className="size-4" /></button>
-                <span className="w-12 text-center">{zoom}%</span>
-                <button aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(150, z + 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Plus className="size-4" /></button>
+                <button aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(ZMIN, z - 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Minus className="size-4" /></button>
+                <span data-testid="zoom" className="w-12 text-center">{zoom}%</span>
+                <button aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(ZMAX, z + 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Plus className="size-4" /></button>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 Page
-                <button aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft className="size-4" /></button>
+                <button aria-label="Previous page" disabled={page === 0} onClick={() => { setPage(page - 1); setSelOv(null); }} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft className="size-4" /></button>
                 <span className="font-semibold text-ink">{pageNo} / {order.pages}</span>
-                <button aria-label="Next page" disabled={page >= spreads - 1} onClick={() => setPage(page + 1)} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
+                <button aria-label="Next page" disabled={page >= spreads.length - 1} onClick={() => { setPage(page + 1); setSelOv(null); }} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
               </div>
               <div className="ml-auto flex gap-1">
                 {tools.map(({ I, l, run }) => (
@@ -208,36 +334,60 @@ export default function Designing() {
               <div className="mb-3 flex items-center gap-2 rounded-xl border border-line bg-slate-50 p-2.5 text-[12px] font-semibold">
                 Spread background
                 {BG_SWATCHES.map((c) => (
-                  <button key={c} aria-label={`Background ${c}`} onClick={() => { setBg((b) => ({ ...b, [page]: c })); flash("Background changed"); }} className={cx("size-7 rounded-full border-2", bg[page] === c ? "border-brand" : "border-line")} style={{ background: c }} />
+                  <button key={c} aria-label={`Background ${c}`} onClick={() => { setBg(c); flash("Background changed"); }} className={cx("size-7 rounded-full border-2", cur.bg === c ? "border-brand" : "border-line")} style={{ background: c }} />
                 ))}
-                <button onClick={() => { setBg((b) => { const n = { ...b }; delete n[page]; return n; }); }} className="ml-auto text-xs font-bold text-brand">Reset</button>
+                <button onClick={() => setBg(undefined)} className="ml-auto text-xs font-bold text-brand">Reset</button>
               </div>
             )}
-            <div className="grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70">
-              <div data-testid="canvas" className="relative flex aspect-[2/1] w-[88%] max-w-[760px] origin-center overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / 85})`, background: bg[page] }}>
+            <div ref={stageRef} className="grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70">
+              <div ref={canvasRef} data-testid="canvas" onPointerDown={(e) => { if (!(e.target as HTMLElement).closest("[data-ov]")) { setSelOv(null); setEditOv(null); } }}
+                className="relative flex aspect-[2/1] w-[88%] max-w-[760px] origin-center touch-none select-none overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / ZFIT})`, background: cur.bg }}>
                 <div className="relative flex-1 border-r border-black/10">
-                  <PageArt seed={page + tpl} />
+                  <PageArt seed={cur.id + doc.tpl} />
                   {page === 0 && (
-                    <div className="absolute inset-x-0 bottom-6 text-center font-serif italic text-white drop-shadow">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-6 text-center font-serif italic text-white drop-shadow">
                       <div className="text-2xl">Our Wedding Story</div>
                       <div className="mt-1 text-[10px] not-italic tracking-[0.25em]">{order.customer.toUpperCase()}</div>
                     </div>
                   )}
                 </div>
-                <div className="relative flex-1"><PageArt seed={page + tpl + 3} mirror /></div>
-                {overlays.filter((o) => o.page === page).map((o) => (
-                  <div key={o.id} className="absolute" style={{ left: `${o.x}%`, top: `${o.y}%` }}>
-                    {o.kind === "text" ? (
-                      <div className="group flex items-center gap-1 rounded border border-dashed border-brand bg-white/70 px-1.5 py-0.5">
-                        <input aria-label="Text overlay" value={o.text} onChange={(e) => setOverlays((l) => l.map((x) => x.id === o.id ? { ...x, text: e.target.value } : x))} className="w-36 bg-transparent font-serif text-sm outline-none" />
-                        <button aria-label="Remove overlay" onClick={() => setOverlays((l) => l.filter((x) => x.id !== o.id))} className="text-xs text-rose-600">✕</button>
-                      </div>
-                    ) : (
-                      <div className="relative"><Thumb seed={o.id} size={64} /><button aria-label="Remove overlay" onClick={() => setOverlays((l) => l.filter((x) => x.id !== o.id))} className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-rose-500 text-[9px] text-white">✕</button></div>
-                    )}
-                  </div>
-                ))}
+                <div className="relative flex-1"><PageArt seed={cur.id + doc.tpl + 3} mirror /></div>
+                {cur.overlays.map((o) => {
+                  const selected = selOv === o.id;
+                  return (
+                    <div key={o.id} data-ov={o.id} data-kind={o.kind}
+                      onPointerDown={(e) => startDrag(e, o, "move")} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
+                      onDoubleClick={() => { if (o.kind === "text") { setEditOv(o.id); setSelOv(o.id); } }}
+                      className={cx("absolute", editOv === o.id ? "cursor-text" : "cursor-move", selected && "z-10")}
+                      style={{ left: `${o.x}%`, top: `${o.y}%`, ...(o.kind === "image" ? { width: `${o.w}%`, height: `${o.h}%` } : {}) }}>
+                      {o.kind === "text" ? (
+                        <div className={cx("flex items-center gap-1 whitespace-nowrap rounded border border-dashed bg-white/70 px-1.5 py-0.5", selected ? "border-brand ring-2 ring-brand/40" : "border-brand/40")}>
+                          {editOv === o.id ? (
+                            <input autoFocus aria-label="Text overlay" defaultValue={o.text} onPointerDown={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                              onBlur={(e) => { const v = e.target.value; setEditOv(null); if (v !== o.text) commit(setOverlay(docRef.current, o.id, (x) => ({ ...x, text: v }))); }}
+                              className="w-36 bg-transparent font-serif text-sm outline-none" />
+                          ) : <span className="font-serif text-sm">{o.text}</span>}
+                        </div>
+                      ) : (
+                        <div className={cx("relative h-full w-full overflow-hidden rounded-md", selected && "ring-2 ring-brand")}>
+                          <Thumb seed={o.id} size={0} rounded="rounded-md" className="!h-full !w-full" />
+                        </div>
+                      )}
+                      {selected && (
+                        <>
+                          <button aria-label="Remove overlay" onPointerDown={(e) => e.stopPropagation()} onClick={() => removeOverlay(o.id)} className="absolute -right-2 -top-2 grid size-4 place-items-center rounded-full bg-rose-500 text-[9px] text-white">✕</button>
+                          {o.kind === "image" && <span role="slider" aria-label="Resize image" data-handle="resize" onPointerDown={(e) => startDrag(e, o, "resize")} onPointerMove={moveDrag} onPointerUp={endDrag} className="absolute -bottom-1.5 -right-1.5 size-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-brand shadow" />}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-sub">
+              <span>Drag elements to move · double-click text to edit · drag the corner of an image to resize</span>
+              <span className="ml-auto"><Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo · <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Z</Kbd> redo · <Kbd>Del</Kbd> delete · <Kbd>Ctrl</Kbd>+scroll zoom</span>
             </div>
           </Panel>
 
@@ -248,13 +398,13 @@ export default function Designing() {
                   <button key={t} onClick={() => setTplTab(t)} className={cx("-mb-px whitespace-nowrap border-b-2 pb-2 text-[13px] font-bold", t === tplTab ? "border-brand text-brand" : "border-transparent text-sub")}>{t}</button>
                 ))}
               </div>
-              <LinkAction onClick={() => { setTplTab("Design Templates"); setTpl((t) => (t + 1) % TEMPLATES.length); flash(`Browsing all ${TEMPLATES.length} templates in ${tplTab}`); }}>View All →</LinkAction>
+              <LinkAction onClick={() => { setTplTab("Design Templates"); applyTpl((doc.tpl + 1) % TEMPLATES.length); flash(`Browsing all ${TEMPLATES.length} templates in ${tplTab}`); }}>View All →</LinkAction>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {TEMPLATES.map((t, i) => (
                 <button key={t} onClick={() => applyTpl(i)} className="w-[92px] shrink-0 text-center">
-                  <div className={cx("overflow-hidden rounded-lg border-2", tpl === i ? "border-brand" : "border-transparent")}><Thumb seed={i + 1} size={0} rounded="rounded-none" className="!h-14 !w-full" /></div>
-                  <div className={cx("mt-1 text-[11px] font-semibold", tpl === i ? "text-brand" : "text-sub")}>{t}</div>
+                  <div className={cx("overflow-hidden rounded-lg border-2", doc.tpl === i ? "border-brand" : "border-transparent")}><Thumb seed={i + 1} size={0} rounded="rounded-none" className="!h-14 !w-full" /></div>
+                  <div className={cx("mt-1 text-[11px] font-semibold", doc.tpl === i ? "text-brand" : "text-sub")}>{t}</div>
                 </button>
               ))}
             </div>
@@ -263,7 +413,7 @@ export default function Designing() {
 
         <div className="min-w-0 space-y-4">
           <Panel bodyClassName="p-4">
-            <LineTabs className="mb-4 gap-4" value={rTab} onChange={setRTab} tabs={[{ key: "details", label: "Design Details" }, { key: "comments", label: "Client Comments" }, { key: "corrections", label: `Corrections (${openCorr})` }]} />
+            <LineTabs className="mb-4 gap-4" value={rTab} onChange={setRTab} tabs={[{ key: "details", label: "Design Details" }, { key: "comments", label: "Client Comments", count: comments.length }, { key: "corrections", label: `Corrections (${openCorr})` }]} />
             {rTab === "details" && (
               <div>
                 <div className="mb-3 flex items-center gap-3 border-b border-line pb-3">
@@ -280,7 +430,16 @@ export default function Designing() {
             )}
             {rTab === "comments" && (
               <div className="space-y-3">
-                {COMMENTS.map((c, i) => (
+                <div className="rounded-xl border border-line bg-slate-50/60 p-3">
+                  <textarea aria-label="Add comment" value={cDraft} onChange={(e) => { setCDraft(e.target.value); setCErr(""); }} placeholder="Write a comment for the client thread..." className="h-16 w-full resize-none rounded-lg border border-line bg-white p-2 text-[13px] outline-none focus:border-brand" />
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-sub">Page<input aria-label="Comment page" type="number" min={1} max={order.pages} value={cPage} onChange={(e) => setCPage(e.target.value)} className="h-8 w-16 rounded-lg border border-line bg-white px-2 text-xs outline-none focus:border-brand" /></label>
+                    <button onClick={() => setCPage(String(pageNo))} className="text-[11px] font-bold text-brand">Use current ({pageNo})</button>
+                    <button onClick={postComment} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-white"><Send className="size-3.5" />Post</button>
+                  </div>
+                  <Err>{cErr}</Err>
+                </div>
+                {[...comments].reverse().map((c, i) => (
                   <div key={i} className="rounded-xl border border-line p-3 text-[13px]">
                     <div className="flex items-center gap-2"><Avatar name={c.by} size={24} /><b>{c.by}</b><Pill tone="indigo" className="ml-auto">Page {c.page}</Pill></div>
                     <p className="mt-2">{c.text}</p><div className="mt-1 text-xs text-sub">{c.when}</div>
@@ -290,11 +449,26 @@ export default function Designing() {
             )}
             {rTab === "corrections" && (
               <div className="space-y-3">
+                {!corrOpen ? (
+                  <OutlineButton icon={Plus} className="w-full justify-center" onClick={() => { setCorrOpen(true); setCrPage(String(pageNo)); setCrErr({}); }}>Add correction</OutlineButton>
+                ) : (
+                  <div className="space-y-2 rounded-xl border border-brand/40 bg-brand-soft/30 p-3 text-[13px]">
+                    <div className="grid grid-cols-[88px_1fr] gap-2">
+                      <label className="text-xs font-semibold">Page no.<input aria-label="Correction page" type="number" min={1} max={order.pages} value={crPage} onChange={(e) => setCrPage(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-line bg-white px-2 text-sm outline-none focus:border-brand" /></label>
+                      <FieldBox label="Assign to"><Combobox value={crAssignee} onChange={setCrAssignee} options={strOpts(DESIGNERS)} /></FieldBox>
+                    </div>
+                    <Err>{crErr.page}</Err>
+                    <textarea aria-label="Correction text" value={crText} onChange={(e) => setCrText(e.target.value)} placeholder="What needs to change on this page?" className="h-16 w-full resize-none rounded-lg border border-line bg-white p-2 text-[13px] outline-none focus:border-brand" />
+                    <Err>{crErr.text}</Err>
+                    <div className="flex gap-2"><button onClick={addCorrection} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-white">Add &amp; assign</button><button onClick={() => setCorrOpen(false)} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold">Cancel</button></div>
+                  </div>
+                )}
                 {corrections.map((c) => (
                   <div key={c.id} className="rounded-xl border border-line p-3 text-[13px]">
                     <div className="flex items-center gap-2"><b>{c.id}</b><span className="text-xs text-sub">Page {c.page} - {c.by}</span>
                       <Pill className="ml-auto" tone={c.status === "Resolved" ? "green" : c.status === "Open" ? "red" : "amber"}>{c.status}</Pill></div>
                     <p className="mt-2">{c.text}</p>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-sub"><Avatar name={c.assignee} size={18} />Assigned to <b className="text-ink">{c.assignee}</b></div>
                     {c.status !== "Resolved" && (
                       <div className="mt-2 flex gap-2">
                         {c.status === "Open" && <OutlineButton onClick={() => setCorrections((cs) => cs.map((x) => x.id === c.id ? { ...x, status: "In Progress" } : x))}>Start</OutlineButton>}
@@ -320,11 +494,11 @@ export default function Designing() {
             {status === "With Client" && (
               <div className="mt-2 flex gap-2">
                 <OutlineButton className="flex-1 justify-center" onClick={() => setStatus("Approved")}>Client Approved</OutlineButton>
-                <OutlineButton className="flex-1 justify-center" onClick={() => { setStatus("Corrections Requested"); setCorrections((c) => [...c, { id: `COR-00${c.length + 1}`, page: pageNo, text: "Client requested change on this page.", by: "Client", status: "Open" }]); setRTab("corrections"); }}>Request Correction</OutlineButton>
+                <OutlineButton className="flex-1 justify-center" onClick={() => { setStatus("Corrections Requested"); setCorrections((c) => [...c, { id: nextCorrId(c), page: pageNo, text: "Client requested change on this page.", by: "Client", status: "Open", assignee: "Ramesh" }]); setRTab("corrections"); }}>Request Correction</OutlineButton>
               </div>
             )}
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <OutlineButton className="h-10 justify-center" icon={Download} onClick={() => { download(`${order.id}-proof.txt`, `Album proof\nOrder: ${order.id}\nClient: ${order.customer}\nPages: ${order.pages}\nTemplate: ${TEMPLATES[tpl]}\nStatus: ${status}\n`); flash("Proof downloaded"); log("Proof downloaded"); }}>Download Proof</OutlineButton>
+              <OutlineButton className="h-10 justify-center" icon={Download} onClick={() => { download(`${order.id}-proof.txt`, `Album proof\nOrder: ${order.id}\nClient: ${order.customer}\nPages: ${order.pages}\nTemplate: ${TEMPLATES[doc.tpl]}\nStatus: ${status}\n`); flash("Proof downloaded"); log("Proof downloaded"); }}>Download Proof</OutlineButton>
               <OutlineButton className="h-10 justify-center" icon={Link2} onClick={copyLink}>Share Link</OutlineButton>
             </div>
           </Panel>
