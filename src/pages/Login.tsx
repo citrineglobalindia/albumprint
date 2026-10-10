@@ -4,10 +4,11 @@ import { Aperture, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, Clock, Shiel
 import { useAuth, ROLES, type RoleKey } from "../lib/auth";
 import { cx, inputCls } from "../components/ui";
 import { isUserActive } from "../lib/users";
+import BackendLogin from "./BackendLogin";
 
 type Step = "credentials" | "otp" | "forgot" | "sent";
 
-export default function Login() {
+function DemoLogin() {
   const { role, login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
@@ -140,4 +141,9 @@ export default function Login() {
       </div>
     </div>
   );
+}
+
+export default function Login() {
+  const { backend } = useAuth();
+  return backend ? <BackendLogin /> : <DemoLogin />;
 }

@@ -26,3 +26,10 @@ The Supabase security advisor's remaining notes are intentional: `counters` has 
 `DROP VIEW customers_safe` hangs on the hosted project, so migration 0006 retires that view (security_invoker, no grants) instead of dropping it. `list_customers()` is the masked directory the app should call.
 
 Before first use: create users in Supabase Auth and insert matching `profiles` rows (role + department). Nothing is seeded except permissions, transitions, SLA rules and settings.
+
+## Staff onboarding (migration 0007)
+`staff_invites` holds `email + role`. When that person signs up (app "create your account", or Add user in the Supabase dashboard), a trigger on `auth.users` creates their `profiles` row with the invited role and marks the invite used. Anyone not invited gets no profile and therefore no access.
+Migration 0007 was applied to the live project in steps (the Supabase tool holds back statements containing DELETE/DROP for confirmation, so invites are marked used rather than deleted).
+
+## Connecting the app
+Copy `.env.example` to `.env`, set `VITE_USE_SUPABASE=true`, the project URL and the publishable key. Without it the app runs in demo mode (browser storage) — the automated tests always use demo mode.

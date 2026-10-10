@@ -6,7 +6,8 @@ create table staff_invites (
   full_name text,
   department text,
   invited_by uuid references profiles(id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  used_at timestamptz                               -- set when the invited person signs up; kept for history
 );
 alter table staff_invites enable row level security;
 revoke all on staff_invites from anon, public;
@@ -17,12 +18,12 @@ create policy invites_admin on staff_invites for all to authenticated
 create or replace function handle_new_user() returns trigger language plpgsql security definer set search_path = public as $$
 declare i staff_invites;
 begin
-  select * into i from staff_invites where email = lower(new.email);
+  select * into i from staff_invites where email = lower(new.email) and used_at is null;
   if found then
     insert into profiles(id, full_name, email, role, department, must_change_password)
     values (new.id, coalesce(nullif(i.full_name, ''), split_part(new.email, '@', 1)), lower(new.email), i.role, i.department, false)
     on conflict (id) do nothing;
-    delete from staff_invites where email = i.email;
+    update staff_invites set used_at = now() where email = i.email;
   end if;
   return new;
 end $$;

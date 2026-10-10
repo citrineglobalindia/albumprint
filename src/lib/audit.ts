@@ -9,7 +9,7 @@ export interface AuditEntry {
 export const AUDIT: AuditEntry[] = persistArray<AuditEntry>("audit", [], { cap: 3000 });
 
 export function currentActor(): { name: string; role: RoleKey | "system" } {
-  try { const r = localStorage.getItem("albumpro.role") as RoleKey | null; if (r && r in ROLES) return { name: ROLES[r].user, role: r }; } catch { /* ignore */ }
+  try { const r = localStorage.getItem("albumpro.role") as RoleKey | null; if (r && r in ROLES) return { name: localStorage.getItem("albumpro.actor") || ROLES[r].user, role: r }; } catch { /* ignore */ }
   return { name: "System", role: "system" };
 }
 

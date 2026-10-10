@@ -12,9 +12,9 @@ begin
   select role::text into r from profiles where id = u1;
   if r is distinct from 'admin' then raise exception 'FAIL - invited user did not get admin profile (got %)', r; end if;
   raise notice 'ok   - invited email gets its profile with the invited role';
-  select count(*) into n from staff_invites where email = 'boss@studio.com';
-  if n <> 0 then raise exception 'FAIL - invite not consumed'; end if;
-  raise notice 'ok   - invite is consumed';
+  select count(*) into n from staff_invites where email = 'boss@studio.com' and used_at is not null;
+  if n <> 1 then raise exception 'FAIL - invite not marked used'; end if;
+  raise notice 'ok   - invite is marked used';
   -- uninvited email gets nothing
   insert into auth.users(id, email) values (u2, 'stranger@evil.com');
   select count(*) into n from profiles where id = u2;
