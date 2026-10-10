@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Aperture, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, Clock, ShieldAlert } from "lucide-react";
 import { useAuth, ROLES, type RoleKey } from "../lib/auth";
 import { cx, inputCls } from "../components/ui";
+import { isUserActive } from "../lib/users";
 
 type Step = "credentials" | "otp" | "forgot" | "sent";
 
@@ -55,6 +56,7 @@ export default function Login() {
       return;
     }
     if (fails >= 2 && !human) { setErr("Please confirm you are not a robot."); return; }
+    if (!isUserActive(email.trim())) { setErr("This account has been deactivated. Contact your administrator."); return; }   // ALB-FR-0013: validate status before access
     setErr(""); remember ? finish() : setStep("otp");
   };
   const finish = () => { login(pick); nav(from, { replace: true }); };

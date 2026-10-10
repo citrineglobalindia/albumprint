@@ -49,6 +49,8 @@ main section, main .min-w-0 { min-width: 0; }
   input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
   td:has(> input[type="checkbox"]), th:has(> input[type="checkbox"]) { min-width: 44px; }
   .app-nav a { min-height: 44px; }
+  /* icon buttons overlaid on inputs (show-password etc.) stay centred when they grow to 44px */
+  :has(> input) > button.absolute { top: 50% !important; translate: 0 -50%; }
   .tap-sm { min-height: 0 !important; min-width: 0 !important; }
 }
 @media (max-width: 639px) {

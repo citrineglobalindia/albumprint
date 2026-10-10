@@ -121,12 +121,12 @@ export function KpiCard({ k }: { k: Kpi }) {
   const good = k.invert ? !up : up;
   return (
     <div className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-line bg-white p-3 shadow-[0_1px_2px_rgba(20,30,90,0.04)] sm:gap-3.5 sm:p-4">
-      <div className={cx("grid size-10 shrink-0 place-items-center rounded-xl sm:size-14", t.soft, t.text)}>
+      <div className={cx("grid size-9 shrink-0 place-items-center rounded-xl sm:size-14", t.soft, t.text)}>
         <k.icon className="size-5 sm:size-7" aria-hidden />
       </div>
       <div className="min-w-0">
-        <div className="truncate text-xs font-medium text-sub sm:text-[13px]" title={k.label}>{k.label}</div>
-        <div className="truncate text-xl font-extrabold leading-tight text-ink sm:text-2xl">{k.value}</div>
+        <div className="line-clamp-2 text-xs font-medium leading-tight text-sub sm:truncate sm:text-[13px]" title={k.label}>{k.label}</div>
+        <div className="truncate text-lg font-extrabold leading-tight text-ink sm:text-2xl">{k.value}</div>
         {k.delta !== undefined && (
           <div className={cx("flex flex-wrap items-center gap-x-1 text-xs font-bold", good ? "text-emerald-700" : "text-rose-600")}>
             {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}

@@ -6,7 +6,9 @@ import { Combobox, DateRangePicker, FilterChips, MultiSelect, fmtShort, presetRa
 import { KpiRow, LineTabs, Panel, PageHeader, Pill, ProgressBar, Td, Th, tableCls, trCls, inputCls, Field, SlideOver, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
-import { ORDERS, STAFF, STAGES, stageLabel, type Order, type StageKey } from "../lib/data";
+import { ORDERS, STAFF, STAGES, CUSTOMERS, stageLabel, type Order, type StageKey } from "../lib/data";
+import { AUDIT } from "../lib/audit";
+import { useLive } from "../lib/useLive";
 import { inr } from "../lib/format";
 
 const TABS = ["Overview", "Orders", "Production", "Team Performance", "Financial", "Delivery", "Customer", "Custom Report"] as const;
@@ -14,11 +16,30 @@ type Tab = (typeof TABS)[number];
 type Gran = "day" | "week" | "month";
 
 const PALETTE = ["#3b5bf0", "#7c5cf0", "#ec4899", "#14b8a6", "#f59e0b", "#fbbf24", "#9aa5bd", "#10b981"];
-const tat = [
+// Fallback turnaround estimates (days) used until the audit trail has recorded real stage hand-offs for a stage group.
+const TAT_EST = [
   { s: "Colour Grading", d: 1.2, c: "#3b9bf0", stages: ["colour_grading", "admin_approval"] as StageKey[] }, { s: "Designing", d: 2.8, c: "#7c5cf0", stages: ["designing"] as StageKey[] },
   { s: "Client Approval", d: 1.5, c: "#ec4899", stages: ["client_review", "final_approval"] as StageKey[] }, { s: "Printing", d: 2.1, c: "#10b981", stages: ["printing"] as StageKey[] },
   { s: "QC", d: 0.8, c: "#fbbf24", stages: ["qc"] as StageKey[] }, { s: "Delivery", d: 1.0, c: "#2563eb", stages: ["ready_for_delivery", "delivered"] as StageKey[] },
 ];
+const WIP_CAP: Partial<Record<StageKey, number>> = { colour_grading: 8, admin_approval: 6, designing: 10, client_review: 8, final_approval: 5, printing: 8, qc: 6, ready_for_delivery: 8 };
+const KEY_OF_LABEL = new Map(STAGES.map((s) => [s.label, s.key] as const));
+interface Hand { orderId: string; stage: StageKey; ms: number; by: string }
+/** Time spent in each stage, measured from consecutive stage_change/stage_override audit rows per order (enter = event.to, leave = the next event). */
+function handOffs(): Hand[] {
+  const by = new Map<string, typeof AUDIT>();
+  AUDIT.filter((a) => a.entity === "order" && (a.action === "stage_change" || a.action === "stage_override")).forEach((a) => by.set(a.entityId, [...(by.get(a.entityId) ?? []), a]));
+  const out: Hand[] = [];
+  by.forEach((list, orderId) => {
+    const asc = [...list].sort((a, b) => a.at.localeCompare(b.at));
+    for (let i = 0; i + 1 < asc.length; i++) {
+      const st = KEY_OF_LABEL.get(asc[i]!.to ?? ""); if (!st) continue;
+      out.push({ orderId, stage: st, ms: Math.max(0, +new Date(asc[i + 1]!.at) - +new Date(asc[i]!.at)), by: asc[i + 1]!.actor });
+    }
+  });
+  return out;
+}
+const fmtDur = (ms: number) => ms < 6e4 ? `${Math.round(ms / 1000)} s` : ms < 36e5 ? `${Math.round(ms / 6e4)} min` : ms < 864e5 ? `${(ms / 36e5).toFixed(1)} h` : `${(ms / 864e5).toFixed(1)} d`;
 const DEPT_OF: Record<StageKey, string> = { new_order: "Others", files_received: "Others", colour_grading: "Colour Grading", admin_approval: "Colour Grading", designing: "Designing", client_review: "Client Review", final_approval: "Client Review", printing: "Printing", qc: "QC", ready_for_delivery: "Delivery", delivered: "Delivery" };
 const DEPTS = ["Colour Grading", "Designing", "Client Review", "Printing", "QC", "Delivery", "Others"];
 
@@ -107,6 +128,7 @@ const customTable = (os: Order[], metrics: string[], groupBy: string) => {
 };
 
 export default function Reports() {
+  useLive(false);
   const [tab, setTab] = useState<Tab>("Overview");
   const [range, setRange] = useState<DateRange>(() => presetRange("This Month"));
   const [compare, setCompare] = useState(false);
@@ -131,10 +153,17 @@ export default function Reports() {
   const label = range.preset === "All Time" ? "All Time" : `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
   const canCompare = !!range.from && !!range.to;
   const cmp = compare && canCompare;
-  const orders = useMemo(() => ORDERS.filter((o) => o.pendingAt >= from && o.pendingAt <= to), [from, to]);
+  const sig = ORDERS.map((o) => `${o.id}${o.stage}${o.hold ?? ""}${o.pay}${o.paid}${o.assignee}${o.priority}`).join("|") + AUDIT.length;
+  const orders = useMemo(() => ORDERS.filter((o) => o.pendingAt >= from && o.pendingAt <= to), [from, to, sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const hands = useMemo(() => handOffs(), [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const tat = useMemo(() => TAT_EST.map((t) => {
+    const m = hands.filter((h) => t.stages.includes(h.stage));
+    const measured = m.length ? m.reduce((a, h) => a + h.ms, 0) / m.length / DAY : undefined;
+    return { ...t, d: Math.round((measured ?? t.d) * 100) / 100, n: m.length, src: m.length ? "audit trail" : "estimate", ms: m.length ? m.reduce((a, h) => a + h.ms, 0) / m.length : t.d * DAY };
+  }), [hands]);
   const days = Math.max(1, Math.round((+toD(to) - +toD(from)) / DAY) + 1);
   const prevTo = iso(addD(toD(from), -1)), prevFrom = iso(addD(toD(from), -days));
-  const prevOrders = useMemo(() => (cmp ? ORDERS.filter((o) => o.pendingAt >= prevFrom && o.pendingAt <= prevTo) : []), [cmp, prevFrom, prevTo]);
+  const prevOrders = useMemo(() => (cmp ? ORDERS.filter((o) => o.pendingAt >= prevFrom && o.pendingAt <= prevTo) : []), [cmp, prevFrom, prevTo, sig]);   // eslint-disable-line react-hooks/exhaustive-deps
   // The demo dataset only covers early October: when no earlier orders exist, the previous period is simulated so the comparison UI is still demonstrable.
   const simulated = cmp && prevOrders.length === 0;
 
@@ -175,7 +204,23 @@ export default function Reports() {
     { name: "In production", v: orders.filter((o) => !isDone(o) && o.due >= "2026-10-03").length, c: "#f59e0b" },
   ], [orders]);
   const customers = useMemo(() => [...orders.reduce((m, o) => m.set(o.customer, (m.get(o.customer) ?? 0) + o.total), new Map<string, number>())].sort((a, b) => b[1] - a[1]).slice(0, 8), [orders]);
-  const team = useMemo(() => STAFF.filter((s) => s.status === "Active").map((s, i) => { const first = s.name.split(" ")[0]!; const mine = orders.filter((o) => o.assignee === first); return { name: s.name, role: s.role, done: mine.length, onTime: 82 + ((i * 5) % 17), avg: (1 + ((i * 3) % 25) / 10).toFixed(1), first }; }), [orders]);
+  const team = useMemo(() => STAFF.filter((s) => s.status === "Active").map((s) => {
+    const first = s.name.split(" ")[0]!; const mine = orders.filter((o) => o.assignee === first);
+    const late = mine.filter((o) => o.stage !== "delivered" && o.hold !== "Cancelled" && o.due < "2026-10-03").length;
+    const moved = hands.filter((h) => h.by === s.name);
+    const moves = AUDIT.filter((a) => a.actor === s.name && (a.action === "stage_change" || a.action === "stage_override")).length;
+    return { name: s.name, role: s.role, done: mine.length, late, onTime: mine.length ? Math.round(((mine.length - late) / mine.length) * 100) : null, moves, avgMs: moved.length ? moved.reduce((a, h) => a + h.ms, 0) / moved.length : null, first };
+  }), [orders, hands]);
+  // Customer mix: join orders to the customer master by studio/name so VIP / Regular / New can be compared.
+  const mix = useMemo(() => {
+    const byName = new Map<string, { n: number; billed: number; paid: number; last: string }>();
+    orders.filter((o) => o.hold !== "Cancelled").forEach((o) => { const r = byName.get(o.customer) ?? { n: 0, billed: 0, paid: 0, last: "" }; r.n++; r.billed += o.total; r.paid += o.paid; if (o.pendingAt > r.last) r.last = o.pendingAt; byName.set(o.customer, r); });
+    const rows = [...byName].map(([name, r]) => { const c = CUSTOMERS.find((x) => x.studio.toLowerCase() === name.toLowerCase() || x.name.toLowerCase() === name.toLowerCase()); return { name, type: c?.type ?? "Unlinked", ...r }; }).sort((a, b) => b.billed - a.billed);
+    const total = rows.reduce((a, r) => a + r.billed, 0);
+    const types = ["VIP", "Regular", "New", "Unlinked"].map((t, i) => ({ name: t, v: rows.filter((r) => r.type === t).reduce((a, r) => a + r.n, 0), c: ["#f59e0b", "#3b5bf0", "#10b981", "#9aa5bd"][i]! }));
+    const repeat = rows.filter((r) => r.n >= 2).length;
+    return { rows, total, types, repeat, top3: total ? Math.round((rows.slice(0, 3).reduce((a, r) => a + r.billed, 0) / total) * 100) : 0 };
+  }, [orders]);
   const cust = useMemo(() => filterOrders(orders, cf), [orders, cf]);
   const customRows = useMemo(() => customTable(cust, metrics.length ? metrics : ["Orders"], groupBy), [cust, metrics, groupBy]);
 
@@ -196,11 +241,11 @@ export default function Reports() {
     switch (t) {
       case "Overview": return [...hdr, trendHead, ...trendRows, [], ...money, [], ["Department", "Orders"], ...byDept.map((d) => [d.name, d.v])];
       case "Orders": return [...hdr, ["Stage", "Orders"], ...byStage.map((r) => [r.stage, r.orders]), [], ["Event", "Orders"], ...byEvent.map((e) => [e.name, e.v]), [], trendHead, ...trendRows];
-      case "Production": return [...hdr, ["Stage", "Avg TAT (days)"], ...tat.map((r) => [r.s, r.d])];
-      case "Team Performance": return [...hdr, ["Name", "Role", "Orders assigned", "On-time %", "Avg days"], ...team.map((r) => [r.name, r.role, r.done, r.onTime, r.avg])];
+      case "Production": return [...hdr, ["Stage group", "Avg TAT (days)", "Samples", "Source"], ...tat.map((r) => [r.s, r.d, r.n, r.src])];
+      case "Team Performance": return [...hdr, ["Name", "Role", "Orders assigned", "Overdue", "On-time %", "Stage moves", "Avg time before hand-off"], ...team.map((r) => [r.name, r.role, r.done, r.late, r.onTime ?? "", r.moves, r.avgMs === null ? "" : fmtDur(r.avgMs)])];
       case "Financial": return [...hdr, ...money, [], ["Payment status", "Orders"], ...byPay.map((r) => [r.name, r.v])];
       case "Delivery": return [...hdr, ["Order", "Customer", "Due", "Stage"], ...orders.filter(isDone).map((o) => [o.id, o.customer, o.due, stageLabel(o.stage)])];
-      case "Customer": return [...hdr, ["Customer", "Billed"], ...customers.map(([n, v]) => [n, v])];
+      case "Customer": return [...hdr, ["Customer", "Type", "Orders", "Billed", "Outstanding"], ...mix.rows.map((r) => [r.name, r.type, r.n, r.billed, r.billed - r.paid])];
       case "Custom Report": return [...hdr, [groupBy, ...metrics], ...customRows.map((r) => [r.k, ...r.vals])];
     }
   };
@@ -283,13 +328,13 @@ export default function Reports() {
               </BarChart>
             </Chart>
           </Panel>
-          <Panel title="Average Turnaround Time (Days)" subtitle="Click a stage">
+          <Panel title="Average Turnaround Time" subtitle="Click a stage · * = estimate, shown until the audit trail has data">
             <ul className="space-y-3 pt-2">
               {tat.map((t) => (
-                <li key={t.s}><button onClick={() => openDrill(`Orders in ${t.s}`, orders.filter((o) => t.stages.includes(o.stage)))} className="grid w-full grid-cols-[110px_1fr_32px] items-center gap-3 rounded-md text-[13px] hover:bg-slate-50">
+                <li key={t.s}><button onClick={() => openDrill(`Orders in ${t.s}`, orders.filter((o) => t.stages.includes(o.stage)))} className="grid w-full grid-cols-[96px_1fr_52px] sm:grid-cols-[110px_1fr_52px] items-center gap-3 rounded-md text-[13px] hover:bg-slate-50">
                   <span className="text-right text-sub">{t.s}</span>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${(t.d / 3.2) * 100}%`, background: t.c }} /></div>
-                  <b>{t.d}</b>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(2, (t.d / 3.2) * 100))}%`, background: t.c, opacity: t.n ? 1 : 0.45 }} /></div>
+                  <b title={t.n ? `Measured from ${t.n} hand-offs in the audit trail` : "Estimate: no hand-offs recorded yet"}>{t.n ? fmtDur(t.ms) : `${t.d} d*`}</b>
                 </button></li>
               ))}
             </ul>
@@ -307,17 +352,22 @@ export default function Reports() {
 
       {tab === "Production" && (
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Average TAT per Stage (days)" subtitle="Click a bar"><Chart><BarChart data={tat}><CartesianGrid {...gridProps} /><XAxis dataKey="s" {...axis} /><YAxis {...axis} /><Tooltip /><Bar dataKey="d" name="Days" radius={[4, 4, 0, 0]} onClick={(d) => { const r = fromBar<(typeof tat)[number]>(d); if (r) openDrill(`Orders in ${r.s}`, orders.filter((o) => r.stages.includes(o.stage))); }}>{tat.map((t) => <Cell key={t.s} fill={t.c} />)}</Bar></BarChart></Chart></Panel>
-          <Panel title="Stage Load vs Capacity" subtitle="Click a stage">
-            <ul className="space-y-4">{["Colour Grading", "Designing", "Printing", "QC"].map((s, i) => { const pc = [72, 88, 64, 45][i]!; const t = tat.find((x) => x.s === s)!; return <li key={s}><button onClick={() => openDrill(`Orders in ${s}`, orders.filter((o) => t.stages.includes(o.stage)))} className="block w-full text-left"><div className="mb-1 flex justify-between text-[13px]"><b>{s}</b><span className="text-sub">{pc}%</span></div><ProgressBar value={pc} tone={pc > 80 ? "red" : "blue"} /></button></li>; })}</ul>
+          <Panel title="Average Turnaround per Stage" subtitle="Click a bar · faded bars are estimates (no audit data yet)">
+            <Chart><BarChart data={tat}><CartesianGrid {...gridProps} /><XAxis dataKey="s" {...axis} /><YAxis {...axis} unit=" d" /><Tooltip formatter={(v, _n, p) => [`${v} days (${(p?.payload as { src?: string })?.src ?? ""})`, "Avg TAT"]} /><Bar dataKey="d" name="Days" radius={[4, 4, 0, 0]} onClick={(d) => { const r = fromBar<(typeof tat)[number]>(d); if (r) openDrill(`Orders in ${r.s}`, orders.filter((o) => r.stages.includes(o.stage))); }}>{tat.map((t) => <Cell key={t.s} fill={t.c} fillOpacity={t.n ? 1 : 0.4} />)}</Bar></BarChart></Chart>
           </Panel>
-          <Panel title="QC First-Pass Yield" subtitle="Click a point" action={trendPanelAction} className="xl:col-span-2"><Chart h={200}><LineChart data={series.map((r, i) => ({ ...r, pass: 90 + ((r.new * 3 + i) % 8) }))} onClick={(s) => drillRow(fromChart(s))}><CartesianGrid {...gridProps} /><XAxis dataKey="label" {...axis} /><YAxis {...axis} domain={[80, 100]} /><Tooltip /><Line dataKey="pass" name="Pass %" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} /></LineChart></Chart></Panel>
+          <Panel title="Stage Load vs WIP Limit" subtitle="Current orders in each stage against the Pipeline WIP limit">
+            <ul className="space-y-4">{(Object.keys(WIP_CAP) as StageKey[]).map((k) => { const n = orders.filter((o) => o.stage === k && !o.hold).length; const cap = WIP_CAP[k]!; const pc = Math.round((n / cap) * 100); return <li key={k}><button onClick={() => openDrill(`Orders in ${stageLabel(k)}`, orders.filter((o) => o.stage === k))} className="block w-full text-left"><div className="mb-1 flex justify-between text-[13px]"><b>{stageLabel(k)}</b><span className="text-sub">{n} / {cap} · {pc}%</span></div><ProgressBar value={Math.min(100, pc)} tone={pc > 100 ? "red" : pc > 80 ? "amber" : "blue"} /></button></li>; })}</ul>
+          </Panel>
+          <Panel title="Measured Stage Hand-offs" subtitle="Computed from stage_change rows in the audit trail" className="xl:col-span-2">
+            <DataTable head={["Stage group", "Avg turnaround", "Hand-offs measured", "Source"]} rows={tat.map((t) => [t.s, t.n ? fmtDur(t.ms) : `${t.d} d (est.)`, t.n, <Pill key="s" tone={t.n ? "green" : "slate"}>{t.src}</Pill>])} />
+            <p className="mt-2 text-xs text-sub">{hands.length ? `${hands.length} hand-offs recorded across ${new Set(hands.map((h) => h.orderId)).size} orders.` : "No stage moves have been recorded yet. Move an order through the pipeline and measured values replace the estimates."}</p>
+          </Panel>
         </div>
       )}
 
       {tab === "Team Performance" && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <Panel title="Team Output"><DataTable head={["Name", "Role", "Orders", "On-time %", "Avg Days"]} rows={team.map((t) => [<button key="n" onClick={() => openDrill(`Orders assigned to ${t.name}`, orders.filter((o) => o.assignee === t.first))} className="font-semibold text-brand hover:underline">{t.name}</button>, t.role, t.done, <Pill key="p" tone={t.onTime > 90 ? "green" : "amber"}>{t.onTime}%</Pill>, t.avg])} /></Panel>
+          <Panel title="Team Output" subtitle="Assigned orders from the order list · stage moves and hand-off time from the audit trail"><DataTable head={["Name", "Role", "Assigned", "Overdue", "On-time %", "Stage moves", "Avg before hand-off"]} rows={team.map((t) => [<button key="n" onClick={() => openDrill(`Orders assigned to ${t.name}`, orders.filter((o) => o.assignee === t.first))} className="font-semibold text-brand hover:underline">{t.name}</button>, t.role, t.done, t.late, t.onTime === null ? "-" : <Pill key="p" tone={t.onTime > 90 ? "green" : "amber"}>{t.onTime}%</Pill>, t.moves, t.avgMs === null ? "-" : fmtDur(t.avgMs)])} /><p className="mt-2 text-xs text-sub">On-time % = assigned orders not past their due date. Avg before hand-off = how long orders sat in a stage before this person moved them on.</p></Panel>
           <Panel title="Orders Handled" subtitle="Click a bar"><Chart><BarChart data={team} layout="vertical" margin={{ left: 30 }}><CartesianGrid horizontal={false} stroke="#e6e9f5" /><XAxis type="number" {...axis} allowDecimals={false} /><YAxis type="category" dataKey="name" {...axis} width={90} /><Tooltip /><Bar dataKey="done" name="Orders" fill="#7c5cf0" radius={[0, 4, 4, 0]} onClick={(d) => { const r = fromBar<(typeof team)[number]>(d); if (r) openDrill(`Orders assigned to ${r.name}`, orders.filter((o) => o.assignee === r.first)); }} /></BarChart></Chart></Panel>
         </div>
       )}
@@ -342,12 +392,22 @@ export default function Reports() {
         </div>
       )}
 
-      {tab === "Customer" && (
+      {tab === "Customer" && (<>
+        <KpiRow items={[
+          { label: "Active customers", value: mix.rows.length, icon: FileText, tone: "blue" },
+          { label: "Repeat customers", value: mix.rows.length ? `${Math.round((mix.repeat / mix.rows.length) * 100)}%` : "0%", icon: History, tone: "violet" },
+          { label: "Avg order value", value: inr(orders.length ? Math.round(billed / orders.length) : 0), icon: Coins, tone: "teal" },
+          { label: "Top-3 share of billing", value: `${mix.top3}%`, icon: ShieldCheck, tone: "amber" },
+        ]} />
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Top Customers by Billing" subtitle="Click a bar"><Chart><BarChart data={customers.map(([n, v]) => ({ n, v }))} layout="vertical" margin={{ left: 50 }}><CartesianGrid horizontal={false} stroke="#e6e9f5" /><XAxis type="number" {...axis} tickFormatter={(v: number) => `${Math.round(v / 1000)}K`} /><YAxis type="category" dataKey="n" {...axis} width={120} /><Tooltip formatter={(v) => inr(Number(v))} /><Bar dataKey="v" name="Billed" fill="#3b5bf0" radius={[0, 4, 4, 0]} onClick={(d) => { const r = fromBar<{ n: string }>(d); if (r) openDrill(`Orders - ${r.n}`, orders.filter((o) => o.customer === r.n)); }} /></BarChart></Chart></Panel>
+          <Panel title="Top Customers by Billing" subtitle="Click a bar"><Chart><BarChart data={mix.rows.slice(0, 8).map((r) => ({ n: r.name, v: r.billed }))} layout="vertical" margin={{ left: 50 }}><CartesianGrid horizontal={false} stroke="#e6e9f5" /><XAxis type="number" {...axis} tickFormatter={(v: number) => `${Math.round(v / 1000)}K`} /><YAxis type="category" dataKey="n" {...axis} width={120} /><Tooltip formatter={(v) => inr(Number(v))} /><Bar dataKey="v" name="Billed" fill="#3b5bf0" radius={[0, 4, 4, 0]} onClick={(d) => { const r = fromBar<{ n: string }>(d); if (r) openDrill(`Orders - ${r.n}`, orders.filter((o) => o.customer === r.n)); }} /></BarChart></Chart></Panel>
+          <Panel title="Customer Mix" subtitle="Orders by customer type (matched to the Customers list)"><Donut data={mix.types} center="Orders" onSlice={(n) => openDrill(`${n} customers' orders`, orders.filter((o) => (mix.rows.find((r) => r.name === o.customer)?.type ?? "Unlinked") === n))} /></Panel>
+          <Panel title="Customer Ledger" subtitle="Billing, collections and last order per customer" className="xl:col-span-2">
+            <DataTable head={["Customer", "Type", "Orders", "Billed", "Outstanding", "Last order"]} rows={mix.rows.slice(0, 12).map((r) => [<button key="c" onClick={() => openDrill(`Orders - ${r.name}`, orders.filter((o) => o.customer === r.name))} className="font-semibold text-brand hover:underline">{r.name}</button>, <Pill key="t" tone={r.type === "VIP" ? "amber" : r.type === "New" ? "green" : r.type === "Regular" ? "blue" : "slate"}>{r.type}</Pill>, r.n, inr(r.billed), r.billed - r.paid > 0 ? <span key="o" className="font-semibold text-rose-600">{inr(r.billed - r.paid)}</span> : inr(0), r.last])} />
+          </Panel>
           <Panel title="Orders by Priority" subtitle="Click a slice"><Donut data={byPriority} center="Orders" onSlice={(n) => openDrill(`${n} priority orders`, orders.filter((o) => o.priority === n))} /></Panel>
         </div>
-      )}
+      </>)}
 
       {tab === "Custom Report" && (<div className="space-y-4">
         <Panel title="Custom Report Builder" subtitle={`Choose metrics, grouping and filters. The preview updates live. Range: ${label}`}>

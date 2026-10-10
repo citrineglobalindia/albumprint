@@ -5,7 +5,7 @@ import { moveStage as engineMove, nextStages } from "../lib/workflow";
 import { editOrder } from "../lib/orderEdit";
 import { useNavigate } from "react-router-dom";
 import { ActionMenu } from "../components/ActionMenu";
-import { ClipboardList, Settings, Users, Printer, Truck, ShieldCheck, CalendarDays, LayoutGrid, List, Plus, ArrowRight, User, RotateCcw, CheckCircle2, Info, GripVertical } from "lucide-react";
+import { SlidersHorizontal, ClipboardList, Settings, Users, Printer, Truck, ShieldCheck, CalendarDays, LayoutGrid, List, Plus, ArrowRight, User, RotateCcw, CheckCircle2, Info, GripVertical } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, KpiRow, Panel, Pill, Thumb, SearchInput, ProgressBar, PriorityPill, TONE, TodayChip, cx, tableCls, Th, Td, trCls, type Kpi } from "../components/ui";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
@@ -41,6 +41,7 @@ export default function Pipeline() {
   const [pick, setPick] = useState("");
   const [perr, setPerr] = useState("");
   const [drag, setDrag] = useState<string | null>(null);
+  const [fOpen, setFOpen] = useState(false);
   const [over, setOver] = useState<StageKey | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const tt = useRef<number | undefined>(undefined);
@@ -179,6 +180,8 @@ export default function Pipeline() {
       <div className="mb-2 flex flex-wrap items-center gap-2.5">
         <DateRangePicker align="left" value={range} onChange={setRange} />
         <div ref={searchWrap} className="min-w-[200px] flex-1"><SearchInput value={q} onChange={setQ} placeholder="Search orders, customer, event...  ( / )" /></div>
+        <button type="button" aria-expanded={fOpen} aria-controls="pipe-filters" onClick={() => setFOpen(!fOpen)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold sm:hidden"><SlidersHorizontal className="size-4" aria-hidden />Filters{chips.length > 0 && <span className="rounded-full bg-brand px-1.5 text-xs text-white">{chips.length}</span>}</button>
+        <div id="pipe-filters" className={cx(fOpen ? "flex flex-wrap items-center gap-2.5" : "hidden", "w-full sm:contents")}>
         <MultiSelect className="w-28" label="Event" options={EVENTS} value={event} onChange={setEvent} />
         <MultiSelect className="w-28" label="Priority" options={PRIORITIES} value={prio} onChange={setPrio} />
         <MultiSelect className="w-32" label="Assignee" options={ASSIGNEES} value={asg} onChange={setAsg} />
@@ -186,9 +189,10 @@ export default function Pipeline() {
         <MultiSelect className="w-28" label="Size" options={ALBUM_SIZES} value={size} onChange={setSize} />
         <SavedViews<ViewState> storageKey="pipeline" current={vs} onApply={applyView} />
         {view === "list" && <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />}
+        </div>
         <div className="flex overflow-hidden rounded-lg border border-line bg-white">
           {([["grid", LayoutGrid], ["list", List]] as const).map(([k, I]) => (
-            <button key={k} aria-label={k} onClick={() => setView(k)} className={cx("grid size-10 place-items-center", view === k ? "bg-brand text-white" : "text-sub")}><I className="size-4" /></button>
+            <button key={k} aria-label={`${k === "grid" ? "Board" : "List"} view`} aria-pressed={view === k} onClick={() => setView(k)} className={cx("grid size-10 place-items-center", view === k ? "bg-brand text-white" : "text-sub")}><I className="size-4" /></button>
           ))}
         </div>
       </div>

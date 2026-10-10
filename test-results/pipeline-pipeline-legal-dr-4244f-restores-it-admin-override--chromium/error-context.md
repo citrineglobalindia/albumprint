@@ -1,0 +1,999 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#main"
+    - complementary "Main navigation" [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e14]: AlbumPro
+      - navigation "Primary" [ref=e15]:
+        - link "Dashboard" [ref=e16] [cursor=pointer]:
+          - /url: /
+          - img [ref=e17]
+          - text: Dashboard
+        - link "Orders" [ref=e22] [cursor=pointer]:
+          - /url: /orders
+          - img [ref=e23]
+          - text: Orders
+        - link "Customers" [ref=e26] [cursor=pointer]:
+          - /url: /customers
+          - img [ref=e27]
+          - text: Customers
+        - link "Production Pipeline" [ref=e32] [cursor=pointer]:
+          - /url: /pipeline
+          - img [ref=e33]
+          - text: Production Pipeline
+        - link "Colour Grading" [ref=e35] [cursor=pointer]:
+          - /url: /colour-grading
+          - img [ref=e36]
+          - text: Colour Grading
+        - link "Album Designing" [ref=e42] [cursor=pointer]:
+          - /url: /designing
+          - img [ref=e43]
+          - text: Album Designing
+        - link "Printing" [ref=e47] [cursor=pointer]:
+          - /url: /printing
+          - img [ref=e48]
+          - text: Printing
+        - link "Quality Control" [ref=e52] [cursor=pointer]:
+          - /url: /qc
+          - img [ref=e53]
+          - text: Quality Control
+        - link "Delivery" [ref=e56] [cursor=pointer]:
+          - /url: /delivery
+          - img [ref=e57]
+          - text: Delivery
+        - link "Payments" [ref=e62] [cursor=pointer]:
+          - /url: /payments
+          - img [ref=e63]
+          - text: Payments
+        - link "Invoices" [ref=e65] [cursor=pointer]:
+          - /url: /invoices
+          - img [ref=e66]
+          - text: Invoices
+        - link "Reports" [ref=e69] [cursor=pointer]:
+          - /url: /reports
+          - img [ref=e70]
+          - text: Reports
+        - link "Masters" [ref=e72] [cursor=pointer]:
+          - /url: /masters
+          - img [ref=e73]
+          - text: Masters
+        - link "Users & Roles" [ref=e83] [cursor=pointer]:
+          - /url: /users
+          - img [ref=e84]
+          - text: Users & Roles
+        - link "Control Center" [ref=e96] [cursor=pointer]:
+          - /url: /control
+          - img [ref=e97]
+          - text: Control Center
+        - link "Files" [ref=e100] [cursor=pointer]:
+          - /url: /files
+          - img [ref=e101]
+          - text: Files
+        - link "Notifications" [ref=e103] [cursor=pointer]:
+          - /url: /notifications
+          - img [ref=e104]
+          - text: Notifications
+        - link "Audit Log" [ref=e107] [cursor=pointer]:
+          - /url: /audit
+          - img [ref=e108]
+          - text: Audit Log
+        - link "Settings" [ref=e111] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e112]
+          - text: Settings
+    - generic [ref=e115]:
+      - banner [ref=e116]:
+        - generic [ref=e119] [cursor=pointer]:
+          - img [ref=e120]
+          - textbox "Search orders, customers, mobile number" [ref=e123]:
+            - /placeholder: Search orders, customers, mobile number...
+          - generic [ref=e124]: ⌘ K
+        - generic [ref=e125]:
+          - button "Notifications" [ref=e127] [cursor=pointer]:
+            - img [ref=e128]
+            - generic [ref=e131]: "3"
+          - button "Help" [ref=e133] [cursor=pointer]:
+            - img [ref=e134]
+          - button "Account menu, Admin" [ref=e138] [cursor=pointer]:
+            - generic [ref=e139]: A
+            - generic [ref=e140]:
+              - generic [ref=e141]: Admin
+              - generic [ref=e142]: Admin
+            - img [ref=e143]
+      - main [active] [ref=e145]:
+        - generic [ref=e146]:
+          - generic [ref=e147]:
+            - generic [ref=e149]:
+              - heading "Production Pipeline" [level=1] [ref=e150]
+              - paragraph [ref=e151]: Track and manage your album production from order to delivery.
+            - generic [ref=e152]:
+              - button "Today Sat, 03 Oct 2026" [ref=e154] [cursor=pointer]:
+                - img [ref=e155]
+                - generic [ref=e157]:
+                  - text: Today
+                  - generic [ref=e158]: Sat, 03 Oct 2026
+                - img [ref=e159]
+              - button "New Order" [ref=e161] [cursor=pointer]:
+                - img [ref=e162]
+                - text: New Order
+              - button "More" [ref=e164] [cursor=pointer]:
+                - text: More
+                - img [ref=e165]
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - img [ref=e170]
+              - generic [ref=e173]:
+                - generic "Total Orders" [ref=e174]
+                - generic [ref=e175]: "72"
+            - generic [ref=e176]:
+              - img [ref=e178]
+              - generic [ref=e181]:
+                - generic "In Production" [ref=e182]
+                - generic [ref=e183]: "18"
+            - generic [ref=e184]:
+              - img [ref=e186]
+              - generic [ref=e191]:
+                - generic "Awaiting Approval" [ref=e192]
+                - generic [ref=e193]: "14"
+            - generic [ref=e194]:
+              - img [ref=e196]
+              - generic [ref=e200]:
+                - generic "Printing & QC" [ref=e201]
+                - generic [ref=e202]: "21"
+            - generic [ref=e203]:
+              - img [ref=e205]
+              - generic [ref=e210]:
+                - generic "Ready for Delivery" [ref=e211]
+                - generic [ref=e212]: "8"
+            - generic [ref=e213]:
+              - img [ref=e215]
+              - generic [ref=e218]:
+                - generic "Delivered" [ref=e219]
+                - generic [ref=e220]: "6"
+          - generic [ref=e221]:
+            - generic [ref=e222]:
+              - generic [ref=e223]:
+                - heading "Production Workload" [level=2] [ref=e225]
+                - generic [ref=e226]:
+                  - generic [ref=e227]: Orders in Pipeline
+                  - generic [ref=e229]: Delivered
+              - application [ref=e235]:
+                - generic [ref=e246]:
+                  - generic [ref=e247]:
+                    - generic [ref=e249]: 29 Sept
+                    - generic [ref=e251]: 1 Oct
+                    - generic [ref=e253]: 2 Oct
+                    - generic [ref=e255]: 4 Oct
+                    - generic [ref=e257]: 6 Oct
+                    - generic [ref=e259]: 9 Oct
+                  - generic [ref=e260]:
+                    - generic [ref=e262]: "0"
+                    - generic [ref=e264]: "20"
+                    - generic [ref=e266]: "40"
+                    - generic [ref=e268]: "60"
+                    - generic [ref=e270]: "80"
+            - generic [ref=e271]:
+              - generic [ref=e272]:
+                - heading "Orders by Stage" [level=2] [ref=e274]
+                - button "View Details" [ref=e275] [cursor=pointer]:
+                  - text: View Details
+                  - img [ref=e276]
+              - generic [ref=e279]:
+                - button "5 New Order" [ref=e280] [cursor=pointer]:
+                  - generic [ref=e281]: "5"
+                  - generic [ref=e282]: New Order
+                - button "10 Files Received" [ref=e283] [cursor=pointer]:
+                  - generic [ref=e284]: "10"
+                  - generic [ref=e285]: Files Received
+                - button "4 Colour Grading" [ref=e286] [cursor=pointer]:
+                  - generic [ref=e287]: "4"
+                  - generic [ref=e288]: Colour Grading
+                - button "4 Admin Approval" [ref=e289] [cursor=pointer]:
+                  - generic [ref=e290]: "4"
+                  - generic [ref=e291]: Admin Approval
+                - button "4 Designing" [ref=e292] [cursor=pointer]:
+                  - generic [ref=e293]: "4"
+                  - generic [ref=e294]: Designing
+                - button "5 Client Review" [ref=e295] [cursor=pointer]:
+                  - generic [ref=e296]: "5"
+                  - generic [ref=e297]: Client Review
+                - button "5 Final Approval" [ref=e298] [cursor=pointer]:
+                  - generic [ref=e299]: "5"
+                  - generic [ref=e300]: Final Approval
+                - button "14 Printing" [ref=e301] [cursor=pointer]:
+                  - generic [ref=e302]: "14"
+                  - generic [ref=e303]: Printing
+                - button "7 QC" [ref=e304] [cursor=pointer]:
+                  - generic [ref=e305]: "7"
+                  - generic [ref=e306]: QC
+                - button "8 Ready for Delivery" [ref=e307] [cursor=pointer]:
+                  - generic [ref=e308]: "8"
+                  - generic [ref=e309]: Ready for Delivery
+                - button "6 Delivered" [ref=e310] [cursor=pointer]:
+                  - generic [ref=e311]: "6"
+                  - generic [ref=e312]: Delivered
+          - generic [ref=e313]:
+            - button "All Time All Time" [ref=e315] [cursor=pointer]:
+              - img [ref=e316]
+              - generic [ref=e318]:
+                - generic [ref=e319]: All Time
+                - generic [ref=e320]: All Time
+              - img [ref=e321]
+            - generic [ref=e324]:
+              - img [ref=e325]
+              - searchbox "Search orders, customer, event" [ref=e328]
+            - generic [ref=e329]:
+              - button "Event" [ref=e331] [cursor=pointer]:
+                - generic [ref=e332]: Event
+                - img [ref=e333]
+              - button "Priority" [ref=e336] [cursor=pointer]:
+                - generic [ref=e337]: Priority
+                - img [ref=e338]
+              - button "Assignee" [ref=e341] [cursor=pointer]:
+                - generic [ref=e342]: Assignee
+                - img [ref=e343]
+              - button "Workflow" [ref=e346] [cursor=pointer]:
+                - generic [ref=e347]: Workflow
+                - img [ref=e348]
+              - button "Size" [ref=e351] [cursor=pointer]:
+                - generic [ref=e352]: Size
+                - img [ref=e353]
+              - button "Views" [ref=e356] [cursor=pointer]:
+                - img [ref=e357]
+                - text: Views
+            - generic [ref=e359]:
+              - button "Board view" [pressed] [ref=e360] [cursor=pointer]:
+                - img [ref=e361]
+              - button "List view" [ref=e366] [cursor=pointer]:
+                - img [ref=e367]
+          - generic [ref=e368]:
+            - group "New Order column" [ref=e369]:
+              - generic [ref=e370]:
+                - generic [ref=e371]: New Order
+                - generic [ref=e373]: "5"
+              - button "Add" [ref=e374] [cursor=pointer]:
+                - img [ref=e375]
+                - text: Add
+              - generic [ref=e376]:
+                - generic [ref=e377]:
+                  - generic [ref=e378]:
+                    - img [ref=e380]
+                    - generic [ref=e384]:
+                      - generic [ref=e385]: IDP00052
+                      - generic [ref=e386]: Pixel Stories
+                      - generic [ref=e387]: Birthday
+                    - button "Actions for IDP00052" [ref=e388] [cursor=pointer]:
+                      - img [ref=e389]
+                  - generic [ref=e393]:
+                    - img [ref=e394]
+                    - text: 5 Oct 2026
+                    - img [ref=e396]
+                  - generic [ref=e404]: Normal
+                  - generic [ref=e405]:
+                    - generic [ref=e406]:
+                      - img [ref=e407]
+                      - text: Nandini
+                    - generic [ref=e410]: 9%
+                - generic [ref=e413]:
+                  - generic [ref=e414]:
+                    - img [ref=e416]
+                    - generic [ref=e420]:
+                      - generic [ref=e421]: IDP00041
+                      - generic [ref=e422]: Frame Factory
+                      - generic [ref=e423]: Corporate
+                    - button "Actions for IDP00041" [ref=e424] [cursor=pointer]:
+                      - img [ref=e425]
+                  - generic [ref=e429]:
+                    - img [ref=e430]
+                    - text: 16 Oct 2026
+                    - img [ref=e432]
+                  - generic [ref=e440]: High
+                  - generic [ref=e441]:
+                    - generic [ref=e442]:
+                      - img [ref=e443]
+                      - text: Nandini
+                    - generic [ref=e446]: 9%
+                - generic [ref=e449]:
+                  - generic [ref=e450]:
+                    - img [ref=e452]
+                    - generic [ref=e456]:
+                      - generic [ref=e457]: IDP00030
+                      - generic [ref=e458]: Lightbox Films
+                      - generic [ref=e459]: Reception · Print only
+                    - button "Actions for IDP00030" [ref=e460] [cursor=pointer]:
+                      - img [ref=e461]
+                  - generic [ref=e465]:
+                    - img [ref=e466]
+                    - text: 7 Oct 2026
+                    - img [ref=e468]
+                  - generic [ref=e476]: Normal
+                  - generic [ref=e477]:
+                    - generic [ref=e478]:
+                      - img [ref=e479]
+                      - text: Nandini
+                    - generic [ref=e482]: 9%
+              - button "+ 2 more" [ref=e485] [cursor=pointer]
+            - group "Files Received column" [ref=e486]:
+              - generic [ref=e487]:
+                - generic [ref=e488]: Files Received
+                - generic [ref=e490]: "10"
+              - button "Add" [ref=e491] [cursor=pointer]:
+                - img [ref=e492]
+                - text: Add
+              - generic [ref=e493]:
+                - generic [ref=e494]:
+                  - generic [ref=e495]:
+                    - img [ref=e497]
+                    - generic [ref=e501]:
+                      - generic [ref=e502]: IDP00065
+                      - generic [ref=e503]: Srikanth
+                      - generic [ref=e504]: Pre Wedding · Print only
+                    - button "Actions for IDP00065" [ref=e505] [cursor=pointer]:
+                      - img [ref=e506]
+                  - generic [ref=e510]:
+                    - img [ref=e511]
+                    - text: 9 Oct 2026
+                    - img [ref=e513]
+                  - generic [ref=e521]: Normal
+                  - generic [ref=e522]:
+                    - generic [ref=e523]:
+                      - img [ref=e524]
+                      - text: Suresh
+                    - generic [ref=e527]: 18%
+                - generic [ref=e530]:
+                  - generic [ref=e531]:
+                    - img [ref=e533]
+                    - generic [ref=e537]:
+                      - generic [ref=e538]: IDP00055
+                      - generic [ref=e539]: Focus Events
+                      - generic [ref=e540]: Pre Wedding
+                    - button "Actions for IDP00055" [ref=e541] [cursor=pointer]:
+                      - img [ref=e542]
+                  - generic [ref=e546]:
+                    - img [ref=e547]
+                    - text: 22 Oct 2026
+                    - img [ref=e549]
+                  - generic [ref=e557]: Normal
+                  - generic [ref=e558]:
+                    - generic [ref=e559]:
+                      - img [ref=e560]
+                      - text: Anil
+                    - generic [ref=e563]: 18%
+                - generic [ref=e566]:
+                  - generic [ref=e567]:
+                    - img [ref=e569]
+                    - generic [ref=e573]:
+                      - generic [ref=e574]: IDP00044
+                      - generic [ref=e575]: Picture Perfect
+                      - generic [ref=e576]: Birthday
+                    - button "Actions for IDP00044" [ref=e577] [cursor=pointer]:
+                      - img [ref=e578]
+                  - generic [ref=e582]:
+                    - img [ref=e583]
+                    - text: 13 Oct 2026
+                    - img [ref=e585]
+                  - generic [ref=e593]: Low
+                  - generic [ref=e594]:
+                    - generic [ref=e595]:
+                      - img [ref=e596]
+                      - text: Anil
+                    - generic [ref=e599]: 18%
+              - button "+ 7 more" [ref=e602] [cursor=pointer]
+            - group "Colour Grading column" [ref=e603]:
+              - generic [ref=e604]:
+                - generic [ref=e605]: Colour Grading
+                - generic [ref=e606]:
+                  - generic "WIP limit 8" [ref=e607]: WIP 4/8
+                  - generic [ref=e608]: "4"
+              - button "Add" [ref=e609] [cursor=pointer]:
+                - img [ref=e610]
+                - text: Add
+              - generic [ref=e611]:
+                - generic [ref=e612]:
+                  - generic [ref=e613]:
+                    - img [ref=e615]
+                    - generic [ref=e619]:
+                      - generic [ref=e620]: IDP00072
+                      - generic [ref=e621]: Chidanan da
+                      - generic [ref=e622]: Wedding
+                    - button "Actions for IDP00072" [ref=e623] [cursor=pointer]:
+                      - img [ref=e624]
+                  - generic [ref=e628]:
+                    - img [ref=e629]
+                    - text: 10 Oct 2026
+                    - img [ref=e631]
+                  - generic [ref=e639]: Normal
+                  - generic [ref=e640]:
+                    - generic [ref=e641]:
+                      - img [ref=e642]
+                      - text: Suresh
+                    - generic [ref=e645]: 27%
+                - generic [ref=e648]:
+                  - generic [ref=e649]:
+                    - img [ref=e651]
+                    - generic [ref=e655]:
+                      - generic [ref=e656]: IDP00047
+                      - generic [ref=e657]: Divine Moments
+                      - generic [ref=e658]: Pre Wedding
+                    - button "Actions for IDP00047" [ref=e659] [cursor=pointer]:
+                      - img [ref=e660]
+                  - generic [ref=e664]:
+                    - img [ref=e665]
+                    - text: 10 Oct 2026
+                    - img [ref=e667]
+                  - generic [ref=e675]: Normal
+                  - generic [ref=e676]:
+                    - generic [ref=e677]:
+                      - img [ref=e678]
+                      - text: Manoj
+                    - generic [ref=e681]: 27%
+                - generic [ref=e684]:
+                  - generic [ref=e685]:
+                    - img [ref=e687]
+                    - generic [ref=e691]:
+                      - generic [ref=e692]: IDP00025
+                      - generic [ref=e693]: Snap Studio
+                      - generic [ref=e694]: Corporate
+                    - button "Actions for IDP00025" [ref=e695] [cursor=pointer]:
+                      - img [ref=e696]
+                  - generic [ref=e700]:
+                    - img [ref=e701]
+                    - text: 12 Oct 2026
+                    - img [ref=e703]
+                  - generic [ref=e711]: Normal
+                  - generic [ref=e712]:
+                    - generic [ref=e713]:
+                      - img [ref=e714]
+                      - text: Manoj
+                    - generic [ref=e717]: 27%
+              - button "+ 1 more" [ref=e720] [cursor=pointer]
+            - group "Admin Approval column" [ref=e721]:
+              - generic [ref=e722]:
+                - generic [ref=e723]: Admin Approval
+                - generic [ref=e724]:
+                  - generic "WIP limit 6" [ref=e725]: WIP 4/6
+                  - generic [ref=e726]: "4"
+              - button "Add" [ref=e727] [cursor=pointer]:
+                - img [ref=e728]
+                - text: Add
+              - generic [ref=e729]:
+                - generic [ref=e730]:
+                  - generic [ref=e731]:
+                    - img [ref=e733]
+                    - generic [ref=e737]:
+                      - generic [ref=e738]: IDP00058
+                      - generic [ref=e739]: Wedding Bliss
+                      - generic [ref=e740]: Baby Shoot
+                    - button "Actions for IDP00058" [ref=e741] [cursor=pointer]:
+                      - img [ref=e742]
+                  - generic [ref=e746]:
+                    - img [ref=e747]
+                    - text: 19 Oct 2026
+                    - img [ref=e749]
+                  - generic [ref=e757]: Urgent
+                  - generic [ref=e758]:
+                    - generic [ref=e759]:
+                      - img [ref=e760]
+                      - text: Manoj
+                    - generic [ref=e763]: 36%
+                - generic [ref=e766]:
+                  - generic [ref=e767]:
+                    - img [ref=e769]
+                    - generic [ref=e773]:
+                      - generic [ref=e774]: IDP00050
+                      - generic [ref=e775]: Grand Moments
+                      - generic [ref=e776]: Baby Shoot
+                    - button "Actions for IDP00050" [ref=e777] [cursor=pointer]:
+                      - img [ref=e778]
+                  - generic [ref=e782]:
+                    - img [ref=e783]
+                    - text: 7 Oct 2026
+                    - img [ref=e785]
+                  - generic [ref=e793]: Normal
+                  - generic [ref=e794]:
+                    - generic [ref=e795]:
+                      - img [ref=e796]
+                      - text: Suresh
+                    - generic [ref=e799]: 36%
+                - generic [ref=e802]:
+                  - generic [ref=e803]:
+                    - img [ref=e805]
+                    - generic [ref=e809]:
+                      - generic [ref=e810]: IDP00028
+                      - generic [ref=e811]: Pixel Stories
+                      - generic [ref=e812]: Birthday
+                    - button "Actions for IDP00028" [ref=e813] [cursor=pointer]:
+                      - img [ref=e814]
+                  - generic [ref=e818]:
+                    - img [ref=e819]
+                    - text: 9 Oct 2026
+                    - img [ref=e821]
+                  - generic [ref=e829]: Urgent
+                  - generic [ref=e830]:
+                    - generic [ref=e831]:
+                      - img [ref=e832]
+                      - text: Suresh
+                    - generic [ref=e835]: 36%
+              - button "+ 1 more" [ref=e838] [cursor=pointer]
+            - group "Designing column" [ref=e839]:
+              - generic [ref=e840]:
+                - generic [ref=e841]: Designing
+                - generic [ref=e842]:
+                  - generic "WIP limit 10" [ref=e843]: WIP 4/10
+                  - generic [ref=e844]: "4"
+              - button "Add" [ref=e845] [cursor=pointer]:
+                - img [ref=e846]
+                - text: Add
+              - generic [ref=e847]:
+                - generic [ref=e848]:
+                  - generic [ref=e849]:
+                    - img [ref=e851]
+                    - generic [ref=e855]:
+                      - generic [ref=e856]: IDP00064
+                      - generic [ref=e857]: Meera Studio
+                      - generic [ref=e858]: Wedding
+                    - button "Actions for IDP00064" [ref=e859] [cursor=pointer]:
+                      - img [ref=e860]
+                  - generic [ref=e864]:
+                    - img [ref=e865]
+                    - text: 11 Oct 2026
+                    - img [ref=e867]
+                  - generic [ref=e875]: High
+                  - generic [ref=e876]:
+                    - generic [ref=e877]:
+                      - img [ref=e878]
+                      - text: Priya
+                    - generic [ref=e881]: 45%
+                - generic [ref=e884]:
+                  - generic [ref=e885]:
+                    - img [ref=e887]
+                    - generic [ref=e891]:
+                      - generic [ref=e892]: IDP00053
+                      - generic [ref=e893]: Frame Factory
+                      - generic [ref=e894]: Engagement
+                    - button "Actions for IDP00053" [ref=e895] [cursor=pointer]:
+                      - img [ref=e896]
+                  - generic [ref=e900]:
+                    - img [ref=e901]
+                    - text: 24 Oct 2026
+                    - img [ref=e903]
+                  - generic [ref=e911]: Urgent
+                  - generic [ref=e912]:
+                    - generic [ref=e913]:
+                      - img [ref=e914]
+                      - text: Vikram
+                    - generic [ref=e917]: 45%
+                - generic [ref=e920]:
+                  - generic [ref=e921]:
+                    - img [ref=e923]
+                    - generic [ref=e927]:
+                      - generic [ref=e928]: IDP00031
+                      - generic [ref=e929]: Focus Events
+                      - generic [ref=e930]: Pre Wedding
+                    - button "Actions for IDP00031" [ref=e931] [cursor=pointer]:
+                      - img [ref=e932]
+                  - generic [ref=e936]:
+                    - img [ref=e937]
+                    - text: 6 Oct 2026
+                    - img [ref=e939]
+                  - generic [ref=e947]: High
+                  - generic [ref=e948]:
+                    - generic [ref=e949]:
+                      - img [ref=e950]
+                      - text: Vikram
+                    - generic [ref=e953]: 45%
+              - button "+ 1 more" [ref=e956] [cursor=pointer]
+            - group "Client Review column" [ref=e957]:
+              - generic [ref=e958]:
+                - generic [ref=e959]: Client Review
+                - generic [ref=e960]:
+                  - generic "WIP limit 8" [ref=e961]: WIP 5/8
+                  - generic [ref=e962]: "5"
+              - button "Add" [ref=e963] [cursor=pointer]:
+                - img [ref=e964]
+                - text: Add
+              - generic [ref=e965]:
+                - generic [ref=e966]:
+                  - generic [ref=e967]:
+                    - img [ref=e969]
+                    - generic [ref=e973]:
+                      - generic [ref=e974]: IDP00070
+                      - generic [ref=e975]: Freezing Frames
+                      - generic [ref=e976]: Wedding
+                    - button "Actions for IDP00070" [ref=e977] [cursor=pointer]:
+                      - img [ref=e978]
+                  - generic [ref=e982]:
+                    - img [ref=e983]
+                    - text: 14 Oct 2026
+                    - img [ref=e985]
+                  - generic [ref=e993]: Normal
+                  - generic [ref=e994]:
+                    - generic [ref=e995]:
+                      - img [ref=e996]
+                      - text: Divya
+                    - generic [ref=e999]: 54%
+                - generic [ref=e1002]:
+                  - generic [ref=e1003]:
+                    - img [ref=e1005]
+                    - generic [ref=e1009]:
+                      - generic [ref=e1010]: IDP00056
+                      - generic [ref=e1011]: Picture Perfect
+                      - generic [ref=e1012]: Wedding
+                    - button "Actions for IDP00056" [ref=e1013] [cursor=pointer]:
+                      - img [ref=e1014]
+                  - generic [ref=e1018]:
+                    - img [ref=e1019]
+                    - text: 21 Oct 2026
+                    - img [ref=e1021]
+                  - generic [ref=e1029]: High
+                  - generic [ref=e1030]:
+                    - generic [ref=e1031]:
+                      - img [ref=e1032]
+                      - text: Karthik
+                    - generic [ref=e1035]: 54%
+                - generic [ref=e1038]:
+                  - generic [ref=e1039]:
+                    - img [ref=e1041]
+                    - generic [ref=e1045]:
+                      - generic [ref=e1046]: IDP00034
+                      - generic [ref=e1047]: Wedding Bliss
+                      - generic [ref=e1048]: Baby Shoot
+                    - button "Actions for IDP00034" [ref=e1049] [cursor=pointer]:
+                      - img [ref=e1050]
+                  - generic [ref=e1054]:
+                    - img [ref=e1055]
+                    - text: 23 Oct 2026
+                    - img [ref=e1057]
+                  - generic [ref=e1065]: Low
+                  - generic [ref=e1066]:
+                    - generic [ref=e1067]:
+                      - img [ref=e1068]
+                      - text: Karthik
+                    - generic [ref=e1071]: 54%
+              - button "+ 2 more" [ref=e1074] [cursor=pointer]
+            - group "Final Approval column" [ref=e1075]:
+              - generic [ref=e1076]:
+                - generic [ref=e1077]: Final Approval
+                - generic [ref=e1078]:
+                  - generic "WIP limit 5" [ref=e1079]: WIP 5/5
+                  - generic [ref=e1080]: "5"
+              - button "Add" [ref=e1081] [cursor=pointer]:
+                - img [ref=e1082]
+                - text: Add
+              - generic [ref=e1083]:
+                - generic [ref=e1084]:
+                  - generic [ref=e1085]:
+                    - img [ref=e1087]
+                    - generic [ref=e1091]:
+                      - generic [ref=e1092]: IDP00068
+                      - generic [ref=e1093]: Photo Corner
+                      - generic [ref=e1094]: Hotel Opening
+                    - button "Actions for IDP00068" [ref=e1095] [cursor=pointer]:
+                      - img [ref=e1096]
+                  - generic [ref=e1100]:
+                    - img [ref=e1101]
+                    - text: 10 Oct 2026
+                    - img [ref=e1103]
+                  - generic [ref=e1111]: High
+                  - generic [ref=e1112]:
+                    - generic [ref=e1113]:
+                      - img [ref=e1114]
+                      - text: Admin
+                    - generic [ref=e1117]: 63%
+                - generic [ref=e1120]:
+                  - generic [ref=e1121]:
+                    - img [ref=e1123]
+                    - generic [ref=e1127]:
+                      - generic [ref=e1128]: IDP00059
+                      - generic [ref=e1129]: Divine Moments
+                      - generic [ref=e1130]: Hotel Opening
+                    - button "Actions for IDP00059" [ref=e1131] [cursor=pointer]:
+                      - img [ref=e1132]
+                  - generic [ref=e1136]:
+                    - img [ref=e1137]
+                    - text: 18 Oct 2026
+                    - img [ref=e1139]
+                  - generic [ref=e1147]: Low
+                  - generic [ref=e1148]:
+                    - generic [ref=e1149]:
+                      - img [ref=e1150]
+                      - text: Divya
+                    - generic [ref=e1153]: 63%
+                - generic [ref=e1156]:
+                  - generic [ref=e1157]:
+                    - img [ref=e1159]
+                    - generic [ref=e1163]:
+                      - generic [ref=e1164]: IDP00037
+                      - generic [ref=e1165]: Snap Studio
+                      - generic [ref=e1166]: Engagement
+                    - button "Actions for IDP00037" [ref=e1167] [cursor=pointer]:
+                      - img [ref=e1168]
+                  - generic [ref=e1172]:
+                    - img [ref=e1173]
+                    - text: 20 Oct 2026
+                    - img [ref=e1175]
+                  - generic [ref=e1183]: Normal
+                  - generic [ref=e1184]:
+                    - generic [ref=e1185]:
+                      - img [ref=e1186]
+                      - text: Divya
+                    - generic [ref=e1189]: 63%
+              - button "+ 2 more" [ref=e1192] [cursor=pointer]
+            - group "Printing column" [ref=e1193]:
+              - generic [ref=e1194]:
+                - generic [ref=e1195]: Printing
+                - generic [ref=e1196]:
+                  - generic "WIP limit 8" [ref=e1197]: WIP 14/8
+                  - generic [ref=e1198]: "14"
+              - button "Add" [ref=e1199] [cursor=pointer]:
+                - img [ref=e1200]
+                - text: Add
+              - generic [ref=e1201]:
+                - generic [ref=e1202]:
+                  - generic [ref=e1203]:
+                    - img [ref=e1205]
+                    - generic [ref=e1209]:
+                      - generic [ref=e1210]: IDP00071
+                      - generic [ref=e1211]: Naveen Photography
+                      - generic [ref=e1212]: Wedding · Print only
+                    - button "Actions for IDP00071" [ref=e1213] [cursor=pointer]:
+                      - img [ref=e1214]
+                  - generic [ref=e1218]:
+                    - img [ref=e1219]
+                    - text: 12 Oct 2026
+                    - img [ref=e1221]
+                  - generic [ref=e1229]: High
+                  - generic [ref=e1230]:
+                    - generic [ref=e1231]:
+                      - img [ref=e1232]
+                      - text: Ramesh
+                    - generic [ref=e1235]: 72%
+                - generic [ref=e1238]:
+                  - generic [ref=e1239]:
+                    - img [ref=e1241]
+                    - generic [ref=e1245]:
+                      - generic [ref=e1246]: IDP00069
+                      - generic [ref=e1247]: Freezing frames
+                      - generic [ref=e1248]: Reception · Print only
+                    - button "Actions for IDP00069" [ref=e1249] [cursor=pointer]:
+                      - img [ref=e1250]
+                  - generic [ref=e1254]:
+                    - img [ref=e1255]
+                    - text: 15 Oct 2026
+                    - img [ref=e1257]
+                  - generic [ref=e1265]: Normal
+                  - generic [ref=e1266]:
+                    - generic [ref=e1267]:
+                      - img [ref=e1268]
+                      - text: Manoj
+                    - generic [ref=e1271]: 72%
+                - generic [ref=e1274]:
+                  - generic [ref=e1275]:
+                    - img [ref=e1277]
+                    - generic [ref=e1281]:
+                      - generic [ref=e1282]: IDP00063
+                      - generic [ref=e1283]: Arjun & Meera
+                      - generic [ref=e1284]: Wedding · Print only
+                    - button "Actions for IDP00063" [ref=e1285] [cursor=pointer]:
+                      - img [ref=e1286]
+                  - generic [ref=e1290]:
+                    - img [ref=e1291]
+                    - text: 13 Oct 2026
+                    - img [ref=e1293]
+                  - generic [ref=e1301]: Normal
+                  - generic [ref=e1302]:
+                    - generic [ref=e1303]:
+                      - img [ref=e1304]
+                      - text: Vikram
+                    - generic [ref=e1307]: 72%
+              - button "+ 11 more" [ref=e1310] [cursor=pointer]
+            - group "QC column" [ref=e1311]:
+              - generic [ref=e1312]:
+                - generic [ref=e1313]: QC
+                - generic [ref=e1314]:
+                  - generic "WIP limit 6" [ref=e1315]: WIP 7/6
+                  - generic [ref=e1316]: "7"
+              - button "Add" [ref=e1317] [cursor=pointer]:
+                - img [ref=e1318]
+                - text: Add
+              - generic [ref=e1319]:
+                - generic [ref=e1320]:
+                  - generic [ref=e1321]:
+                    - img [ref=e1323]
+                    - generic [ref=e1327]:
+                      - generic [ref=e1328]: IDP00067
+                      - generic [ref=e1329]: Loki
+                      - generic [ref=e1330]: Wedding
+                    - button "Actions for IDP00067" [ref=e1331] [cursor=pointer]:
+                      - img [ref=e1332]
+                  - generic [ref=e1336]:
+                    - img [ref=e1337]
+                    - text: 8 Oct 2026
+                    - img [ref=e1339]
+                  - generic [ref=e1347]: Normal
+                  - generic [ref=e1348]:
+                    - generic [ref=e1349]:
+                      - img [ref=e1350]
+                      - text: Karthik
+                    - generic [ref=e1353]: 81%
+                - generic [ref=e1356]:
+                  - generic [ref=e1357]:
+                    - img [ref=e1359]
+                    - generic [ref=e1363]:
+                      - generic [ref=e1364]: IDP00062
+                      - generic [ref=e1365]: The Wed Co.
+                      - generic [ref=e1366]: Reception
+                    - button "Actions for IDP00062" [ref=e1367] [cursor=pointer]:
+                      - img [ref=e1368]
+                  - generic [ref=e1372]:
+                    - img [ref=e1373]
+                    - text: 16 Oct 2026
+                    - img [ref=e1375]
+                  - generic [ref=e1383]: Normal
+                  - generic [ref=e1384]:
+                    - generic [ref=e1385]:
+                      - img [ref=e1386]
+                      - text: Nandini
+                    - generic [ref=e1389]: 81%
+                - generic [ref=e1392]:
+                  - generic [ref=e1393]:
+                    - img [ref=e1395]
+                    - generic [ref=e1399]:
+                      - generic [ref=e1400]: IDP00054
+                      - generic [ref=e1401]: Lightbox Films
+                      - generic [ref=e1402]: Reception · Print only
+                    - button "Actions for IDP00054" [ref=e1403] [cursor=pointer]:
+                      - img [ref=e1404]
+                  - generic [ref=e1408]:
+                    - img [ref=e1409]
+                    - text: 23 Oct 2026
+                    - img [ref=e1411]
+                  - generic [ref=e1419]: Low
+                  - generic [ref=e1420]:
+                    - generic [ref=e1421]:
+                      - img [ref=e1422]
+                      - text: Priya
+                    - generic [ref=e1425]: 81%
+              - button "+ 4 more" [ref=e1428] [cursor=pointer]
+            - group "Ready for Delivery column" [ref=e1429]:
+              - generic [ref=e1430]:
+                - generic [ref=e1431]: Ready for Delivery
+                - generic [ref=e1432]:
+                  - generic "WIP limit 8" [ref=e1433]: WIP 8/8
+                  - generic [ref=e1434]: "8"
+              - button "Add" [ref=e1435] [cursor=pointer]:
+                - img [ref=e1436]
+                - text: Add
+              - generic [ref=e1437]:
+                - generic [ref=e1438]:
+                  - generic [ref=e1439]:
+                    - img [ref=e1441]
+                    - generic [ref=e1445]:
+                      - generic [ref=e1446]: IDP00066
+                      - generic [ref=e1447]: Chethu
+                      - generic [ref=e1448]: Wedding
+                    - button "Actions for IDP00066" [ref=e1449] [cursor=pointer]:
+                      - img [ref=e1450]
+                  - generic [ref=e1454]:
+                    - img [ref=e1455]
+                    - text: 5 Oct 2026
+                    - img [ref=e1457]
+                  - generic [ref=e1465]: Low
+                  - generic [ref=e1466]:
+                    - generic [ref=e1467]:
+                      - img [ref=e1468]
+                      - text: Anil
+                    - generic [ref=e1471]: 90%
+                - generic [ref=e1474]:
+                  - generic [ref=e1475]:
+                    - img [ref=e1477]
+                    - generic [ref=e1481]:
+                      - generic [ref=e1482]: IDP00061
+                      - generic [ref=e1483]: Moments & More
+                      - generic [ref=e1484]: Wedding · Print only
+                    - button "Actions for IDP00061" [ref=e1485] [cursor=pointer]:
+                      - img [ref=e1486]
+                  - generic [ref=e1490]:
+                    - img [ref=e1491]
+                    - text: 20 Oct 2026
+                    - img [ref=e1493]
+                  - generic [ref=e1501]: Low
+                  - generic [ref=e1502]:
+                    - generic [ref=e1503]:
+                      - img [ref=e1504]
+                      - text: Aravind
+                    - generic [ref=e1507]: 90%
+                - generic [ref=e1510]:
+                  - generic [ref=e1511]:
+                    - img [ref=e1513]
+                    - generic [ref=e1517]:
+                      - generic [ref=e1518]: IDP00057
+                      - generic [ref=e1519]: Artisan Albums
+                      - generic [ref=e1520]: Corporate · Print only
+                    - button "Actions for IDP00057" [ref=e1521] [cursor=pointer]:
+                      - img [ref=e1522]
+                  - generic [ref=e1526]:
+                    - img [ref=e1527]
+                    - text: 20 Oct 2026
+                    - img [ref=e1529]
+                  - generic [ref=e1537]: Normal
+                  - generic [ref=e1538]:
+                    - generic [ref=e1539]:
+                      - img [ref=e1540]
+                      - text: Admin
+                    - generic [ref=e1543]: 90%
+              - button "+ 5 more" [ref=e1546] [cursor=pointer]
+            - group "Delivered column" [ref=e1547]:
+              - generic [ref=e1548]:
+                - generic [ref=e1549]: Delivered
+                - generic [ref=e1551]: "6"
+              - button "Add" [ref=e1552] [cursor=pointer]:
+                - img [ref=e1553]
+                - text: Add
+              - generic [ref=e1554]:
+                - generic [ref=e1555]:
+                  - generic [ref=e1556]:
+                    - img [ref=e1558]
+                    - generic [ref=e1562]:
+                      - generic [ref=e1563]: IDP00060
+                      - generic [ref=e1564]: Candid Clicks
+                      - generic [ref=e1565]: Birthday · Print only
+                    - button "Actions for IDP00060" [ref=e1566] [cursor=pointer]:
+                      - img [ref=e1567]
+                  - generic [ref=e1571]:
+                    - img [ref=e1572]
+                    - text: 17 Oct 2026
+                    - img [ref=e1574]
+                  - generic [ref=e1582]: Normal
+                  - generic [ref=e1583]:
+                    - generic [ref=e1584]:
+                      - img [ref=e1585]
+                      - text: Ramesh
+                    - generic [ref=e1588]: 100%
+                - generic [ref=e1591]:
+                  - generic [ref=e1592]:
+                    - img [ref=e1594]
+                    - generic [ref=e1598]:
+                      - generic [ref=e1599]: IDP00049
+                      - generic [ref=e1600]: Snap Studio
+                      - generic [ref=e1601]: Corporate
+                    - button "Actions for IDP00049" [ref=e1602] [cursor=pointer]:
+                      - img [ref=e1603]
+                  - generic [ref=e1607]:
+                    - img [ref=e1608]
+                    - text: 8 Oct 2026
+                    - img [ref=e1610]
+                  - generic [ref=e1618]: Low
+                  - generic [ref=e1619]:
+                    - generic [ref=e1620]:
+                      - img [ref=e1621]
+                      - text: Ramesh
+                    - generic [ref=e1624]: 100%
+                - generic [ref=e1627]:
+                  - generic [ref=e1628]:
+                    - img [ref=e1630]
+                    - generic [ref=e1634]:
+                      - generic [ref=e1635]: IDP00038
+                      - generic [ref=e1636]: Grand Moments
+                      - generic [ref=e1637]: Reception
+                    - button "Actions for IDP00038" [ref=e1638] [cursor=pointer]:
+                      - img [ref=e1639]
+                  - generic [ref=e1643]:
+                    - img [ref=e1644]
+                    - text: 19 Oct 2026
+                    - img [ref=e1646]
+                  - generic [ref=e1654]: Urgent
+                  - generic [ref=e1655]:
+                    - generic [ref=e1656]:
+                      - img [ref=e1657]
+                      - text: Ramesh
+                    - generic [ref=e1660]: 100%
+              - button "+ 3 more" [ref=e1663] [cursor=pointer]
+    - status [ref=e1664]
+  - generic [ref=e1665]: "0"
+```

@@ -35,7 +35,7 @@ function IconTile({ icon: Icon, tone }: { icon: typeof Palette; tone: keyof type
 }
 
 export default function Dashboard() {
-  useLive();
+  useLive(false);
   const nav = useNavigate();
   const newOrder = useNewOrder();
   const [range, setRange] = useState<DateRange>(() => presetRange("Last 30 Days"));

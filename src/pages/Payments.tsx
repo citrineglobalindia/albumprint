@@ -1,505 +1,154 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Download, FileText, Printer, Receipt, Undo2, Wallet, Clock } from "lucide-react";
-import { Avatar, Field, FilterSelect, KpiRow, Panel, PageHeader, Pagination, PayPill, PrimaryButton, SearchInput, SlideOver, Td, TodayChip, MoreButton, OutlineButton, inputCls, tableCls, trCls, LinkAction, cx } from "../components/ui";
-import { ColumnsMenu, Combobox, DateRangePicker, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
-import { Banner, DateField, FieldBox, Err, PrintStyle, Segmented, TODAY_ISO, ALL_TIME, desRange, inRangeOpt, orderOpt, rangeLabel, serRange, usePersisted, useSlashSearch, type SavedRange } from "../components/pageKit";
-import { RowMenu } from "../components/RowMenu";
+import { useMemo, useState } from "react";
+import { IndianRupee, Wallet, AlertCircle, RotateCcw, Receipt, Lock, Download, Plus } from "lucide-react";
+import { PageHeader, KpiRow, Panel, Pill, SearchInput, CountTabs, TodayChip, MoreButton, PrimaryButton, SlideOver, Pagination, Td, tableCls, trCls, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { Combobox } from "../components/controls";
+import { Banner, Err, orderOpt, TODAY_ISO } from "../components/pageKit";
 import { useToast } from "../components/Toast";
-import { downloadCsv } from "../lib/csv";
-import { ORDERS, type Order, type PayStatus } from "../lib/data";
+import { useStore } from "../lib/store";
+import { useAuth } from "../lib/auth";
+import { ORDERS } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
+import { downloadCsv } from "../lib/csv";
+import { can, type Out } from "../lib/production";
+import { PAYMENTS, MODES, ensureFinance, position, recordPayment, refundPayment, type Mode } from "../lib/finance";
 
-const MODES = ["UPI", "Cash", "Bank Transfer", "Cheque"] as const;
-type Mode = (typeof MODES)[number];
-const STATUS_OPTS = ["Paid", "Partially Paid", "Unpaid", "Overdue"];
-
-interface Txn { id: string; kind: "payment" | "refund"; date: string; mode: Mode; ref: string; amount: number; receipt: string; note?: string }
-interface Row { orderId: string; history: Txn[] }
-interface Recent { id: number; kind: "received" | "refunded"; amount: number; orderId: string; customer: string; mode: string }
-
-let receiptSeq = 306; // module-level so it keeps incrementing across visits
-const nextReceipt = () => `RCP2026${receiptSeq}`;
-
-const ord = (id: string) => ORDERS.find((o) => o.id === id)!;
-const paidOf = (r: Row) => ord(r.orderId).paid;
-const balOf = (r: Row) => ord(r.orderId).total - ord(r.orderId).paid;
-const statusOf = (r: Row): PayStatus => { const o = ord(r.orderId); return o.paid >= o.total ? "Paid" : o.paid > 0 ? "Partial" : o.pay === "Overdue" ? "Overdue" : "Unpaid"; };
-const statusLabel = (s: PayStatus) => (s === "Partial" ? "Partially Paid" : s);
-const lastPay = (r: Row) => [...r.history].reverse().find((t) => t.kind === "payment");
-const syncPay = (o: Order) => { o.pay = o.paid >= o.total ? "Paid" : o.paid > 0 ? "Partial" : o.pay === "Overdue" ? "Overdue" : "Unpaid"; };
-
-const seedRows = (): Row[] =>
-  ORDERS.slice(0, 40).map((o, i) => ({
-    orderId: o.id,
-    history: o.paid > 0 ? [{ id: `T-${o.id}-0`, kind: "payment", date: `2026-10-${String(1 + (i % 3)).padStart(2, "0")}`, mode: MODES[i % 4]!, ref: i % 4 === 1 ? "" : `UTR${4521300000 + i * 7919}`, amount: o.paid, receipt: `RCP${2026305 - i}` }] : [],
-  }));
-
-const trend = Array.from({ length: 30 }, (_, i) => {
-  const billed = 40000 + ((i * 7919) % 110000);
-  return { day: `${i + 1} Oct`, billed, collected: Math.round(billed * (0.45 + ((i * 13) % 30) / 100)) };
-});
-const seedRecent: Recent[] = [
-  { id: 1, kind: "received", amount: 25000, orderId: "IDP00072", customer: "Chidanan da", mode: "Bank Transfer" },
-  { id: 2, kind: "received", amount: 40000, orderId: "IDP00068", customer: "Photo Corner", mode: "UPI" },
-  { id: 3, kind: "received", amount: 15000, orderId: "IDP00066", customer: "Chethu", mode: "Cash" },
-  { id: 4, kind: "refunded", amount: 10000, orderId: "IDP00059", customer: "Ravi Studio", mode: "Bank Transfer" },
-  { id: 5, kind: "received", amount: 30000, orderId: "IDP00070", customer: "Freezing Frames", mode: "UPI" },
-];
-const DONUT = [
-  { name: "Paid", color: "#10b981" },
-  { name: "Partially Paid", color: "#f59e0b" },
-  { name: "Overdue", color: "#f43f5e" },
-  { name: "Unpaid", color: "#8b8cf0" },
-];
-
-interface Form { orderId: string; amount: string; mode: Mode; date: string; utr: string; bank: string; chequeNo: string; chequeDate: string; receivedBy: string; notes: string }
-const blankForm = (orderId = ""): Form => ({ orderId, amount: orderId ? String(ord(orderId).total - ord(orderId).paid) : "", mode: "UPI", date: TODAY_ISO, utr: "", bank: "", chequeNo: "", chequeDate: TODAY_ISO, receivedBy: "", notes: "" });
-
-interface ViewState { status: string[]; mode: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
-const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "total", label: "Total Amount" }, { key: "paid", label: "Paid Amount" }, { key: "balance", label: "Balance" }, { key: "status", label: "Payment Status" }, { key: "date", label: "Last Payment Date" }, { key: "mode", label: "Mode" }, { key: "receipt", label: "Receipt No." }];
+type Tab = "all" | "Unpaid" | "Partial" | "Paid" | "Overdue";
+const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
 
 export default function Payments() {
-  const [rows, setRows] = usePersisted<Row[]>("payments.rows", seedRows);
-  const [recent, setRecent] = usePersisted<Recent[]>("payments.recent", () => seedRecent);
-  const [refunded, setRefunded] = usePersisted("payments.refunded", () => 0);
-  const [advance, setAdvance] = usePersisted("payments.advance", () => 0);
-  const [, setTick] = useState(0);
-  const [q, setQ] = useState("");
-  const [fStatus, setFStatus] = useState<string[]>([]);
-  const [fMode, setFMode] = useState<string[]>([]);
-  const [range, setRange] = useState<DateRange>(ALL_TIME());
-  const [sort, setSort] = useState<SortState>(null);
-  const [hidden, setHidden] = useState<string[]>([]);
-  const [chartRange, setChartRange] = useState("Last 30 Days");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
-  const [open, setOpen] = useState(false);
-  const [viewing, setViewing] = useState<{ orderId: string; txnId?: string } | null>(null);
+  const { role } = useAuth();
+  const receive = can(role, "receive");
+  const finance = can(role, "finance");
+  ensureFinance();
+  useStore();
   const [toast, show] = useToast();
-  const ledgerRef = useRef<HTMLDivElement>(null);
-  const [refundRow, setRefundRow] = useState<Row | null>(null);
-  const [rAmt, setRAmt] = useState("");
-  const [rReason, setRReason] = useState("");
-  const [rErr, setRErr] = useState("");
-  const [f, setF] = useState<Form>(blankForm());
+  const [tab, setTab] = useState<Tab>("all");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [selId, setSelId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"pay" | "refund" | null>(null);
+  const [f, setF] = useState({ orderId: "", amount: "", mode: "UPI" as Mode, ref: "", date: TODAY_ISO, note: "" });
   const [errs, setErrs] = useState<Record<string, string>>({});
-  const [sp, setSp] = useSearchParams();
-  useSlashSearch();
+  const run = (r: Out) => { show(r.msg); return r.ok; };
 
-  useEffect(() => { setPage(1); }, [q, fStatus, fMode, range]);
+  const stateOf = (id: string) => position(ordOf(id)).state;
+  const base = useMemo(() => ORDERS.filter((o) => { const t = q.trim().toLowerCase(); return !t || `${o.id} ${o.customer}`.toLowerCase().includes(t); }),
+    [q, ORDERS.length, ORDERS.reduce((a, o) => a + o.paid, 0)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const list = base.filter((o) => tab === "all" || stateOf(o.id).startsWith(tab) || (tab === "Paid" && stateOf(o.id).startsWith("Overpaid")));
+  const rows = list.slice((page - 1) * 10, page * 10);
+  const cur = ORDERS.find((o) => o.id === selId) ?? null;
+  const pos = cur ? position(cur) : null;
+  const closed = !!cur?.closed;
+  const hist = cur ? PAYMENTS.filter((p) => p.orderId === cur.id) : [];
 
-  const sel = f.orderId ? ord(f.orderId) : undefined;
-  const selBal = sel ? sel.total - sel.paid : 0;
-  const setField = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
-
-  const openForm = (orderId?: string) => {
-    if (orderId) {
-      const o = ORDERS.find((x) => x.id === orderId);
-      if (!o) { show(`Order ${orderId} not found`); return; }
-      if (o.paid >= o.total) { show(`${orderId} is already fully paid`); return; }
-    }
-    setF(blankForm(orderId)); setErrs({}); setOpen(true);
-  };
-  useEffect(() => {
-    const id = sp.get("pay");
-    if (id) { openForm(id); setSp({}, { replace: true }); }
-    else if (sp.get("new")) { openForm(); setSp({}, { replace: true }); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const pickOrder = (id: string) => { const o = ord(id); setF((x) => ({ ...x, orderId: id, amount: String(o.total - o.paid) })); setErrs({}); };
-
-  const amt = Number(f.amount);
-  const validate = () => {
-    const e: Record<string, string> = {};
-    if (!sel) e.order = "Select an order";
-    if (!f.amount || !Number.isFinite(amt) || amt <= 0) e.amount = "Enter a valid amount greater than zero";
-    else if (sel && amt > selBal) e.amount = `Over-payment: amount exceeds the balance of ${inr(selBal)}`;
-    if (!f.date) e.date = "Transaction date is required"; else if (f.date > TODAY_ISO) e.date = "Date cannot be in the future";
-    if (f.mode === "UPI" || f.mode === "Bank Transfer") {
-      if (!/^[A-Za-z0-9]{8,22}$/.test(f.utr.trim())) e.utr = f.mode === "UPI" ? "Enter the UPI transaction ID / UTR (8-22 letters or digits)" : "Enter the bank UTR / reference (8-22 letters or digits)";
-    }
-    if (f.mode === "Cheque") {
-      if (!/^\d{6}$/.test(f.chequeNo.trim())) e.chequeNo = "Cheque number must be 6 digits";
-      if (f.bank.trim().length < 2) e.bank = "Drawee bank is required";
-      if (!f.chequeDate) e.chequeDate = "Cheque date is required";
-    }
-    setErrs(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const submit = () => {
-    if (!validate() || !sel) return;
-    const receipt = nextReceipt();
-    const txn: Txn = {
-      id: `T-${Date.now()}`, kind: "payment", date: f.date, mode: f.mode, amount: amt, receipt, note: f.notes.trim() || undefined,
-      ref: f.mode === "Cheque" ? `Cheque ${f.chequeNo.trim()} · ${f.bank.trim()}` : f.mode === "Cash" ? (f.receivedBy.trim() ? `Received by ${f.receivedBy.trim()}` : "") : f.utr.trim().toUpperCase(),
-    };
-    sel.paid += amt; syncPay(sel);
-    setRows((rs) => (rs.some((r) => r.orderId === sel.id) ? rs.map((r) => (r.orderId === sel.id ? { ...r, history: [...r.history, txn] } : r)) : [{ orderId: sel.id, history: [txn] }, ...rs]));
-    setRecent((rc) => [{ id: Date.now(), kind: "received" as const, amount: amt, orderId: sel.id, customer: sel.customer, mode: f.mode }, ...rc].slice(0, 6));
-    if (sel.paid < sel.total) setAdvance((a) => a + amt);
-    receiptSeq += 1; setTick((t) => t + 1);
-    setOpen(false);
-    setViewing({ orderId: sel.id, txnId: txn.id });
-    show(`Payment of ${inr(amt)} recorded - ${receipt}`);
-  };
-
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    const list = rows.filter((r) => {
-      const o = ord(r.orderId); const s = statusLabel(statusOf(r)); const lp = lastPay(r);
-      if (fStatus.length && !fStatus.includes(s)) return false;
-      if (fMode.length && !(lp && fMode.includes(lp.mode))) return false;
-      if (!inRangeOpt(lp?.date, range)) return false;
-      return !t || r.orderId.toLowerCase().includes(t) || o.customer.toLowerCase().includes(t) || (lp?.receipt ?? "").toLowerCase().includes(t);
-    });
-    return sortRows(list, sort, (r, k) => {
-      const lp = lastPay(r);
-      switch (k) { case "order": return r.orderId; case "customer": return ord(r.orderId).customer.toLowerCase(); case "total": return ord(r.orderId).total; case "paid": return paidOf(r); case "balance": return balOf(r); case "status": return statusOf(r); case "date": return lp?.date ?? ""; case "mode": return lp?.mode ?? ""; default: return lp?.receipt ?? ""; }
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, q, fStatus, fMode, range, sort]);
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-  const counts = { Paid: 0, Partial: 0, Overdue: 0, Unpaid: 0 };
-  rows.forEach((r) => { counts[statusOf(r)]++; });
-  const donut = [counts.Paid, counts.Partial, counts.Overdue, counts.Unpaid].map((v, i) => ({ ...DONUT[i]!, value: v }));
-  const totalBilled = rows.reduce((a, r) => a + ord(r.orderId).total, 0);
-  const collected = rows.reduce((a, r) => a + paidOf(r), 0);
-  const overdueAmt = rows.filter((r) => statusOf(r) === "Overdue").reduce((a, r) => a + balOf(r), 0);
-  const pending = totalBilled - collected - overdueAmt;
-
-  const chartData = chartRange === "Last 7 Days" ? trend.slice(-7) : chartRange === "Last 14 Days" ? trend.slice(-14) : trend;
-
-  const rowFor = (id: string) => rows.find((r) => r.orderId === id);
-  const downloadReceipt = (r: Row, t?: Txn) => {
-    const tx = t ?? lastPay(r);
-    if (!tx) { show("No receipt yet - no payment recorded"); return; }
-    const o = ord(r.orderId);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([`PAYMENT RECEIPT ${tx.receipt}\nOrder: ${r.orderId}\nCustomer: ${o.customer}\nAmount: ${inr(tx.amount)}\nMode: ${tx.mode}\nReference: ${tx.ref || "-"}\nDate: ${tx.date}\nBalance: ${inr(o.total - o.paid)}\n`], { type: "text/plain" }));
-    a.download = `${tx.receipt}.txt`; document.body.appendChild(a); a.click(); a.remove();
-    show(`Receipt ${tx.receipt} downloaded`);
-  };
-  const printReceipt = (orderId: string, txnId?: string) => { setViewing({ orderId, txnId }); setTimeout(() => window.print(), 300); };
-  const openRefund = (r: Row) => {
-    if (paidOf(r) <= 0) { show("Nothing to refund on this order"); return; }
-    setViewing(null); setRefundRow(r); setRAmt(String(paidOf(r))); setRReason(""); setRErr("");
-  };
-  const submitRefund = () => {
-    const a = Number(rAmt);
-    if (!refundRow) return;
-    if (!a || a <= 0) return setRErr("Enter a valid refund amount");
-    if (a > paidOf(refundRow)) return setRErr(`Refund cannot exceed paid amount of ${inr(paidOf(refundRow))}`);
-    if (!rReason.trim()) return setRErr("Reason is required");
-    const o = ord(refundRow.orderId);
-    o.paid -= a; syncPay(o);
-    const lp = lastPay(refundRow);
-    setRows((rs) => rs.map((r) => (r.orderId === o.id ? { ...r, history: [...r.history, { id: `T-${Date.now()}`, kind: "refund" as const, date: TODAY_ISO, mode: lp?.mode ?? "Bank Transfer", ref: "", amount: a, receipt: `REF-${o.id.slice(-5)}`, note: rReason.trim() }] } : r)));
-    setRecent((rc) => [{ id: Date.now(), kind: "refunded" as const, amount: a, orderId: o.id, customer: o.customer, mode: lp?.mode ?? "Bank Transfer" }, ...rc].slice(0, 6));
-    setRefunded((n) => n + a);
-    setRefundRow(null); show(`Refund of ${inr(a)} issued for ${o.id}`);
-  };
-  const exportCsv = () => {
-    downloadCsv("payment-ledger.csv", [["Order ID", "Customer", "Total", "Paid", "Balance", "Status", "Last Payment Date", "Mode", "Receipt No"],
-      ...filtered.map((r) => { const lp = lastPay(r); const o = ord(r.orderId); return [r.orderId, o.customer, o.total, o.paid, o.total - o.paid, statusLabel(statusOf(r)), lp?.date ?? "", lp?.mode ?? "", lp?.receipt ?? ""]; })]);
-    show(`Exported ${filtered.length} ledger rows`);
-  };
-
-  const chips = [
-    ...fStatus.map((s) => ({ label: `Status: ${s}`, onRemove: () => setFStatus(fStatus.filter((x) => x !== s)) })),
-    ...fMode.map((s) => ({ label: `Mode: ${s}`, onRemove: () => setFMode(fMode.filter((x) => x !== s)) })),
-    ...(range.preset !== "All Time" ? [{ label: `Paid: ${range.preset === "Custom" ? rangeLabel(range) : range.preset}`, onRemove: () => setRange(ALL_TIME()) }] : []),
-    ...(q ? [{ label: `Search: ${q}`, onRemove: () => setQ("") }] : []),
+  const collected = PAYMENTS.filter((p) => p.kind === "payment").reduce((a, p) => a + p.amount, 0);
+  const refunded = PAYMENTS.filter((p) => p.kind === "refund").reduce((a, p) => a + p.amount, 0);
+  const outstanding = ORDERS.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
+  const overdueAmt = ORDERS.filter((o) => position(o).overdue).reduce((a, o) => a + (o.total - o.paid), 0);
+  const kpis: Kpi[] = [
+    { label: "Collected", value: inr(collected - refunded), icon: IndianRupee, tone: "green" },
+    { label: "Outstanding", value: inr(outstanding), icon: Wallet, tone: "orange", invert: true },
+    { label: "Overdue", value: inr(overdueAmt), icon: AlertCircle, tone: "red", invert: true },
+    { label: "Refunded", value: inr(refunded), icon: RotateCcw, tone: "pink", invert: true },
+    { label: "Receipts issued", value: PAYMENTS.length, icon: Receipt, tone: "blue" },
   ];
-  const clearAll = () => { setFStatus([]); setFMode([]); setRange(ALL_TIME()); setQ(""); };
-  const view: ViewState = { status: fStatus, mode: fMode, range: serRange(range), q, hidden, sort };
-  const applyView = (v: ViewState) => { setFStatus(v.status); setFMode(v.mode); setRange(desRange(v.range)); setQ(v.q); setHidden(v.hidden); setSort(v.sort); };
-  const vis = (k: string) => !hidden.includes(k);
 
-  const vRow = viewing ? rowFor(viewing.orderId) : undefined;
-  const vTxn = vRow ? (vRow.history.find((t) => t.id === viewing?.txnId) ?? lastPay(vRow)) : undefined;
+  const open = (m: "pay" | "refund", orderId = cur?.id ?? "") => {
+    if (m === "pay" && !receive) { show(`Your role (${role}) cannot record payments`); return; }
+    if (m === "refund" && !finance) { show(`Your role (${role}) cannot issue refunds — only Accounts and Admin can`); return; }
+    const o = orderId ? ordOf(orderId) : undefined;
+    setF({ orderId, amount: m === "pay" && o ? String(Math.max(0, o.total - o.paid)) : "", mode: "UPI", ref: "", date: TODAY_ISO, note: "" }); setErrs({}); setMode(m);
+  };
+  const submit = () => {
+    const e: Record<string, string> = {};
+    if (!f.orderId) e.orderId = "Select an order";
+    if (!(Number(f.amount) > 0)) e.amount = "Enter an amount greater than zero";
+    if (mode === "refund" && !f.note.trim()) e.note = "Reason is required";
+    if (mode === "pay" && f.mode !== "Cash" && !f.ref.trim()) e.ref = "Reference is required";
+    setErrs(e);
+    if (Object.keys(e).length) return;
+    const amount = Number(f.amount);
+    const r = mode === "pay" ? recordPayment(f.orderId, { amount, mode: f.mode, ref: f.ref, date: f.date, note: f.note }) : refundPayment(f.orderId, { amount, mode: f.mode, reason: f.note, date: f.date });
+    if (run(r)) { setSelId(f.orderId); setMode(null); }
+  };
+  const tabs: { key: Tab; label: string }[] = [{ key: "all", label: "All" }, { key: "Unpaid", label: "Unpaid" }, { key: "Partial", label: "Partial" }, { key: "Overdue", label: "Overdue" }, { key: "Paid", label: "Paid" }];
 
   return (
-    <div className="min-w-0">
-      {toast}
+    <div>
       <PageHeader title="Payments" subtitle="Track collections, pending payments and manage customer payments.">
         <TodayChip />
-        <PrimaryButton onClick={() => openForm()}>Record Payment</PrimaryButton>
+        {receive && <PrimaryButton icon={Plus} onClick={() => open("pay")}>Record Payment</PrimaryButton>}
         <MoreButton />
       </PageHeader>
+      {!finance && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />{receive ? "Receive-only access — refunds and protected finance records are limited to Accounts and Admin." : "View only."}</div>}
+      <KpiRow items={kpis} cols={5} />
 
-      <KpiRow items={[
-        { label: "Total Billing", value: inr(totalBilled), delta: 18, icon: FileText, tone: "indigo" },
-        { label: "Collected", value: inr(collected), delta: 22, icon: CheckCircle2, tone: "green" },
-        { label: "Pending", value: inr(pending), delta: 12, icon: Clock, tone: "amber", invert: true },
-        { label: "Overdue", value: inr(overdueAmt), delta: 28, icon: AlertTriangle, tone: "red", invert: true },
-        { label: "Advance Received", value: inr(120000 + advance), delta: 35, icon: Wallet, tone: "violet" },
-        { label: "Refunds", value: inr(12000 + refunded), delta: 5, icon: Undo2, tone: "pink", invert: true },
-      ]} />
-
-      <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,0.8fr)]">
-        <Panel title="Collections Trend" subtitle={`${chartRange}: collected ${inr(chartData.reduce((a, d) => a + d.collected, 0))}`} action={<FilterSelect className="w-36" value={chartRange} onChange={setChartRange} options={["Last 7 Days", "Last 14 Days", "Last 30 Days"]} />}>
-          <div className="h-[260px]">
-            <ResponsiveContainer>
-              <BarChart data={chartData} barGap={0}>
-                <CartesianGrid vertical={false} stroke="#e6e9f5" />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${v / 1000}K` : String(v))} />
-                <Tooltip formatter={(v) => inr(Number(v))} />
-                <Legend iconType="circle" verticalAlign="top" align="left" wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="billed" name="Billed Amount" fill="#a5a8f5" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="collected" name="Collected Amount" fill="#10b981" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <Panel title="Payment Ledger" subtitle="Click an order to see its financial position" action={<button onClick={() => downloadCsv("payments.csv", [["Receipt", "Order", "Type", "Date", "Mode", "Ref", "Amount", "By"], ...PAYMENTS.map((p) => [p.receipt, p.orderId, p.kind, p.date, p.mode, p.ref, p.amount, p.by])])} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold hover:bg-brand-soft"><Download className="size-4 text-sub" />Export</button>}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <CountTabs<Tab> value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((o) => t.key === "all" || stateOf(o.id).startsWith(t.key) || (t.key === "Paid" && stateOf(o.id).startsWith("Overpaid"))).length }))} />
+            <SearchInput className="w-56" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search order or customer…" />
           </div>
+          <div className="overflow-x-auto">
+            <table className={tableCls}>
+              <thead><tr>{["Order", "Customer", "Total", "Paid", "Balance", "Due", "Status"].map((h) => <th key={h} className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((o) => { const p = position(o); return (
+                  <tr key={o.id} data-testid={`pay-${o.id}`} onClick={() => setSelId(o.id)} className={cx(trCls, "cursor-pointer", selId === o.id && "bg-brand-soft")}>
+                    <Td className="font-bold">{o.id}</Td><Td>{o.customer}</Td><Td>{inr(o.total)}</Td><Td>{inr(o.paid)}</Td>
+                    <Td className={p.balance > 0 ? "font-semibold text-rose-600" : ""}>{p.balance < 0 ? `+${inr(-p.balance)} credit` : inr(p.balance)}</Td>
+                    <Td className={p.overdue ? "text-rose-600" : ""}>{fmtDate(o.due)}</Td>
+                    <Td><Pill tone={p.state === "Paid" ? "green" : p.state === "Partial" ? "amber" : p.state === "Overdue" ? "red" : p.state.startsWith("Over") ? "violet" : "slate"}>{p.state === "Partial" ? "Partially Paid" : p.state}</Pill></Td>
+                  </tr>); })}
+                {rows.length === 0 && <tr><td colSpan={7} className="py-10 text-center text-sub">No orders match.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pageSize={10} total={list.length} onPage={setPage} noun="orders" />
         </Panel>
 
-        <Panel title="Payment Status Distribution">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="relative h-[200px] w-[200px] shrink-0">
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={donut} dataKey="value" innerRadius={62} outerRadius={92} paddingAngle={2} stroke="none">
-                    {donut.map((d) => <Cell key={d.name} fill={d.color} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-                <div><div className="text-3xl font-extrabold">{rows.length}</div><div className="text-xs text-sub">Total Orders</div></div>
+        <div className="space-y-4 xl:sticky xl:top-4">
+          {cur && pos ? (
+            <Panel title={`${cur.id} · ${cur.customer}`} bodyClassName="!p-5">
+              {closed && <div className="mb-3"><Banner tone="amber">Order is closed — payments are read-only.</Banner></div>}
+              <dl data-testid="fin-panel" className="grid grid-cols-2 gap-3 text-[13px]">
+                {([["Total", inr(cur.total)], ["Discount", pos.discount ? inr(pos.discount) : "—"], ["Taxable value", inr(pos.taxable)], ["Tax (GST 18%)", inr(pos.tax)], ["Advance", pos.advance ? inr(pos.advance) : "—"], ["Paid", inr(cur.paid)], ["Balance", inr(Math.max(0, pos.balance))], ["Due date", fmtDate(cur.due)]] as const).map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+              </dl>
+              <div className="mt-3 flex items-center gap-2"><Pill tone={pos.state === "Paid" ? "green" : pos.state === "Overdue" ? "red" : pos.state.startsWith("Over") ? "violet" : "amber"}>{pos.state}</Pill>{pos.credit > 0 && <span className="text-xs font-semibold text-violet-700">{inr(pos.credit)} held as credit</span>}</div>
+              <div className="mt-3 flex gap-2">
+                {receive && !closed && <button onClick={() => open("pay", cur.id)} className="h-10 flex-1 rounded-lg bg-brand text-sm font-bold text-white hover:bg-brand-dark">Record payment</button>}
+                {finance && !closed && <button onClick={() => open("refund", cur.id)} disabled={cur.paid <= 0} className="h-10 flex-1 rounded-lg border border-rose-300 text-sm font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40">Refund</button>}
+                {!finance && <button onClick={() => open("refund", cur.id)} className="h-10 flex-1 rounded-lg border border-line text-sm font-bold text-sub">Refund (Accounts only)</button>}
               </div>
-            </div>
-            <ul className="min-w-[150px] flex-1 space-y-3 text-[13px]">
-              {donut.map((d) => (
-                <li key={d.name} className="flex items-center justify-between gap-2">
-                  <button onClick={() => { setFStatus([d.name]); ledgerRef.current?.scrollIntoView({ behavior: "smooth" }); }} className="flex items-center gap-2 text-left"><span className="size-2.5 rounded-full" style={{ background: d.color }} /><span><b className="font-semibold">{d.name}</b><span className="block text-xs text-sub">{d.value} orders</span></span></button>
-                  <b>{rows.length ? Math.round((d.value / rows.length) * 100) : 0}%</b>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Panel>
-
-        <Panel title="Recent Payments" action={<LinkAction onClick={() => { clearAll(); setPage(1); ledgerRef.current?.scrollIntoView({ behavior: "smooth" }); show("Showing full payment ledger"); }}>View All →</LinkAction>} bodyClassName="pt-3">
-          <ul className="space-y-3">
-            {recent.map((p) => (
-              <li key={p.id} className="flex items-start gap-2.5">
-                <span className={cx("grid size-8 shrink-0 place-items-center rounded-lg", p.kind === "received" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
-                  {p.kind === "received" ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
-                </span>
-                <div className="min-w-0 text-xs">
-                  <div className="text-[13px] font-bold">{inr(p.amount)} {p.kind}</div>
-                  <div className="truncate text-sub">{p.orderId} - {p.customer}</div>
-                  <div className="text-sub">{p.mode}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+              <h4 className="mb-1 mt-4 text-sm font-extrabold">Transactions</h4>
+              <ul data-testid="pay-history" className="space-y-1.5 text-[12px]">
+                {hist.map((p) => <li key={p.id} className="flex items-center gap-2 rounded-lg border border-line px-3 py-1.5"><Pill tone={p.kind === "refund" ? "red" : "green"}>{p.kind === "refund" ? "Refund" : "Payment"}</Pill><span className="font-bold">{p.kind === "refund" ? "−" : ""}{inr(p.amount)}</span><span className="min-w-0 flex-1 truncate text-sub">{p.mode} · {p.receipt}{p.creditNote ? ` · ${p.creditNote}` : ""}</span><span className="text-sub">{fmtDate(p.date)}</span></li>)}
+                {hist.length === 0 && <li className="text-sub">No transactions yet.</li>}
+              </ul>
+            </Panel>
+          ) : <Panel bodyClassName="!p-5"><p className="text-sm text-sub">Select an order to see its financial position.</p></Panel>}
+        </div>
       </div>
 
-      <div ref={ledgerRef} />
-      <Panel
-        title="Payment Ledger" subtitle="All payments received from customers"
-        action={<OutlineButton icon={Download} onClick={exportCsv} className="h-10">Export</OutlineButton>}
-      >
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <DateRangePicker value={range} onChange={setRange} align="left" />
-          <MultiSelect className="w-44" label="Payment status" options={STATUS_OPTS} value={fStatus} onChange={setFStatus} />
-          <MultiSelect className="w-44" label="Payment mode" options={[...MODES]} value={fMode} onChange={setFMode} />
-          <SearchInput className="w-64" value={q} onChange={setQ} placeholder="Search by order ID, customer, receipt... ( / )" />
-          <div className="ml-auto flex gap-2">
-            <SavedViews<ViewState> storageKey="payments" current={view} onApply={applyView} />
-            <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
-          </div>
-        </div>
-        <FilterChips chips={chips} onClearAll={clearAll} />
-        <div className="overflow-x-auto">
-          <table className={tableCls}>
-            <thead>
-              <tr>
-                {vis("order") && <SortTh k="order" sort={sort} onSort={setSort}>Order ID</SortTh>}
-                {vis("customer") && <SortTh k="customer" sort={sort} onSort={setSort}>Customer</SortTh>}
-                {vis("total") && <SortTh k="total" sort={sort} onSort={setSort}>Total Amount</SortTh>}
-                {vis("paid") && <SortTh k="paid" sort={sort} onSort={setSort}>Paid Amount</SortTh>}
-                {vis("balance") && <SortTh k="balance" sort={sort} onSort={setSort}>Balance</SortTh>}
-                {vis("status") && <SortTh k="status" sort={sort} onSort={setSort}>Payment Status</SortTh>}
-                {vis("date") && <SortTh k="date" sort={sort} onSort={setSort}>Last Payment Date</SortTh>}
-                {vis("mode") && <SortTh k="mode" sort={sort} onSort={setSort}>Mode</SortTh>}
-                {vis("receipt") && <SortTh k="receipt" sort={sort} onSort={setSort}>Receipt No.</SortTh>}
-                <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r) => {
-                const o = ord(r.orderId); const bal = o.total - o.paid; const lp = lastPay(r);
-                return (
-                  <tr key={r.orderId} onClick={() => setViewing({ orderId: r.orderId })} className={cx(trCls, "cursor-pointer")}>
-                    {vis("order") && <Td><span className="flex items-center gap-2"><Avatar name={o.customer} size={26} /><b>{r.orderId}</b></span></Td>}
-                    {vis("customer") && <Td>{o.customer}</Td>}
-                    {vis("total") && <Td>{inr(o.total)}</Td>}
-                    {vis("paid") && <Td>{inr(o.paid)}</Td>}
-                    {vis("balance") && <Td className={bal > 0 ? "font-semibold text-rose-600" : ""}>{inr(bal)}</Td>}
-                    {vis("status") && <Td><PayPill s={statusOf(r)} /></Td>}
-                    {vis("date") && <Td>{lp ? fmtDate(lp.date) : "-"}</Td>}
-                    {vis("mode") && <Td>{lp?.mode ?? "-"}</Td>}
-                    {vis("receipt") && <Td>{lp?.receipt ?? "-"}</Td>}
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setViewing({ orderId: r.orderId }); }} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button>
-                        <RowMenu items={[
-                          { label: "View receipt", onClick: () => setViewing({ orderId: r.orderId }) },
-                          ...(bal > 0 ? [{ label: "Record payment", onClick: () => openForm(r.orderId) }] : []),
-                          { label: "Print receipt", onClick: () => (lp ? printReceipt(r.orderId) : show("No receipt yet - no payment recorded")) },
-                          { label: "Download receipt", onClick: () => downloadReceipt(r) },
-                          { label: "Refund", onClick: () => openRefund(r), danger: true },
-                        ]} />
-                      </div>
-                    </Td>
-                  </tr>
-                );
-              })}
-              {pageRows.length === 0 && <tr><td colSpan={10} className="py-10 text-center text-sub">No payments match the filters.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={page} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} noun="payments" />
+      <Panel title="Recent Transactions" className="mt-4" bodyClassName="!p-4">
+        <div className="overflow-x-auto"><table className={tableCls}>
+          <thead><tr>{["Receipt", "Order", "Type", "Date", "Mode", "Amount", "Recorded by"].map((h) => <th key={h} className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">{h}</th>)}</tr></thead>
+          <tbody>{PAYMENTS.slice(0, 8).map((p) => <tr key={p.id} className={trCls}><Td className="font-bold">{p.receipt}</Td><Td>{p.orderId}</Td><Td><Pill tone={p.kind === "refund" ? "red" : "green"}>{p.kind}</Pill></Td><Td>{fmtDate(p.date)}</Td><Td>{p.mode}</Td><Td>{p.kind === "refund" ? "−" : ""}{inr(p.amount)}</Td><Td>{p.by}</Td></tr>)}</tbody>
+        </table></div>
       </Panel>
 
-      {/* ───── Record payment ───── */}
-      <SlideOver open={open} onClose={() => setOpen(false)} title="Record Payment" width={520} footer={<>
-        <button onClick={() => setOpen(false)} className="h-11 px-5 text-sm font-bold">Cancel</button>
-        <PrimaryButton icon={Receipt} onClick={submit}>Record Payment</PrimaryButton>
-      </>}>
-        <h3 className="mb-3 text-[15px] font-extrabold">Order Details</h3>
-        <FieldBox label="Order" required>
-          <Combobox error={!!errs.order} placeholder="Search order or customer…" value={f.orderId} onChange={pickOrder} options={ORDERS.filter((o) => o.total > o.paid).map(orderOpt)} />
-          <Err>{errs.order}</Err>
-        </FieldBox>
-        {sel && (
-          <div className="mb-5 rounded-xl border border-line bg-slate-50/60 p-3">
-            <div className="text-sm font-bold">{sel.customer}</div>
-            <div className="text-xs text-sub">{sel.event} - {sel.size} - {sel.workflow}</div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-sub">
-              <div>Total Amount<div className="text-sm font-bold text-ink">{inr(sel.total)}</div></div>
-              <div>Paid Amount<div className="text-sm font-bold text-ink">{inr(sel.paid)}</div></div>
-              <div>Balance Amount<div className="text-sm font-bold text-rose-600">{inr(selBal)}</div></div>
-            </div>
-          </div>
-        )}
-        <h3 className="mb-3 text-[15px] font-extrabold">Payment Details</h3>
-        <FieldBox label="Payment Amount" required>
-          <input aria-label="Payment amount" className={cx(inputCls, errs.amount && "border-rose-400")} type="number" min={1} value={f.amount} onChange={(e) => setField("amount", e.target.value)} />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {sel && ([["Full balance", selBal], ["50%", Math.round(selBal * 0.5)], ["Advance 25%", Math.min(selBal, Math.round(sel.total * 0.25))]] as [string, number][]).map(([l, v]) => (
-              <button key={l} type="button" onClick={() => setField("amount", String(v))} className={cx("rounded-full border px-3 py-1 text-xs font-bold", Number(f.amount) === v ? "border-brand bg-brand-soft text-brand" : "border-line text-sub hover:bg-slate-50")}>{l} · {inr(v)}</button>
-            ))}
-          </div>
-          <Err>{errs.amount}</Err>
-          {sel && !errs.amount && amt > 0 && amt < selBal && <div className="mt-2"><Banner tone="amber">Partial payment: {inr(selBal - amt)} will remain pending on {sel.id}.</Banner></div>}
-          {sel && !errs.amount && amt > 0 && amt === selBal && <div className="mt-2"><Banner tone="green">This clears the balance - the order will be marked Paid.</Banner></div>}
-        </FieldBox>
-        <FieldBox label="Payment Mode" required>
-          <Segmented value={f.mode} options={MODES} onChange={(m) => { setField("mode", m); setErrs({}); }} />
-        </FieldBox>
-        {(f.mode === "UPI" || f.mode === "Bank Transfer") && (
-          <Field label={f.mode === "UPI" ? "UPI Transaction ID / UTR" : "Bank UTR / Reference No."} required>
-            <input aria-label="UTR" className={cx(inputCls, errs.utr && "border-rose-400")} value={f.utr} onChange={(e) => setField("utr", e.target.value)} placeholder="e.g. UTR7845213695" />
-            <Err>{errs.utr}</Err>
-          </Field>
-        )}
-        {f.mode === "Bank Transfer" && <Field label="Bank (optional)"><input className={inputCls} value={f.bank} onChange={(e) => setField("bank", e.target.value)} placeholder="e.g. HDFC Bank" /></Field>}
-        {f.mode === "Cheque" && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque No." required><input aria-label="Cheque number" className={cx(inputCls, errs.chequeNo && "border-rose-400")} inputMode="numeric" maxLength={6} value={f.chequeNo} onChange={(e) => setField("chequeNo", e.target.value.replace(/\D/g, ""))} placeholder="6 digits" /><Err>{errs.chequeNo}</Err></Field>
-              <FieldBox label="Cheque Date" required><DateField value={f.chequeDate} onChange={(v) => setField("chequeDate", v)} error={!!errs.chequeDate} label="Cheque date" /><Err>{errs.chequeDate}</Err></FieldBox>
-            </div>
-            <Field label="Drawee Bank" required><input aria-label="Drawee bank" className={cx(inputCls, errs.bank && "border-rose-400")} value={f.bank} onChange={(e) => setField("bank", e.target.value)} placeholder="e.g. ICICI Bank" /><Err>{errs.bank}</Err></Field>
-          </>
-        )}
-        {f.mode === "Cash" && <Field label="Received by (optional)"><input className={inputCls} value={f.receivedBy} onChange={(e) => setField("receivedBy", e.target.value)} placeholder="Counter staff name" /></Field>}
-        <FieldBox label="Transaction Date" required>
-          <DateField value={f.date} onChange={(v) => setField("date", v)} error={!!errs.date} label="Transaction date" />
-          <Err>{errs.date}</Err>
-        </FieldBox>
-        <Field label="Receipt No." hint="Auto-generated, increments after every payment">
-          <input className={cx(inputCls, "bg-slate-50 font-semibold")} readOnly aria-label="Receipt number" value={nextReceipt()} />
-        </Field>
-        <Field label="Notes (Optional)">
-          <textarea className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" maxLength={200} value={f.notes} onChange={(e) => setField("notes", e.target.value)} />
-          <span className="block text-right text-xs text-sub">{f.notes.length}/200</span>
-        </Field>
+      <SlideOver open={mode !== null} onClose={() => setMode(null)} title={mode === "refund" ? "Issue Refund" : "Record Payment"} width={480}
+        footer={<><button onClick={() => setMode(null)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Cancel</button><button onClick={submit} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white">{mode === "refund" ? "Issue refund" : "Save payment"}</button></>}>
+        <Field label="Order" required><Combobox error={!!errs.orderId} value={f.orderId} placeholder="Search order or customer…" onChange={(v) => { const o = ordOf(v); setF({ ...f, orderId: v, amount: mode === "pay" ? String(Math.max(0, o.total - o.paid)) : f.amount }); }} options={(mode === "refund" ? ORDERS.filter((o) => o.paid > 0) : ORDERS).map(orderOpt)} /><Err>{errs.orderId}</Err></Field>
+        {f.orderId && <p className="mb-3 text-xs text-sub">Total {inr(ordOf(f.orderId).total)} · paid {inr(ordOf(f.orderId).paid)}{mode === "refund" ? ` · refundable up to ${inr(ordOf(f.orderId).paid)}` : ""}</p>}
+        <Field label="Amount (₹)" required><input aria-label="Amount" type="number" min={1} className={cx(inputCls, errs.amount && "border-rose-400")} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /><Err>{errs.amount}</Err></Field>
+        <Field label="Mode"><div className="flex flex-wrap gap-1.5">{MODES.map((m) => <button key={m} type="button" aria-pressed={f.mode === m} onClick={() => setF({ ...f, mode: m })} className={cx("rounded-full border px-3 py-1 text-xs font-bold", f.mode === m ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{m}</button>)}</div></Field>
+        {mode === "pay" && <Field label={f.mode === "Cash" ? "Reference (optional)" : f.mode === "Cheque" ? "Cheque no." : "UTR / reference"} required={f.mode !== "Cash"}><input aria-label="Reference" className={cx(inputCls, errs.ref && "border-rose-400")} value={f.ref} onChange={(e) => setF({ ...f, ref: e.target.value })} /><Err>{errs.ref}</Err></Field>}
+        <Field label="Date"><input type="date" className={inputCls} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label={mode === "refund" ? "Reason" : "Notes"} required={mode === "refund"}><textarea aria-label={mode === "refund" ? "Refund reason" : "Notes"} rows={2} className={cx(inputCls, "h-auto py-2", errs.note && "border-rose-400")} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /><Err>{errs.note}</Err></Field>
+        {mode === "refund" && <Banner tone="blue">A credit note is generated automatically and the order balance is restored.</Banner>}
       </SlideOver>
-
-      {/* ───── Receipt / payment detail drawer ───── */}
-      <SlideOver open={!!viewing && !!vRow} onClose={() => setViewing(null)} title={`Receipt - ${viewing?.orderId ?? ""}`} width={520} footer={vRow && <>
-        <button onClick={() => downloadReceipt(vRow, vTxn)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Download</button>
-        {balOf(vRow) > 0 && <button onClick={() => { setViewing(null); openForm(vRow.orderId); }} className="h-10 rounded-lg border border-brand px-4 text-sm font-bold text-brand">Record payment</button>}
-        <button onClick={() => openRefund(vRow)} className="h-10 rounded-lg border border-rose-200 px-4 text-sm font-bold text-rose-600">Refund</button>
-        <button onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white"><Printer className="size-4" />Print</button>
-      </>}>
-        {vRow && (() => {
-          const o = ord(vRow.orderId);
-          let running = 0;
-          const afterBal: Record<string, number> = {};
-          vRow.history.forEach((t) => { running += t.kind === "payment" ? t.amount : -t.amount; afterBal[t.id] = o.total - running; });
-          return (
-            <div className="space-y-5">
-              <PrintStyle />
-              <div id="print-area" className="rounded-xl border border-line p-5 text-[13px]">
-                <div className="flex items-start justify-between">
-                  <div><div className="text-lg font-extrabold text-brand">AlbumPro</div><div className="text-[11px] text-sub">AlbumPro Studio Pvt. Ltd. · Hyderabad</div></div>
-                  <div className="text-right"><div className="text-[11px] font-bold uppercase text-sub">Payment Receipt</div><div className="text-base font-extrabold">{vTxn?.receipt ?? "No receipt"}</div></div>
-                </div>
-                {vTxn ? (
-                  <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
-                    <dt className="text-sub">Received from</dt><dd className="font-semibold">{o.customer}</dd>
-                    <dt className="text-sub">Order</dt><dd className="font-semibold">{o.id} · {o.event} · {o.size}</dd>
-                    <dt className="text-sub">Date</dt><dd>{fmtDate(vTxn.date)}</dd>
-                    <dt className="text-sub">Mode</dt><dd>{vTxn.mode}</dd>
-                    <dt className="text-sub">Reference</dt><dd>{vTxn.ref || "-"}</dd>
-                    <dt className="text-sub">{vTxn.kind === "refund" ? "Amount refunded" : "Amount received"}</dt><dd className="text-lg font-extrabold">{inr(vTxn.amount)}</dd>
-                    <dt className="text-sub">Order total</dt><dd>{inr(o.total)}</dd>
-                    <dt className="text-sub">Balance after this</dt><dd className="font-bold text-rose-600">{inr(afterBal[vTxn.id] ?? o.total - o.paid)}</dd>
-                  </dl>
-                ) : <p className="mt-4 text-sub">No payment has been recorded for this order yet.</p>}
-                <div className="mt-5 flex justify-between border-t border-line pt-3 text-[11px] text-sub"><span>Thank you for your business.</span><span>Authorised signatory</span></div>
-              </div>
-              <div>
-                <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-extrabold">Payment history</h3><PayPill s={statusOf(vRow)} /></div>
-                <div className="mb-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-xs text-sub">
-                  <div>Total<div className="text-sm font-bold text-ink">{inr(o.total)}</div></div>
-                  <div>Paid<div className="text-sm font-bold text-ink">{inr(o.paid)}</div></div>
-                  <div>Balance<div className="text-sm font-bold text-rose-600">{inr(o.total - o.paid)}</div></div>
-                </div>
-                <ol className="space-y-2">
-                  {vRow.history.length === 0 && <li className="rounded-lg border border-dashed border-line p-3 text-center text-xs text-sub">No transactions yet.</li>}
-                  {[...vRow.history].reverse().map((t) => (
-                    <li key={t.id}>
-                      <button onClick={() => setViewing({ orderId: vRow.orderId, txnId: t.id })} className={cx("flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs", t.id === vTxn?.id ? "border-brand bg-brand-soft/40" : "border-line hover:bg-slate-50")}>
-                        <span className={cx("grid size-8 place-items-center rounded-lg", t.kind === "payment" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>{t.kind === "payment" ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}</span>
-                        <span className="min-w-0 flex-1"><b className="block text-[13px]">{t.kind === "payment" ? "+" : "-"}{inr(t.amount)} · {t.mode}</b><span className="block truncate text-sub">{fmtDate(t.date)} · {t.receipt}{t.ref ? ` · ${t.ref}` : ""}{t.note ? ` · ${t.note}` : ""}</span></span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-              <p className="text-xs text-sub">Delivery is blocked until dues are cleared unless Admin overrides.</p>
-            </div>
-          );
-        })()}
-      </SlideOver>
-
-      <SlideOver open={!!refundRow} onClose={() => setRefundRow(null)} title={`Refund - ${refundRow?.orderId ?? ""}`} footer={<><button onClick={() => setRefundRow(null)} className="h-10 rounded-lg border border-line px-4 text-sm font-bold">Cancel</button><button onClick={submitRefund} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white">Issue Refund</button></>}>
-        {refundRow && <p className="mb-4 text-sm text-sub">{ord(refundRow.orderId).customer} - paid {inr(paidOf(refundRow))}</p>}
-        <Field label="Refund amount" required><input aria-label="Refund amount" type="number" className={inputCls} value={rAmt} onChange={(e) => setRAmt(e.target.value)} /></Field>
-        <Field label="Reason" required><textarea aria-label="Refund reason" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={rReason} onChange={(e) => setRReason(e.target.value)} /></Field>
-        {rErr && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">{rErr}</div>}
-      </SlideOver>
+      {toast}
     </div>
   );
 }

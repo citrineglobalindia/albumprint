@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
+import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
 import {
   PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, CountTabs,
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
@@ -69,6 +69,7 @@ export default function Orders() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [fOpen, setFOpen] = useState(false);
   const [drawer, setDrawer] = useState<string | null>(null);
   const [editing, setEditing] = useState<Order | null>(null);
   const [ef, setEf] = useState({ size: "12x36", due: "" });
@@ -179,6 +180,8 @@ export default function Orders() {
 
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
           <div ref={searchWrap} className="min-w-[240px] flex-1"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by Order ID, customer, mobile, event...  ( / )" /></div>
+          <button type="button" aria-expanded={fOpen} aria-controls="order-filters" onClick={() => setFOpen(!fOpen)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold sm:hidden"><SlidersHorizontal className="size-4" aria-hidden />Filters{chips.length > 0 && <span className="rounded-full bg-brand px-1.5 text-xs text-white">{chips.length}</span>}</button>
+          <div id="order-filters" className={cx(fOpen ? "flex flex-wrap items-center gap-2.5" : "hidden", "w-full sm:contents")}>
           <MultiSelect className="w-36" label="Stage" options={STAGE_LABELS} value={stages} onChange={f(setStages)} />
           <MultiSelect className="w-40" label="Workflow Type" options={["Design + Printing", "Printing"]} value={wf} onChange={f(setWf)} />
           <MultiSelect className="w-32" label="Album Size" options={ALBUM_SIZES} value={size} onChange={f(setSize)} />
@@ -190,6 +193,7 @@ export default function Orders() {
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
           <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
           <button onClick={reset} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
+          </div>
         </div>
         <div className="mt-3"><FilterChips chips={chips} onClearAll={reset} /></div>
 
