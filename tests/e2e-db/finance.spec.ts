@@ -65,7 +65,7 @@ test("refund over the paid amount is refused with the database message; a valid 
 
   await page.getByLabel("Amount").fill("1000");
   await page.getByRole("button", { name: "Issue refund" }).click();
-  await expect(page.getByText(/Refunded ₹1,000 — credit note CN-\d{4}-\d{4}/)).toBeVisible();
+  await expect(page.locator("#main").getByText(/Refunded ₹1,000 — credit note CN-\d{4}-\d{4}/)).toBeVisible();
   expect(sql(`select paid::text from orders where code = '${orderCode}'`)).toBe("3000.00");
   expect(sql(`select count(*) from invoices where order_id = '${orderId}' and kind = 'credit_note' and total = 1000`)).toBe("1");
 });

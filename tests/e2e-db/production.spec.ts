@@ -25,6 +25,9 @@ const db = (code: string, q: string) => sql(q.replaceAll("$O", `(select id from 
 async function as(browser: Browser, role: Role): Promise<Page> {
   const ctx = await browser.newContext({ baseURL: `http://localhost:${PORT}` }); const page = await ctx.newPage(); await loginAs(page, role); return page;
 }
+/** Lists are paged; narrow them to the order under test first. */
+async function openJob(page: Page, code: string) { await page.goto("/printing"); await page.getByPlaceholder(/Search order, customer/).fill(code); await page.getByTestId(`pjob-${code}`).click(); }
+async function openDelivery(page: Page, code: string) { await page.goto("/delivery"); await page.getByPlaceholder(/Search order, customer, tracking/).fill(code); await page.getByTestId(`del-${code}`).getByRole("button", { name: "Open" }).click(); }
 const CHECKS = ["Print quality", "Colour accuracy", "Alignment & trim", "Binding", "Cover & finish", "Specification match", "Packaging"];
 
 test.describe.configure({ mode: "serial" });
@@ -35,8 +38,7 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
 
   // ── printing: the job appears (the order reached Printing by another route), operator walks it through every stage
   const printing = await as(browser, "printing");
-  await printing.goto("/printing");
-  await printing.getByTestId(`pjob-${code}`).click();
+  await openJob(printing, code);
   const advanceAll = async (labels: string[]) => { for (const l of labels) { await expect(printing.getByTestId("advance")).toContainText(l); await printing.getByTestId("advance").click(); } };
   await advanceAll(["File Prep", "Printing", "Finishing", "Assembly", "Packaging", "Completed", "Send to QC"]);
   await expect.poll(() => db(code, `select stage from print_jobs where order_id = $O`)).toBe("sent_to_qc");
@@ -61,8 +63,7 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
   await expect.poll(() => db(code, `select stage || '|' || qc_status from orders where id = $O`)).toBe("printing|rework");
 
   // ── printing again (reprint), back to QC, round 2 passes
-  await printing.goto("/printing");
-  await printing.getByTestId(`pjob-${code}`).click();
+  await openJob(printing, code);
   await expect(printing.getByTestId("advance")).toContainText("Finishing");
   expect(db(code, `select reprints from print_jobs where order_id = $O`)).toBe("1");
   await advanceAll(["Finishing", "Assembly", "Packaging", "Completed", "Send to QC"]);
@@ -78,8 +79,7 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
 
   // ── delivery: unpaid order cannot leave the shop
   const reception = await as(browser, "reception");
-  await reception.goto("/delivery");
-  await reception.getByTestId(`del-${code}`).getByRole("button", { name: "Open" }).click();
+  await openDelivery(reception, code);
   await reception.getByRole("button", { name: "Courier", exact: true }).click();
   await reception.getByLabel("Carrier").fill("DTDC");
   await reception.getByLabel("Tracking", { exact: true }).fill("D123456");
@@ -96,16 +96,14 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
 
   // admin overrides with a reason
   const admin = await as(browser, "admin");
-  await admin.goto("/delivery");
-  await admin.getByTestId(`del-${code}`).getByRole("button", { name: "Open" }).click();
+  await openDelivery(admin, code);
   await admin.getByLabel("Dispatch override reason").fill("Customer pays on receipt");
   await admin.getByTestId("dispatch").click();
   await expect.poll(() => db(code, `select status || '|' || override_reason from deliveries where order_id = $O`)).toBe("dispatched|Customer pays on receipt");
   expect(db(code, `select delivery_status from orders where id = $O`)).toBe("dispatched");
 
   // proof of delivery is required, the file lands in Storage
-  await reception.goto("/delivery");
-  await reception.getByTestId(`del-${code}`).getByRole("button", { name: "Open" }).click();
+  await openDelivery(reception, code);
   await reception.getByLabel("Received by").fill("Raj Kumar");
   await reception.getByTestId("mark-delivered").click();
   await expect(reception.getByText(/Proof of delivery is required/).first()).toBeVisible();
@@ -214,6 +212,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   const code = fixtureOrder({ type: "design_printing", stage: "colour_grading" });
   const colour = await as(browser, "colour");
   await colour.goto("/colour-grading");
+  await colour.getByPlaceholder(/Search by order ID/).fill(code);
   await colour.getByTestId(`job-${code}`).getByRole("button", { name: "Start" }).click();
   await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress");
   const bytes = randomBytes(2500);
@@ -228,6 +227,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   const admin = await as(browser, "admin");
   await admin.goto("/colour-grading");
   await admin.getByRole("tab", { name: /Submitted/ }).click();
+  await admin.getByPlaceholder(/Search by order ID/).fill(code);
   await admin.getByRole("button", { name: `Reject ${code}` }).click();
   await admin.getByLabel("Rejection reason").fill("Skin tones too warm");
   await admin.getByRole("button", { name: "Send back" }).click();
@@ -237,6 +237,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
 
   // the grader acknowledges, uploads a new version (v2, v1 stays) and resubmits; the admin approves → Designing
   await colour.goto("/colour-grading");
+  await colour.getByPlaceholder(/Search by order ID/).fill(code);
   await colour.getByTestId(`job-${code}`).click();
   await colour.getByRole("button", { name: "Acknowledge Revision" }).click();
   await expect.poll(() => db(code, `select status || ':' || revision_ack from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress:true");
@@ -250,6 +251,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("admin_approval");
   await admin.goto("/colour-grading");
   await admin.getByRole("tab", { name: /Submitted/ }).click();
+  await admin.getByPlaceholder(/Search by order ID/).fill(code);
   await admin.getByRole("button", { name: `Approve ${code}` }).click();
   await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("approved");
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("designing");
@@ -259,8 +261,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
 test("printing: an open exception blocks the next stage until resolved; a vendor job is stored; the database mirrors it", async ({ browser }) => {
   const code = fixtureOrder({ stage: "printing" });
   const printing = await as(browser, "printing");
-  await printing.goto("/printing");
-  await printing.getByTestId(`pjob-${code}`).click();
+  await openJob(printing, code);
   await printing.getByLabel("Exception type").selectOption("Machine fault");
   await printing.getByLabel("Exception note").fill("Plotter jam");
   await printing.getByRole("button", { name: /Raise|Log|Start/ }).last().click();

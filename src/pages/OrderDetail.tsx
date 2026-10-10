@@ -72,7 +72,7 @@ export default function OrderDetail() {
     if (!list || !list.length) return;
     if (o.closed) { fail(`${o.id} is closed and read-only — reopen it first`); return; }
     let added = 0; let err = "";
-    [...list].forEach((f) => { const r = addFile(o.id, cat, f.name, f.size); if (r.ok) added++; else err ||= `${f.name}: ${r.error}`; });
+    [...list].forEach((f) => { const r = addFile(o.id, cat, f.name, f.size, f); if (r.ok) added++; else err ||= `${f.name}: ${r.error}`; });
     if (fileRef.current) fileRef.current.value = "";
     if (err) fail(added ? `${added} uploaded. ${err}` : err); else show(`${added} file${added > 1 ? "s" : ""} added to ${cat}`);
   };
