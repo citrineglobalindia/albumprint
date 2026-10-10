@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye, Search, Undo2, GripVertical, ArrowUp, ArrowDown, MonitorSmartphone, Check, X } from "lucide-react";
+import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye, Search, Undo2, GripVertical, ArrowUp, ArrowDown, MonitorSmartphone, Check, X, Database, Upload, Trash2, ShieldAlert } from "lucide-react";
 import type { ComponentType } from "react";
 import { Field, FilterSelect, Panel, Pill, PageHeader, SearchInput, SlideOver, Td, Th, Toggle, inputCls, tableCls, trCls, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
 import { STAGES } from "../lib/data";
 import { TODAY } from "../lib/format";
+import { AUDIT } from "../lib/audit";
+import { flushAll, resetDemoData } from "../lib/persist";
+import { useConfirm } from "../components/ConfirmDialog";
+import { useRef } from "react";
 
 type Val = string | boolean;
 type Fld =
@@ -79,11 +83,12 @@ const SECTIONS: SectionDef[] = [
       { k: "timeout", l: "Session timeout", t: "select", o: ["15 minutes", "30 minutes", "1 hour", "2 hours", "4 hours"] }, { k: "max_fail", l: "Lock account after failed attempts", t: "slider", min: 3, max: 10, unit: "attempts" },
       { k: "pw_min", l: "Minimum password length", t: "slider", min: 6, max: 20, unit: "characters" }, { k: "pw_exp", l: "Password expiry", t: "slider", min: 0, max: 365, step: 15, unit: "days", zero: "Never" },
       { k: "pw_cx", l: "", t: "toggle", hint: "Require upper, lower, number and symbol" }, { k: "pw_hist", l: "", t: "toggle", hint: "Block reuse of last 5 passwords" }] }] },
+  { key: "data", label: "Data & Storage", icon: Database, title: "Data & Storage", desc: "Saved demo data, backup, restore and audit summary", keywords: "backup restore export import reset local storage audit summary" },
   { key: "audit", label: "Activity Log", icon: History, title: "Activity Log", desc: "Audit trail of sensitive actions" },
 ];
 
 interface StageCfg { key: string; enabled: boolean; sla: number }
-const SLA_DEFAULT: Record<string, number> = { new_order: 2, files_received: 4, colour_grading: 24, admin_approval: 8, designing: 72, client_review: 48, final_approval: 8, printing: 48, qc: 8, ready_for_delivery: 24, delivered: 4 };
+const SLA_DEFAULT: Record<string, number> = { new_order: 2, files_received: 4, colour_grading: 24, admin_approval: 8, designing: 72, client_review: 72, final_approval: 8, printing: 72, qc: 8, ready_for_delivery: 24, delivered: 4 };
 const LOCKED_STAGES = ["new_order", "delivered"];
 const DEFAULT_STAGES: StageCfg[] = STAGES.map((s) => ({ key: s.key, enabled: true, sla: SLA_DEFAULT[s.key] ?? 24 }));
 const EVENTS = ["Order Created", "Design Submitted", "Proof Ready", "Correction Received", "QC Failed", "Payment Due", "Dispatched", "Delivered"];
@@ -103,7 +108,7 @@ const INIT: Record<string, Val> = {
   st_prov: "Cloud (S3)", st_max: "50", st_ret: "12", st_types: "JPG, PNG, PSD, PDF, TIFF", st_backup: true,
   tpl_inv: "Modern", tpl_rcp: "A5", tpl_foot: "Thank you for choosing us.", tpl_terms: "Advance is non-refundable once design work starts.",
   inv_prefix: "INV-2026-", inv_next: "19", inv_gst: "18%", inv_terms: "9", inv_igst: true, inv_round: false, inv_footer: "Thank you for choosing us. Payment due within the terms above.", inv_tc: "Advance is non-refundable once design work starts. Goods once delivered are not returnable.",
-  wf_stages: JSON.stringify(DEFAULT_STAGES), notif_matrix: JSON.stringify(DEFAULT_MATRIX),
+  bh_start: "10", bh_end: "19", bh_days: "1,2,3,4,5,6", bh_holidays: "", sla_warn_pct: "75", wf_stages: JSON.stringify(DEFAULT_STAGES), notif_matrix: JSON.stringify(DEFAULT_MATRIX),
   pm_upi: true, pm_cash: true, pm_bank: true, pm_online: false, adv_pct: "50", upi_id: "priya@upi", rcp_prefix: "RCP", refund_appr: "Admin",
   mfa: true, mfa_admin: true, remember: true, captcha: true, timeout: "30 minutes", max_fail: "5", pw_min: "8", pw_exp: "90", pw_cx: true, pw_hist: true,
 };
@@ -143,6 +148,10 @@ const validate = (v: Record<string, Val>): Errs => {
   if (s("smtp_user") && !EMAIL_RE.test(s("smtp_user"))) e.smtp_user = "Enter a valid email address";
   if (Number(s("pw_min")) < 6 && s("pw_min")) e.pw_min = "Minimum length cannot be below 6";
   if (parse<StageCfg[]>(v.wf_stages, []).some((x) => x.enabled && !(Number.isInteger(x.sla) && x.sla >= 1))) e.wf_stages = "Every enabled stage needs an SLA of at least 1 hour";
+  if (!(Number(s("bh_end")) > Number(s("bh_start")))) e.bh_end = "Closing hour must be after opening hour";
+  if (!s("bh_days")) e.bh_days = "Pick at least one working day";
+  if (s("bh_holidays").split(/[\s,;]+/).filter(Boolean).some((x) => !/^\d{4}-\d{2}-\d{2}$/.test(x))) e.bh_holidays = "Use YYYY-MM-DD dates separated by commas or new lines";
+  if (!(Number(s("sla_warn_pct")) >= 1 && Number(s("sla_warn_pct")) <= 99)) e.sla_warn_pct = "Enter a percentage between 1 and 99";
   if (!s("inv_prefix")) e.inv_prefix = "Invoice prefix is required";
   if (s("adv_pct") && !(Number(s("adv_pct")) >= 0 && Number(s("adv_pct")) <= 100)) e.adv_pct = "Enter a percentage between 0 and 100";
   if (s("disc_limit") && !(Number(s("disc_limit")) >= 0 && Number(s("disc_limit")) <= 100)) e.disc_limit = "Enter a percentage between 0 and 100";
@@ -152,7 +161,7 @@ const GENERAL_KEYS = ["name", "website", "phone", "email", "address", "currency"
 const KEY_SEC: Record<string, string> = Object.fromEntries([
   ...GENERAL_KEYS.map((k) => [k, "general"]),
   ...SECTIONS.flatMap((x) => (x.groups ?? []).flatMap((g) => g.fields.map((f) => [f.k, x.key]))),
-  ["wf_stages", "workflow"], ["notif_matrix", "notifications"],
+  ["wf_stages", "workflow"], ["bh_start", "workflow"], ["bh_end", "workflow"], ["bh_days", "workflow"], ["bh_holidays", "workflow"], ["sla_warn_pct", "workflow"], ["notif_matrix", "notifications"],
 ]);
 const matchSection = (x: SectionDef, term: string) => {
   const hay = [x.label, x.title, x.desc, x.keywords ?? "", ...(x.groups ?? []).flatMap((g) => [g.title, g.desc ?? "", ...g.fields.flatMap((f) => [f.l, "hint" in f ? f.hint ?? "" : ""])]), x.key === "general" ? "company name website phone logo currency tax prefix order number behaviour" : ""].join(" ").toLowerCase();
@@ -389,6 +398,8 @@ export default function Settings() {
         <Panel title={s.title} subtitle={s.desc} bodyClassName="space-y-4">
           {sec === "general" && <General v={v} set={set} errs={errs} show={show} />}
           {sec === "workflow" && <StageEditor value={str("wf_stages")} onChange={(x) => set("wf_stages", x)} error={errs.wf_stages} />}
+          {sec === "workflow" && <BusinessHours v={v} set={set} errs={errs} />}
+          {sec === "data" && <DataStorage show={show} />}
           {sec === "audit" && (
             <div>
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -492,6 +503,112 @@ function General({ v, set, errs, show }: { v: Record<string, Val>; set: (k: stri
           <div key={k} className="flex items-start gap-3"><Toggle on={Boolean(v[k])} onChange={(x) => set(k, x)} /><div><div className="text-sm font-bold">{t}</div><div className="text-xs text-sub">{d}</div></div></div>
         ))}
       </div>
+    </div>
+  </>);
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** Business-hours calendar consumed by lib/sla.ts (SRS 18.2: SLA clocks count business hours only). */
+function BusinessHours({ v, set, errs }: { v: Record<string, Val>; set: (k: string, x: Val) => void; errs: Errs }) {
+  const days = String(v.bh_days ?? "").split(",").filter(Boolean).map(Number);
+  const flip = (d: number) => set("bh_days", (days.includes(d) ? days.filter((x) => x !== d) : [...days, d]).sort().join(","));
+  const hours = Array.from({ length: 25 }, (_, h) => h);
+  const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+  return (
+    <div className="rounded-2xl border border-line p-5" data-testid="business-hours">
+      <h3 className="text-base font-extrabold">Business hours & SLA calendar</h3>
+      <p className="mb-4 text-xs text-sub">SLA hours are counted only inside these working hours. Sundays and holidays are excluded unless enabled. Save All to apply.</p>
+      <div className="grid gap-x-4 md:grid-cols-3">
+        <Field label="Opening time"><select aria-label="Opening time" className={inputCls} value={String(v.bh_start)} onChange={(e) => set("bh_start", e.target.value)}>{hours.slice(0, 24).map((h) => <option key={h} value={h}>{hh(h)}</option>)}</select></Field>
+        <Field label="Closing time"><select aria-label="Closing time" className={inputCls} value={String(v.bh_end)} onChange={(e) => set("bh_end", e.target.value)}>{hours.slice(1).map((h) => <option key={h} value={h}>{hh(h)}</option>)}</select>{errs.bh_end && <span className={ERR}>{errs.bh_end}</span>}</Field>
+        <Field label="Warn at % of SLA used" hint="Escalation threshold (ALB-FR-0394)"><input type="number" aria-label="Warn percentage" className={inputCls} value={String(v.sla_warn_pct)} onChange={(e) => set("sla_warn_pct", e.target.value)} />{errs.sla_warn_pct && <span className={ERR}>{errs.sla_warn_pct}</span>}</Field>
+      </div>
+      <div className="mb-4"><span className="mb-1.5 block text-[13px] font-semibold">Working days</span>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Working days">{DAYS.map((d, i) => <button key={d} type="button" aria-pressed={days.includes(i)} onClick={() => flip(i)} className={cx("h-9 w-14 rounded-lg border text-xs font-bold", days.includes(i) ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{d}</button>)}</div>
+        {errs.bh_days && <span className={ERR}>{errs.bh_days}</span>}</div>
+      <Field label="Holidays" hint="One date per line or comma separated, YYYY-MM-DD"><textarea aria-label="Holidays" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={String(v.bh_holidays ?? "")} onChange={(e) => set("bh_holidays", e.target.value)} placeholder="2026-10-20" />{errs.bh_holidays && <span className={ERR}>{errs.bh_holidays}</span>}</Field>
+    </div>
+  );
+}
+
+const SKIP_KEYS = ["albumpro.role", "albumpro.lockUntil"];
+const backupKeys = () => { try { return Object.keys(localStorage).filter((k) => k.startsWith("albumpro.") && !SKIP_KEYS.includes(k)).sort(); } catch { return []; } };
+const kb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`);
+
+function DataStorage({ show }: { show: (m: string) => void }) {
+  const [dialog, confirm] = useConfirm();
+  const [tick, setTick] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const rows = useMemo(() => backupKeys().map((k) => {
+    const raw = localStorage.getItem(k) ?? "";
+    let count = "";
+    try { const j = JSON.parse(raw); if (Array.isArray(j)) count = `${j.length} records`; else if (j && typeof j === "object") count = `${Object.keys(j).length} fields`; } catch { /* not json */ }
+    return { k, size: raw.length * 2, count };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [tick]);
+  const total = rows.reduce((a, r) => a + r.size, 0);
+
+  const exportBackup = () => {
+    flushAll();
+    const keys: Record<string, string> = {};
+    backupKeys().forEach((k) => { keys[k] = localStorage.getItem(k) ?? ""; });
+    const blob = new Blob([JSON.stringify({ app: "albumpro", version: 1, exportedAt: new Date().toISOString(), keys }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = `albumpro-backup-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    show(`Backup exported (${Object.keys(keys).length} keys)`);
+  };
+  const importBackup = async (file: File | undefined) => {
+    if (fileRef.current) fileRef.current.value = "";
+    if (!file) return;
+    let data: { app?: string; keys?: Record<string, unknown> };
+    try { data = JSON.parse(await file.text()); } catch { show("That file is not valid JSON"); return; }
+    const entries = Object.entries(data.keys ?? {}).filter(([k, v]) => k.startsWith("albumpro.") && !SKIP_KEYS.includes(k) && typeof v === "string");
+    if (data.app !== "albumpro" || !entries.length) { show("Not an AlbumPro backup file"); return; }
+    confirm({ title: "Restore backup", message: `Replace the current saved data with ${entries.length} key${entries.length === 1 ? "" : "s"} from ${file.name}? The page will reload.`, confirmLabel: "Restore", danger: true }, () => {
+      flushAll();   // make memory == storage so the unload flush cannot overwrite what we restore
+      try { backupKeys().forEach((k) => localStorage.removeItem(k)); entries.forEach(([k, v]) => localStorage.setItem(k, v as string)); } catch { show("Browser storage is unavailable"); return; }
+      window.location.reload();
+    });
+  };
+  const reset = () => confirm({ title: "Reset demo data", message: "Erase all saved orders, files, audit log, masters, pricing and users, and reload with the original sample data? This cannot be undone. Export a backup first if unsure.", confirmLabel: "Reset everything", danger: true }, () => {
+    try { localStorage.removeItem("albumpro.users"); localStorage.removeItem("albumpro.settings"); } catch { /* ignore */ }
+    resetDemoData();
+  });
+
+  const byEntity = new Map<string, number>();
+  AUDIT.forEach((a) => byEntity.set(a.entity, (byEntity.get(a.entity) ?? 0) + 1));
+  const ent = [...byEntity.entries()].sort((a, b) => b[1] - a[1]);
+  const overrides = AUDIT.filter((a) => a.override).length;
+  const actors = new Set(AUDIT.map((a) => a.actor)).size;
+
+  return (<>
+    {dialog}
+    <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" data-testid="backup-input" onChange={(e) => importBackup(e.target.files?.[0])} />
+    <div className="rounded-2xl border border-line p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h3 className="text-base font-extrabold">Saved demo data</h3><p className="text-xs text-sub">Everything below lives in this browser only ({kb(total)} total). A backend will replace it.</p></div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={exportBackup} data-testid="export-backup" className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Download className="size-4" />Export backup (JSON)</button>
+          <button onClick={() => fileRef.current?.click()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Upload className="size-4" />Import backup</button>
+          <button onClick={reset} data-testid="reset-demo" className="inline-flex h-10 items-center gap-2 rounded-lg border border-rose-200 px-3.5 text-[13px] font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="size-4" />Reset demo data</button>
+          <button onClick={() => { flushAll(); setTick((t) => t + 1); }} className="h-10 px-2 text-[13px] font-bold text-brand">Refresh</button>
+        </div>
+      </div>
+      <div className="mt-4 overflow-x-auto"><table className={tableCls} data-testid="storage-keys">
+        <thead><tr><Th>Key</Th><Th>Contents</Th><Th className="text-right">Size</Th></tr></thead>
+        <tbody>{rows.map((r) => <tr key={r.k} className={trCls}><Td className="font-mono text-xs">{r.k}</Td><Td className="text-sub">{r.count || "—"}</Td><Td className="text-right">{kb(r.size)}</Td></tr>)}
+          {rows.length === 0 && <tr><td colSpan={3} className="py-8 text-center text-sub">Nothing saved yet.</td></tr>}</tbody>
+      </table></div>
+    </div>
+    <div className="rounded-2xl border border-line p-5" data-testid="audit-summary">
+      <div className="flex items-center justify-between"><div><h3 className="text-base font-extrabold">Audit summary</h3><p className="text-xs text-sub">Read-only. The full trail is under Audit Log.</p></div><ShieldAlert className="size-5 text-sub" /></div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-4 text-sm">
+        <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-sub">Events</div><b className="text-lg">{AUDIT.length}</b></div>
+        <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-sub">Override events</div><b className="text-lg text-rose-600">{overrides}</b></div>
+        <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-sub">Distinct actors</div><b className="text-lg">{actors}</b></div>
+        <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-sub">Latest</div><b className="text-[13px]">{AUDIT[0] ? new Date(AUDIT[0].at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</b></div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">{ent.map(([k, n]) => <Pill key={k} tone="blue">{k}: {n}</Pill>)}{ent.length === 0 && <span className="text-xs text-sub">No events recorded yet.</span>}</div>
     </div>
   </>);
 }

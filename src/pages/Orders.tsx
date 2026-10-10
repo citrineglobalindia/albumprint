@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useToast } from "../components/Toast";
+import { useNotice } from "../components/Notice";
+import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
 import { ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
 import {
@@ -12,7 +13,11 @@ import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { ORDERS, CUSTOMERS, STAGES, ASSIGNEES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
 import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
-import { useStore, notify, patchOrder, useSlashFocus, packRange, unpackRange } from "../lib/store";
+import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
+import { setHold as holdOrder, cancelOrder, type Result } from "../lib/workflow";
+import { editOrder } from "../lib/orderEdit";
+import { useAuth } from "../lib/auth";
+import { savedKeys } from "../lib/persist";
 
 type TabKey = "all" | "new" | "progress" | "client" | "print" | "out" | "delivered" | "hold" | "cancelled";
 const GROUP: Record<TabKey, StageKey[] | null> = {
@@ -43,7 +48,10 @@ export default function Orders() {
   const newOrder = useNewOrder();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [toast, show] = useToast();
+  const [toast, show, fail] = useNotice();
+  const [reasonDlg, askReason] = useReason();
+  const { role } = useAuth();
+  const isAdmin = role === "admin";
   const init = useRef(params).current;
   const [tab, setTab] = useState<TabKey>(() => (init.get("tab") as TabKey) || "all");
   const [q, setQ] = useState("");
@@ -105,20 +113,35 @@ export default function Orders() {
   const th = (k: string, label: string) => show_(k) && <SortTh key={k} k={k} sort={sort} onSort={onSort}>{label}</SortTh>;
 
   const kpis: Kpi[] = [
-    { label: "Total Orders", value: ORDERS.length, delta: 12, icon: ClipboardList, tone: "blue" },
-    { label: "New Orders", value: ORDERS.filter((o) => inTab(o, "new")).length, delta: 25, icon: PlusCircle, tone: "orange" },
-    { label: "In Progress", value: ORDERS.filter((o) => inTab(o, "progress")).length, delta: 8, icon: MonitorPlay, tone: "pink" },
-    { label: "Client Review Pending", value: ORDERS.filter((o) => inTab(o, "client")).length, delta: 20, icon: Users, tone: "pink" },
-    { label: "Ready for Printing", value: ORDERS.filter((o) => inTab(o, "print")).length, delta: 50, icon: ShieldCheck, tone: "green" },
-    { label: "Overdue", value: ORDERS.filter(isLate).length, delta: 75, icon: Clock, tone: "red", invert: true },
+    { label: "Total Orders", value: ORDERS.length, icon: ClipboardList, tone: "blue" },
+    { label: "New Orders", value: ORDERS.filter((o) => inTab(o, "new")).length, icon: PlusCircle, tone: "orange" },
+    { label: "In Progress", value: ORDERS.filter((o) => inTab(o, "progress")).length, icon: MonitorPlay, tone: "pink" },
+    { label: "Client Review Pending", value: ORDERS.filter((o) => inTab(o, "client")).length, icon: Users, tone: "pink" },
+    { label: "Ready for Printing", value: ORDERS.filter((o) => inTab(o, "print")).length, icon: ShieldCheck, tone: "green" },
+    { label: "Overdue", value: ORDERS.filter(isLate).length, icon: Clock, tone: "red", invert: true },
   ];
 
-  const bulk = (fn: (o: Order) => Partial<Order>, msg: string) => { const n = sel.size; ORDERS.forEach((o) => { if (sel.has(o.id)) Object.assign(o, fn(o)); }); notify(); setSel(new Set()); show(`${msg} (${n} orders)`); };
-  const setHold = (o: Order, h: Order["hold"]) => { patchOrder(o.id, { hold: h }); show(h === "On Hold" ? `${o.id} put on hold` : h === "Cancelled" ? `${o.id} cancelled` : `${o.id} resumed`); };
+  /** Runs one workflow-engine call per selected order; engine refusals are collected and shown, never swallowed. */
+  const runBulk = (label: string, call: (o: Order) => Result) => {
+    const ids = [...sel]; let done = 0; const errs: string[] = [];
+    ids.forEach((id) => { const o = ORDERS.find((x) => x.id === id); if (!o) return; const r = call(o); if (r.ok) done++; else errs.push(`${id}: ${r.error}`); });
+    setSel(new Set());
+    const msg = `${label}: ${done} of ${ids.length} orders`;
+    if (errs.length) fail(`${msg}. ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} more refused)` : ""}`); else show(msg);
+  };
+  const resumeOne = (o: Order): Result => o.hold === "Cancelled" ? { ok: false, error: `${o.id} is cancelled and cannot be resumed` } : o.hold !== "On Hold" ? { ok: false, error: `${o.id} is not on hold` } : holdOrder(o.id, false);
+  const bulkHold = () => askReason({ title: `Put ${sel.size} order${sel.size > 1 ? "s" : ""} on hold`, message: "The reason is recorded in each order's audit trail.", confirmLabel: "Put on hold" }, (reason) => runBulk("Put on hold", (o) => holdOrder(o.id, true, reason)));
+  const bulkCancel = () => askReason({ title: `Cancel ${sel.size} order${sel.size > 1 ? "s" : ""}`, message: "Cancelled orders keep their history but leave the pipeline.", confirmLabel: "Cancel orders", danger: true }, (reason) => runBulk("Cancelled", (o) => cancelOrder(o.id, reason)));
+  const bulkResume = () => runBulk("Resumed", resumeOne);
+  const holdOne = (o: Order) => askReason({ title: `Put ${o.id} on hold`, confirmLabel: "Put on hold" }, (reason) => { const r = holdOrder(o.id, true, reason); r.ok ? show(`${o.id} put on hold`) : fail(r.error); });
+  const cancelOne = (o: Order) => askReason({ title: `Cancel ${o.id}`, message: "This cannot be undone from the pipeline; history is preserved.", confirmLabel: "Cancel order", danger: true }, (reason) => { const r = cancelOrder(o.id, reason); r.ok ? show(`${o.id} cancelled`) : fail(r.error); });
+  const resumeOneToast = (o: Order) => { const r = resumeOne(o); r.ok ? show(`${o.id} resumed`) : fail(r.error); };
+  const bulkEdit = (patch: Partial<Order>, action: string, msg: string) => { const n = sel.size; [...sel].forEach((id) => editOrder(id, patch, action)); setSel(new Set()); show(`${msg} (${n} orders)`); };
   const openEdit = (o: Order) => { setEf({ due: o.due, size: o.size }); setEerr(""); setEditing(o); };
   const saveEdit = () => {
     if (!ef.due) { setEerr("Due date is required."); return; }
-    patchOrder(editing!.id, ef); show(`Order ${editing!.id} updated`); setEditing(null);
+    const o = editing!; if (o.closed) { fail(`${o.id} is closed and read-only — reopen it first`); return; }
+    editOrder(o.id, ef, "update", "Due date / album size edited"); show(`Order ${o.id} updated`); setEditing(null);
   };
 
   const chips = [
@@ -171,13 +194,13 @@ export default function Orders() {
         <div className="mt-3"><FilterChips chips={chips} onClearAll={reset} /></div>
 
         {sel.size > 0 && (
-          <div className="mt-1 mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
+          <div data-testid="bulk-bar" className="mt-1 mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-soft px-3 py-2 text-[13px]">
             <b>{sel.size} selected</b>
-            <OutlineButton onClick={() => bulk(() => ({ hold: "On Hold" }), "Put on hold")}>Put On Hold</OutlineButton>
-            <OutlineButton onClick={() => bulk(() => ({ hold: undefined }), "Resumed")}>Resume</OutlineButton>
-            <OutlineButton onClick={() => bulk(() => ({ hold: "Cancelled" }), "Cancelled")}>Cancel</OutlineButton>
-            <OutlineButton onClick={() => bulk(() => ({ priority: "High" }), "Priority set to High")}>Set High priority</OutlineButton>
-            <div className="w-44"><Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulk(() => ({ assignee: v }), `Assigned to ${v}`)} /></div>
+            <OutlineButton onClick={bulkHold}>Put On Hold</OutlineButton>
+            <OutlineButton onClick={bulkResume}>Resume</OutlineButton>
+            {isAdmin && <OutlineButton onClick={bulkCancel}>Cancel</OutlineButton>}
+            <OutlineButton onClick={() => bulkEdit({ priority: "High" }, "priority", "Priority set to High")}>Set High priority</OutlineButton>
+            <div className="w-44"><Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulkEdit({ assignee: v }, "reassign", `Assigned to ${v}`)} /></div>
             <button onClick={() => setSel(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
           </div>
         )}
@@ -194,7 +217,7 @@ export default function Orders() {
             <tbody>
               {pageRows.map((o) => (
                 <tr key={o.id} data-row={o.id} onClick={() => setDrawer(o.id)} className={cx(trCls, "cursor-pointer", sel.has(o.id) && "bg-brand-soft/60")}>
-                  <Td><input type="checkbox" checked={sel.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} /></Td>
+                  <Td><input type="checkbox" aria-label={`Select ${o.id}`} checked={sel.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} /></Td>
                   {show_("id") && <Td className="font-bold">{o.id}</Td>}
                   {show_("customer") && <Td><div className="flex items-center gap-3"><Thumb seed={o.customer} size={36} /><div className="leading-tight"><div className="font-semibold">{o.customer}</div><div className="text-xs text-sub">{o.mobile}</div></div></div></Td>}
                   {show_("event") && <Td>{o.event}</Td>}
@@ -205,7 +228,7 @@ export default function Orders() {
                     <Td>
                       <InlinePop title="Change priority" label={`Change priority of ${o.id}`} trigger={<PriorityPill p={o.priority} />}>
                         {(close) => PRIORITIES.map((p) => (
-                          <button key={p} onClick={() => { patchOrder(o.id, { priority: p }); show(`${o.id} priority set to ${p}`); close(); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 hover:bg-brand-soft"><PriorityPill p={p} />{p === o.priority && <Check className="size-4 text-brand" />}</button>
+                          <button key={p} onClick={() => { editOrder(o.id, { priority: p }, "priority"); show(`${o.id} priority set to ${p}`); close(); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 hover:bg-brand-soft"><PriorityPill p={p} />{p === o.priority && <Check className="size-4 text-brand" />}</button>
                         ))}
                       </InlinePop>
                     </Td>
@@ -214,7 +237,7 @@ export default function Orders() {
                   {show_("assignee") && (
                     <Td>
                       <InlinePop title="Reassign to" label={`Reassign ${o.id}`} trigger={<span className="inline-flex items-center gap-2"><Avatar name={o.assignee} size={24} />{o.assignee}</span>}>
-                        {(close) => <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={o.assignee} onChange={(v) => { patchOrder(o.id, { assignee: v }); show(`${o.id} reassigned to ${v}`); close(); }} />}
+                        {(close) => <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={o.assignee} onChange={(v) => { editOrder(o.id, { assignee: v }, "reassign"); show(`${o.id} reassigned to ${v}`); close(); }} />}
                       </InlinePop>
                     </Td>
                   )}
@@ -226,9 +249,9 @@ export default function Orders() {
                         { label: "Quick view", onClick: () => setDrawer(o.id) },
                         { label: "View details", onClick: () => nav(`/orders/${o.id}`) },
                         { label: "Edit", onClick: () => openEdit(o) },
-                        { label: "Resume", hidden: !o.hold, onClick: () => setHold(o, undefined) },
-                        { label: "Put On Hold", hidden: !!o.hold, onClick: () => setHold(o, "On Hold") },
-                        { label: "Cancel Order", danger: true, hidden: !!o.hold, onClick: () => setHold(o, "Cancelled") },
+                        { label: "Resume", hidden: o.hold !== "On Hold", onClick: () => resumeOneToast(o) },
+                        { label: "Put On Hold", hidden: !!o.hold, onClick: () => holdOne(o) },
+                        { label: "Cancel Order", danger: true, hidden: !isAdmin || o.hold === "Cancelled", onClick: () => cancelOne(o) },
                       ]} /></span>
                   </Td>
                 </tr>
@@ -238,7 +261,7 @@ export default function Orders() {
           </table>
         </div>
         <Pagination page={page} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} noun="orders" />
-        <div className="mt-1 text-xs text-sub">{sel.size} selected · today {fmtDate(TODAY)} · press <kbd className="rounded border border-line px-1">/</kbd> to search, <kbd className="rounded border border-line px-1">n</kbd> for new order</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-sub"><SavedStamp />{sel.size} selected · today {fmtDate(TODAY)} · <span className="hidden sm:inline">press <kbd className="rounded border border-line px-1">/</kbd> to search, <kbd className="rounded border border-line px-1">n</kbd> for new order</span></div>
       </Panel>
 
       <SlideOver open={!!d} onClose={() => setDrawer(null)} title={d ? `${d.id} · ${d.customer}` : ""} width={520}
@@ -271,15 +294,15 @@ export default function Orders() {
               <div>
                 <span className="mb-1 block text-xs font-semibold text-sub">Priority</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {PRIORITIES.map((p) => <button key={p} aria-pressed={d.priority === p} onClick={() => { patchOrder(d.id, { priority: p }); show(`${d.id} priority set to ${p}`); }} className={cx("rounded-full border px-3 py-1 text-xs font-bold", d.priority === p ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{p}</button>)}
+                  {PRIORITIES.map((p) => <button key={p} aria-pressed={d.priority === p} onClick={() => { editOrder(d.id, { priority: p }, "priority"); show(`${d.id} priority set to ${p}`); }} className={cx("rounded-full border px-3 py-1 text-xs font-bold", d.priority === p ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{p}</button>)}
                 </div>
               </div>
               <div>
                 <span className="mb-1 block text-xs font-semibold text-sub">Reassign</span>
-                <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={d.assignee} onChange={(v) => { patchOrder(d.id, { assignee: v }); show(`${d.id} reassigned to ${v}`); }} />
+                <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={d.assignee} onChange={(v) => { editOrder(d.id, { assignee: v }, "reassign"); show(`${d.id} reassigned to ${v}`); }} />
               </div>
               <div className="flex gap-2">
-                {d.hold ? <OutlineButton icon={PlayCircle} onClick={() => setHold(d, undefined)}>Resume</OutlineButton> : <OutlineButton icon={PauseCircle} onClick={() => setHold(d, "On Hold")}>Put on hold</OutlineButton>}
+                {d.hold === "On Hold" ? <OutlineButton icon={PlayCircle} onClick={() => resumeOneToast(d)}>Resume</OutlineButton> : !d.hold ? <OutlineButton icon={PauseCircle} onClick={() => holdOne(d)}>Put on hold</OutlineButton> : null}
                 <OutlineButton onClick={() => openEdit(d)}>Edit dates / size</OutlineButton>
               </div>
             </div>
@@ -293,7 +316,21 @@ export default function Orders() {
         <Field label="Album size"><Combobox options={ALBUM_SIZES.map((s) => ({ value: s, label: s }))} value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} /></Field>
         <Field label="Due date" required><input type="date" className={inputCls} value={ef.due} onChange={(e) => setEf({ ...ef, due: e.target.value })} /></Field>
       </SlideOver>
+      {reasonDlg}
       {toast}
     </div>
   );
+}
+
+/** "Last saved" — watches the browser copy of the orders list that boot.ts/persist.ts autosaves. */
+function SavedStamp() {
+  const [at, setAt] = useState<Date | null>(null);
+  useEffect(() => {
+    let last = ""; const read = () => { try { return localStorage.getItem("albumpro.v1.orders") ?? ""; } catch { return ""; } };
+    last = read(); if (last) setAt(new Date());
+    const t = window.setInterval(() => { const n = read(); if (n && n !== last) { last = n; setAt(new Date()); } }, 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const ok = savedKeys().length > 0 || !!at;
+  return <span data-testid="last-saved" className="text-xs text-sub">{ok && at ? `Saved in this browser · ${at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Autosave on"}</span>;
 }

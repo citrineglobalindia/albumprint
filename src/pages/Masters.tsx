@@ -8,14 +8,16 @@ import { useToast } from "../components/Toast";
 import { downloadCsv, parseCsv } from "../lib/csv";
 import { inr } from "../lib/format";
 import { ORDERS } from "../lib/data";
+import { usePersistentState } from "../lib/localState";
+import { logAudit } from "../lib/audit";
+import { GST_RATE, applyPricing, pricingDefaults, snapshotPricing, type PricingSnapshot } from "../lib/pricing";
 
-const TABS = ["Album Products", "Printing Options", "Materials", "Event Types", "Cover Types", "Box Types", "Design Styles", "Other Masters"] as const;
+const TABS = ["Album Products", "Pricing Rules", "Printing Options", "Materials", "Event Types", "Cover Types", "Box Types", "Design Styles", "Other Masters"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Product { id: string; name: string; category: string; size: string; sheets: number; price: number; active: boolean; archived: boolean; image?: string }
 interface Item { id: string; name: string; detail: string; price?: number; active: boolean; archived: boolean }
 
-const GST = 0.18; // default GST (Settings > Invoice Settings)
 const CATS = ["Premium Albums", "Standard Albums", "Magnetic Albums", "Acrylic Albums", "Photobooks", "Flush Mount Albums", "Layflat Albums", "Parents Albums"];
 const SIZES = ["6x8", "8x12", "10x10", "11x14", "12x18", "12x30", "12x36", "14x10", "14x40"];
 const SHEETS = [20, 25, 30, 40, 45, 50, 60];
@@ -29,7 +31,7 @@ const P: [string, string, string, number, number, boolean][] = [
 const seedProducts: Product[] = P.map(([name, category, size, sheets, price, active], i) => ({ id: `PRD${String(i + 1).padStart(3, "0")}`, name, category, size, sheets, price, active, archived: false }));
 
 const mk = (names: [string, string][], priced = false): Item[] => names.map(([name, detail], i) => ({ id: `M${i + 1}`, name, detail, price: priced ? 500 + i * 250 : undefined, active: true, archived: false }));
-const SEED: Record<Exclude<Tab, "Album Products" | "Other Masters">, Item[]> = {
+const SEED: Record<Exclude<Tab, "Album Products" | "Other Masters" | "Pricing Rules">, Item[]> = {
   "Printing Options": mk([["Silk", "Paper type"], ["Metallic", "Paper type"], ["Matte", "Paper type"], ["Glossy", "Paper type"], ["Velvet", "Paper type"], ["Fine Art", "Paper type"]], true),
   Materials: mk([["Leatherette", "Cover material"], ["Acrylic", "Cover material"], ["Photo Wrap", "Cover material"], ["Fabric", "Cover material"], ["Wood", "Cover material"]], true),
   "Event Types": mk([["Wedding", "Order category"], ["Reception", "Order category"], ["Engagement", "Order category"], ["Baby", "Order category"], ["Corporate", "Order category"], ["Pre Wedding", "Order category"]]),
@@ -58,9 +60,9 @@ const PCOLS = [{ key: "category", label: "Category" }, { key: "size", label: "Si
 
 export default function Masters() {
   const [tab, setTab] = useState<Tab>("Album Products");
-  const [products, setProducts] = useState<Product[]>(seedProducts);
-  const [items, setItems] = useState(SEED);
-  const [other, setOther] = useState<Record<string, Item[]>>(() => Object.fromEntries(OTHER.map((k) => [k, OTHER_SEED[k].map((n, i) => ({ id: `${k}${i}`, name: n, detail: k, active: true, archived: false }))])));
+  const [products, setProducts] = usePersistentState<Product[]>("masters_products", () => seedProducts);
+  const [items, setItems] = usePersistentState<typeof SEED>("masters_items", () => SEED);
+  const [other, setOther] = usePersistentState<Record<string, Item[]>>("masters_other", () => Object.fromEntries(OTHER.map((k) => [k, OTHER_SEED[k].map((n, i) => ({ id: `${k}${i}`, name: n, detail: k, active: true, archived: false }))])));
   const [otherKey, setOtherKey] = useState<(typeof OTHER)[number]>("Paper GSM");
   const [cat, setCat] = useState("All Categories");
   const [q, setQ] = useState("");
@@ -75,7 +77,7 @@ export default function Masters() {
   const [toast, show] = useToast();
   const [dialog, confirm] = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
-  const seq = useRef(1000);
+  const seq = useRef(Date.now() % 1e8);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [imp, setImp] = useState<null | { rows: ImpRow[]; fileName: string }>(null);
@@ -108,7 +110,7 @@ export default function Masters() {
   const allOnPage = rows.length > 0 && rows.every((p) => sel.has(p.id));
   const colOn = (k: string) => !hidden.includes(k);
 
-  const curList = (): Item[] => (tab === "Other Masters" ? other[otherKey]! : items[tab as keyof typeof SEED]);
+  const curList = (): Item[] => (tab === "Pricing Rules" ? [] : tab === "Other Masters" ? other[otherKey]! : items[tab as keyof typeof SEED] ?? []);
   const setCurList = (fn: (l: Item[]) => Item[]) => (tab === "Other Masters" ? setOther((o) => ({ ...o, [otherKey]: fn(o[otherKey]!) })) : setItems((o) => ({ ...o, [tab]: fn(o[tab as keyof typeof SEED]) })));
   const hasPrice = tab !== "Other Masters" && tab !== "Event Types" && tab !== "Design Styles";
   const noun = tab === "Other Masters" ? otherKey : tab.replace(/s$/, "");
@@ -151,7 +153,7 @@ export default function Masters() {
   const onDropImg = (e: DragEvent) => { e.preventDefault(); setDropOver(false); setImage(e.dataTransfer.files?.[0]); };
 
   const priceNum = Number(f.price);
-  const gstAmt = Math.round(priceNum * GST), gross = Math.round(priceNum + gstAmt);
+  const gstAmt = Math.round(priceNum * GST_RATE), gross = Math.round(priceNum + gstAmt);
 
   const save = () => {
     const e: Errs = {};
@@ -281,12 +283,12 @@ export default function Masters() {
       {toast}{dialog}
       <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" data-testid="import-file" onChange={(e) => importFile(e.target.files?.[0])} />
       <PageHeader title="Masters" subtitle="Manage all configurable options used across the system.">
-        <PrimaryButton onClick={() => (isProducts ? openProduct() : openItem())}>{addLabel}</PrimaryButton>
+        {tab !== "Pricing Rules" && <PrimaryButton onClick={() => (isProducts ? openProduct() : openItem())}>{addLabel}</PrimaryButton>}
       </PageHeader>
 
       <div className="mb-5 overflow-x-auto"><LineTabs className="min-w-max" tabs={TABS.map((t) => ({ key: t, label: t }))} value={tab} onChange={changeTab} /></div>
 
-      {isProducts ? (
+      {tab === "Pricing Rules" ? <PricingRules show={show} /> : isProducts ? (
         <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)]">
           <Panel title="Album Categories" bodyClassName="pt-3">
             <ul className="space-y-1 text-[13px]">
@@ -467,7 +469,7 @@ export default function Masters() {
               <input type="number" min={1} aria-label="Custom sheets" className="h-8 w-20 rounded-lg border border-line px-2 text-xs outline-none focus:border-brand" value={f.sheets} onChange={(e) => setF({ ...f, sheets: e.target.value })} /></div>
             {errs.sheets && <span className={ERR}>{errs.sheets}</span>}</div>
           <Field label="Base Price (INR, excl. GST)" required><input type="number" min={0} className={inputCls} value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />{errs.price && <span className={ERR}>{errs.price}</span>}</Field>
-          <div data-testid="gst-line" className="-mt-2 mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs font-semibold text-brand">{inr(priceNum >= 0 ? Math.round(priceNum) : 0)} + GST {Math.round(GST * 100)}% ({inr(priceNum >= 0 ? gstAmt : 0)}) = <b>{inr(priceNum >= 0 ? gross : 0)} incl. GST</b></div>
+          <div data-testid="gst-line" className="-mt-2 mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs font-semibold text-brand">{inr(priceNum >= 0 ? Math.round(priceNum) : 0)} + GST {Math.round(GST_RATE * 100)}% ({inr(priceNum >= 0 ? gstAmt : 0)}) = <b>{inr(priceNum >= 0 ? gross : 0)} incl. GST</b></div>
           <div className="mb-4 rounded-lg border border-line px-3 py-2 text-xs text-sub" data-testid="used-in">Used in <b className="text-ink">{usedIn({ size: f.size })} orders</b> with the {f.size} size. {slide.id ? "Archive instead of deleting to keep history." : "New products start unused."}</div>
         </>) : (<>
           <Field label="Description"><input className={inputCls} value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} /></Field>
@@ -496,6 +498,111 @@ export default function Masters() {
           </table></div>
         </>)}
       </SlideOver>
+    </div>
+  );
+}
+
+/* ───────────── SRS §3.2 Pricing Rules (persisted; read by lib/pricing.ts and the New Order wizard) ───────────── */
+type MapKey = "albumTypes" | "paper" | "covers" | "lamination" | "boxes" | "finishes";
+const MAP_SECTIONS: { key: MapKey; title: string; unit: string; hint: string }[] = [
+  { key: "albumTypes", title: "Album types", unit: "per copy", hint: "Base price per album copy" },
+  { key: "paper", title: "Paper (per sheet)", unit: "per sheet", hint: "Charged per sheet per copy" },
+  { key: "covers", title: "Cover types", unit: "per copy", hint: "Add-on per copy" },
+  { key: "lamination", title: "Lamination", unit: "per copy", hint: "Add-on per copy" },
+  { key: "boxes", title: "Boxes", unit: "per copy", hint: "Add-on per copy" },
+  { key: "finishes", title: "Finishes", unit: "per copy", hint: "Add-on per copy" },
+];
+const SCALARS: { key: "designCharge" | "gradingPerImage" | "gstPct" | "discountApprovalPct"; label: string; unit: string; max?: number; hint: string }[] = [
+  { key: "designCharge", label: "Design charge", unit: "INR / order", hint: "Applied when the order includes design (ALB-FR-0033)" },
+  { key: "gradingPerImage", label: "Colour grading", unit: "INR / image", hint: "Per image on designed orders (ALB-FR-0034)" },
+  { key: "gstPct", label: "GST", unit: "%", max: 100, hint: "Applied on the discounted subtotal (ALB-FR-0037)" },
+  { key: "discountApprovalPct", label: "Discount needing admin approval", unit: "%", max: 100, hint: "Discounts above this need approval (ALB-FR-0036)" },
+];
+
+function PricingRules({ show }: { show: (m: string) => void }) {
+  const [saved, setSaved] = useState<PricingSnapshot>(() => snapshotPricing());
+  const [d, setD] = useState<PricingSnapshot>(saved);
+  const [adding, setAdding] = useState<Record<string, { name: string; price: string }>>({});
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const dirty = JSON.stringify(d) !== JSON.stringify(saved);
+
+  const setPrice = (sec: MapKey, name: string, v: string) => setD((x) => ({ ...x, [sec]: { ...x[sec], [name]: v === "" ? ("" as unknown as number) : Number(v) } }));
+  const remove = (sec: MapKey, name: string) => setD((x) => { const m = { ...x[sec] }; delete m[name]; return { ...x, [sec]: m }; });
+  const add = (sec: MapKey) => {
+    const a = adding[sec] ?? { name: "", price: "" };
+    const name = a.name.trim();
+    if (!name) { setErrs((e) => ({ ...e, [sec]: "Enter a name" })); return; }
+    if (Object.keys(d[sec]).some((k) => k.toLowerCase() === name.toLowerCase())) { setErrs((e) => ({ ...e, [sec]: "That name already exists" })); return; }
+    if (a.price === "" || !(Number(a.price) >= 0)) { setErrs((e) => ({ ...e, [sec]: "Enter a price of 0 or more" })); return; }
+    setD((x) => ({ ...x, [sec]: { ...x[sec], [name]: Number(a.price) } }));
+    setAdding((s) => ({ ...s, [sec]: { name: "", price: "" } })); setErrs((e) => ({ ...e, [sec]: "" }));
+  };
+  const validate = () => {
+    const e: Record<string, string> = {};
+    MAP_SECTIONS.forEach((s) => { if (Object.values(d[s.key]).some((v) => v === ("" as unknown) || !(Number(v) >= 0))) e[s.key] = "Every price must be a number of 0 or more"; });
+    SCALARS.forEach((s) => { const v = d[s.key] as unknown; if (v === "" || !(Number(v) >= 0) || (s.max !== undefined && Number(v) > s.max)) e[s.key] = `Enter ${s.max !== undefined ? `0 to ${s.max}` : "0 or more"}`; });
+    return e;
+  };
+  const save = () => {
+    const e = validate(); setErrs(e);
+    if (Object.keys(e).length) { show("Fix the highlighted prices before saving"); return; }
+    const changes: [string, string, string][] = [];
+    MAP_SECTIONS.forEach((s) => {
+      const names = new Set([...Object.keys(saved[s.key]), ...Object.keys(d[s.key])]);
+      names.forEach((n) => { const a = saved[s.key][n], b = d[s.key][n]; if (a !== b) changes.push([`${s.title}: ${n}`, a === undefined ? "(new)" : String(a), b === undefined ? "(removed)" : String(b)]); });
+    });
+    SCALARS.forEach((s) => { if (saved[s.key] !== d[s.key]) changes.push([s.label, String(saved[s.key]), String(d[s.key])]); });
+    applyPricing(d);
+    changes.slice(0, 40).forEach(([what, from, to]) => logAudit({ entity: "pricing", entityId: what, action: "price_change", from, to }));
+    setSaved(d); show(`Pricing saved: ${changes.length} change${changes.length === 1 ? "" : "s"} now apply to new orders`);
+  };
+  const reset = () => { setD(pricingDefaults()); setErrs({}); show("Defaults loaded. Save to apply"); };
+
+  return (
+    <div data-testid="pricing-rules">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white p-4">
+        <div className="min-w-0 flex-1"><h2 className="text-[17px] font-extrabold">Pricing Rules</h2><p className="text-xs text-sub">Used by the New Order wizard and quotations (SRS 3.2). Changes affect new orders only; existing order totals are unchanged.</p></div>
+        {dirty && <span className="text-xs font-bold text-amber-600" data-testid="pricing-dirty">Unsaved changes</span>}
+        <button onClick={reset} className={GHOST}><RotateCcw className="size-4" />Load defaults</button>
+        <button onClick={() => { setD(saved); setErrs({}); }} disabled={!dirty} className={cx(GHOST, "disabled:opacity-40")}>Discard</button>
+        <button onClick={save} disabled={!dirty} data-testid="pricing-save" className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-[13px] font-bold text-white hover:bg-brand-dark disabled:opacity-40"><Check className="size-4" />Save pricing</button>
+      </div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {SCALARS.map((s) => (
+          <Panel key={s.key}>
+            <label className="block"><span className="text-[13px] font-bold">{s.label}</span>
+              <div className="mt-2 flex items-center gap-2"><input type="number" min={0} aria-label={s.label} value={d[s.key]} onChange={(e) => setD({ ...d, [s.key]: e.target.value === "" ? ("" as unknown as number) : Number(e.target.value) })} className={cx(inputCls, errs[s.key] && "!border-rose-400")} /><span className="shrink-0 text-xs text-sub">{s.unit}</span></div>
+              <span className="mt-1 block text-[11px] text-sub">{s.hint}</span></label>
+            {errs[s.key] && <span className={ERR}>{errs[s.key]}</span>}
+          </Panel>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        {MAP_SECTIONS.map((s) => {
+          const a = adding[s.key] ?? { name: "", price: "" };
+          return (
+            <Panel key={s.key} title={s.title} subtitle={s.hint}>
+              <ul className="space-y-2">
+                {Object.entries(d[s.key]).map(([name, v]) => (
+                  <li key={name} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{name}</span>
+                    <span className="text-xs text-sub">₹</span>
+                    <input type="number" min={0} aria-label={`${s.title}: ${name}`} value={v as number} onChange={(e) => setPrice(s.key, name, e.target.value)} className="h-9 w-24 rounded-lg border border-line px-2 text-right text-sm outline-none focus:border-brand" />
+                    <span className="w-14 text-[11px] text-sub">{s.unit}</span>
+                    <button aria-label={`Remove ${name}`} onClick={() => remove(s.key, name)} className="text-sub hover:text-rose-600"><Trash2 className="size-4" /></button>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+                <input aria-label={`New ${s.title} name`} placeholder="New name" value={a.name} onChange={(e) => setAdding({ ...adding, [s.key]: { ...a, name: e.target.value } })} className="h-9 min-w-0 flex-1 rounded-lg border border-line px-2 text-sm outline-none focus:border-brand" />
+                <input type="number" min={0} aria-label={`New ${s.title} price`} placeholder="Price" value={a.price} onChange={(e) => setAdding({ ...adding, [s.key]: { ...a, price: e.target.value } })} className="h-9 w-20 rounded-lg border border-line px-2 text-right text-sm outline-none focus:border-brand" />
+                <button onClick={() => add(s.key)} className="grid size-9 place-items-center rounded-lg border border-line text-brand hover:bg-brand-soft" aria-label={`Add ${s.title}`}><Plus className="size-4" /></button>
+              </div>
+              {errs[s.key] && <span className={ERR}>{errs[s.key]}</span>}
+            </Panel>
+          );
+        })}
+      </div>
     </div>
   );
 }

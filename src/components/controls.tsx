@@ -45,7 +45,7 @@ export function Calendar({ month, onMonth, from, to, onPick, marks }: { month: D
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const cells = Array.from({ length: 42 }, (_, i) => addDays(first, i - first.getDay()));
   return (
-    <div className="w-[260px]">
+    <div className="w-full max-w-[300px] sm:w-[260px]">
       <div className="mb-2 flex items-center justify-between">
         <button onClick={() => onMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="grid size-7 place-items-center rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft className="size-4" /></button>
         <b className="text-sm">{month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</b>
@@ -83,14 +83,14 @@ export function DateRangePicker({ value, onChange, className, align = "right" }:
   const label = value.preset === "All Time" ? "All Time" : value.from && value.to && same(value.from, value.to) ? fmtShort(value.from) : `${fmtShort(value.from)} – ${fmtShort(value.to)}`;
   return (
     <div ref={ref} className={cx("relative", className)}>
-      <button onClick={openIt} className="flex h-10 items-center gap-2.5 rounded-xl border border-line bg-white px-3.5 text-left hover:bg-brand-soft/50">
+      <button aria-haspopup="dialog" aria-expanded={open} onClick={openIt} className="flex h-10 items-center gap-2.5 rounded-xl border border-line bg-white px-3.5 text-left hover:bg-brand-soft/50">
         <CalendarDays className="size-5 text-sub" />
         <span className="leading-tight"><span className="block text-[11px] text-sub">{value.preset}</span><span className="block text-[13px] font-bold">{label}</span></span>
         <ChevronDown className="size-4 text-sub" />
       </button>
       {open && (
-        <div className={cx("absolute top-12 z-50 flex rounded-2xl border border-line bg-white p-3 shadow-2xl", align === "right" ? "right-0" : "left-0")}>
-          <div className="mr-3 w-36 border-r border-line pr-3">
+        <div role="dialog" aria-label="Choose date range" className={cx("fixed inset-x-3 top-20 z-50 flex max-h-[80dvh] flex-col overflow-y-auto rounded-2xl border border-line bg-white p-3 shadow-2xl sm:absolute sm:inset-x-auto sm:top-12 sm:max-h-none sm:flex-row sm:overflow-visible", align === "right" ? "sm:right-0" : "sm:left-0")}>
+          <div className="mb-3 flex flex-wrap gap-1 border-b border-line pb-3 sm:mb-0 sm:mr-3 sm:block sm:w-36 sm:gap-0 sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3">
             {PRESETS.map((p) => (
               <button key={p} onClick={() => { const r = presetRange(p); setDraft(r); if (r.to) setMonth(r.to); }} className={cx("block w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold", draft.preset === p ? "bg-brand-soft text-brand" : "hover:bg-slate-100")}>{p}</button>
             ))}
@@ -120,18 +120,18 @@ export function TodayChip() {
   const due = ORDERS.filter((o) => same(day(new Date(o.due)), sel));
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-3 rounded-xl border border-line bg-white px-4 py-2 hover:bg-brand-soft/50">
+      <button aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-3 rounded-xl border border-line bg-white px-3 py-2 sm:px-4 hover:bg-brand-soft/50">
         <CalendarDays className="size-6 text-sub" />
         <span className="text-left text-xs leading-tight text-sub">{same(sel, day(TODAY)) ? "Today" : "Viewing"}<span className="block text-sm font-semibold text-ink">{sel.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</span></span>
         <ChevronDown className="size-4 text-sub" />
       </button>
       {open && (
-        <div className="absolute right-0 top-14 z-50 flex gap-4 rounded-2xl border border-line bg-white p-4 shadow-2xl">
+        <div role="dialog" aria-label="Calendar and due orders" className="fixed inset-x-3 top-20 z-50 flex max-h-[80dvh] flex-col gap-4 overflow-y-auto rounded-2xl border border-line bg-white p-4 shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-14 sm:max-h-none sm:flex-row sm:overflow-visible">
           <div>
             <Calendar month={month} onMonth={setMonth} from={sel} to={sel} onPick={setSel} marks={marks} />
             <button onClick={() => { setSel(day(TODAY)); setMonth(day(TODAY)); }} className="mt-2 text-xs font-bold text-brand">Jump to today</button>
           </div>
-          <div className="w-64 border-l border-line pl-4">
+          <div className="border-t border-line pt-3 sm:w-64 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
             <div className="mb-2 text-sm font-extrabold">Due on {fmtShort(sel)} <span className="text-sub">({due.length})</span></div>
             <div className="scroll-thin max-h-60 space-y-1.5 overflow-y-auto">
               {due.length === 0 && <p className="text-xs text-sub">No deliveries promised on this day.</p>}
@@ -157,7 +157,7 @@ export function MultiSelect({ label, options, value, onChange, className }: { la
         <ChevronDown className="size-4 shrink-0 text-sub" />
       </button>
       {open && (
-        <div className="absolute left-0 top-11 z-50 w-60 rounded-xl border border-line bg-white p-2 shadow-2xl">
+        <div className="absolute left-0 top-11 z-50 w-60 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-white p-2 shadow-2xl">
           {options.length > 6 && <label className="mb-1 flex h-9 items-center gap-2 rounded-lg border border-line px-2.5"><Search className="size-3.5 text-sub" /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-full bg-transparent text-xs outline-none" /></label>}
           <div className="scroll-thin max-h-56 overflow-y-auto">
             {shown.map((o) => (
@@ -227,7 +227,7 @@ export function SavedViews<T>({ storageKey, current, onApply }: { storageKey: st
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)} className="flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold hover:bg-brand-soft"><Bookmark className="size-4 text-sub" />Views{views.length > 0 && <span className="rounded-full bg-slate-100 px-1.5 text-xs">{views.length}</span>}</button>
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-line bg-white p-2 shadow-2xl">
+        <div className="absolute right-0 top-11 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-white p-2 shadow-2xl">
           {views.length === 0 && <p className="p-2 text-xs text-sub">No saved views yet. Set up filters, then save them here.</p>}
           {views.map((v) => (
             <div key={v.name} className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-brand-soft">
@@ -273,7 +273,7 @@ export function sortRows<T>(rows: T[], sort: SortState, get: (row: T, key: strin
 export function SortTh({ k, sort, onSort, children, className }: { k: string; sort: SortState; onSort: (s: SortState) => void; children: ReactNode; className?: string }) {
   const active = sort?.key === k;
   return (
-    <th className={cx("whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub", className)}>
+    <th scope="col" aria-sort={active ? (sort!.dir === 1 ? "ascending" : "descending") : "none"} className={cx("whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub", className)}>
       <button onClick={() => onSort(!active ? { key: k, dir: 1 } : sort!.dir === 1 ? { key: k, dir: -1 } : null)} className="inline-flex items-center gap-1 uppercase hover:text-ink">
         {children}{active ? (sort!.dir === 1 ? <ChevronUp className="size-3 text-brand" /> : <ChevronDown className="size-3 text-brand" />) : <ChevronsUpDown className="size-3 opacity-40" />}
       </button>

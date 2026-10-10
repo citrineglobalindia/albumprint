@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type ComponentType } from "react";
+import { useState, type ReactNode, type ComponentType, type CSSProperties } from "react";
 import { useToast } from "./Toast";
 import { ChevronLeft, ChevronRight, ChevronDown, Search, ArrowUp, ArrowDown, ImageIcon, CalendarDays, Plus } from "lucide-react";
 import clsx from "clsx";
@@ -24,22 +24,22 @@ export const TONE: Record<Tone, { soft: string; text: string; solid: string; dot
 
 export function PageHeader({ title, subtitle, icon, children }: { title: string; subtitle?: string; icon?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div className="flex items-start gap-3">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+      <div className="flex min-w-0 items-start gap-3">
         {icon}
-        <div>
-          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-ink sm:text-[28px]">{title}</h1>
           {subtitle && <p className="mt-0.5 text-sm text-sub">{subtitle}</p>}
         </div>
       </div>
-      <div className="flex items-center gap-3">{children}</div>
+      {children && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:gap-3">{children}</div>}
     </div>
   );
 }
 
 export function PrimaryButton({ children, icon: Icon = Plus, onClick }: { children: ReactNode; icon?: ComponentType<{ className?: string }>; onClick?: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-white shadow-md shadow-brand/25 transition hover:bg-brand-dark active:scale-[0.98]">
+    <button type="button" onClick={onClick} className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-white shadow-md shadow-brand/25 transition hover:bg-brand-dark active:scale-[0.98]">
       <Icon className="size-4" />
       {children}
     </button>
@@ -48,7 +48,7 @@ export function PrimaryButton({ children, icon: Icon = Plus, onClick }: { childr
 
 export function OutlineButton({ children, icon: Icon, onClick, className }: { children: ReactNode; icon?: ComponentType<{ className?: string }>; onClick?: () => void; className?: string }) {
   return (
-    <button onClick={onClick} className={cx("inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3.5 text-[13px] font-semibold text-ink transition hover:bg-brand-soft", className)}>
+    <button type="button" onClick={onClick} className={cx("inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3.5 text-[13px] font-semibold text-ink transition hover:bg-brand-soft", className)}>
       {Icon && <Icon className="size-4 text-sub" />}
       {children}
     </button>
@@ -78,12 +78,12 @@ export function MoreButton() {
   const items: [string, () => void][] = [["Export tables (CSV)", exportTables], ["Print page", () => window.print()], ["Refresh data", () => show("Data refreshed")]];
   return (
     <div className="relative">
-      <button onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold text-ink hover:bg-brand-soft">
+      <button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 200)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold text-ink hover:bg-brand-soft">
         More <ChevronDown className="size-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-40 w-48 rounded-xl border border-line bg-white p-1.5 shadow-xl">
-          {items.map(([l, f]) => <button key={l} onMouseDown={f} className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft">{l}</button>)}
+        <div role="menu" className="absolute right-0 top-12 z-40 w-48 rounded-xl border border-line bg-white p-1.5 shadow-xl">
+          {items.map(([l, f]) => <button key={l} role="menuitem" onClick={f} className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft">{l}</button>)}
         </div>
       )}
       {toast}
@@ -93,17 +93,17 @@ export function MoreButton() {
 
 export function Panel({ title, subtitle, action, children, className, bodyClassName }: { title?: ReactNode; subtitle?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string }) {
   return (
-    <section className={cx("rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(20,30,90,0.04)]", className)}>
+    <section className={cx("min-w-0 rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(20,30,90,0.04)]", className)}>
       {(title || action) && (
-        <header className="flex items-center justify-between gap-3 px-5 pt-4">
-          <div className="flex min-w-0 items-baseline gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 pt-4 sm:px-5">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
             {title && <h2 className="text-[17px] font-extrabold text-ink">{title}</h2>}
             {subtitle && <p className="truncate text-xs text-sub">{subtitle}</p>}
           </div>
           {action}
         </header>
       )}
-      <div className={cx("p-5", bodyClassName)}>{children}</div>
+      <div className={cx("min-w-0 p-4 sm:p-5", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -120,15 +120,15 @@ export function KpiCard({ k }: { k: Kpi }) {
   const up = (k.delta ?? 0) >= 0;
   const good = k.invert ? !up : up;
   return (
-    <div className="flex min-w-0 items-center gap-3.5 rounded-2xl border border-line bg-white p-4 shadow-[0_1px_2px_rgba(20,30,90,0.04)]">
-      <div className={cx("grid size-14 shrink-0 place-items-center rounded-xl", t.soft, t.text)}>
-        <k.icon className="size-7" />
+    <div className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-line bg-white p-3 shadow-[0_1px_2px_rgba(20,30,90,0.04)] sm:gap-3.5 sm:p-4">
+      <div className={cx("grid size-10 shrink-0 place-items-center rounded-xl sm:size-14", t.soft, t.text)}>
+        <k.icon className="size-5 sm:size-7" aria-hidden />
       </div>
       <div className="min-w-0">
-        <div className="truncate text-[13px] font-medium text-sub">{k.label}</div>
-        <div className="text-2xl font-extrabold leading-tight text-ink">{k.value}</div>
+        <div className="truncate text-xs font-medium text-sub sm:text-[13px]" title={k.label}>{k.label}</div>
+        <div className="truncate text-xl font-extrabold leading-tight text-ink sm:text-2xl">{k.value}</div>
         {k.delta !== undefined && (
-          <div className={cx("flex flex-wrap items-center gap-x-1 text-xs font-bold", good ? "text-emerald-600" : "text-rose-600")}>
+          <div className={cx("flex flex-wrap items-center gap-x-1 text-xs font-bold", good ? "text-emerald-700" : "text-rose-600")}>
             {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
             {Math.abs(k.delta)}%
             <span className="whitespace-nowrap text-[11px] font-medium text-sub">{k.deltaLabel ?? "vs last month"}</span>
@@ -141,7 +141,7 @@ export function KpiCard({ k }: { k: Kpi }) {
 
 export function KpiRow({ items, className, cols }: { items: Kpi[]; className?: string; cols?: number }) {
   return (
-    <div className={cx("mb-5 grid gap-4", className)} style={{ gridTemplateColumns: cols ? `repeat(${cols}, minmax(0, 1fr))` : `repeat(auto-fit, minmax(205px, 1fr))` }}>
+    <div className={cx("mb-5 grid grid-cols-2 gap-3 sm:gap-4", cols ? "md:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]" : "md:[grid-template-columns:repeat(auto-fit,minmax(205px,1fr))]", className)} style={cols ? ({ "--cols": cols } as CSSProperties) : undefined}>
       {items.map((k) => <KpiCard key={k.label} k={k} />)}
     </div>
   );
@@ -189,15 +189,15 @@ export function SearchInput({ value, onChange, placeholder, className }: { value
   return (
     <label className={cx("flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm focus-within:border-brand", className)}>
       <Search className="size-4 text-sub" />
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400" />
+      <input type="search" aria-label={placeholder.replace(/\s*\(\s*\/\s*\)\s*$/, "").replace(/\.+$/, "")} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400" />
     </label>
   );
 }
 
-export function FilterSelect({ value, onChange, options, className }: { value: string; onChange: (v: string) => void; options: string[]; className?: string }) {
+export function FilterSelect({ value, onChange, options, className, label = "Filter" }: { value: string; onChange: (v: string) => void; options: string[]; className?: string; label?: string }) {
   return (
     <div className={cx("relative", className)}>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full appearance-none rounded-lg border border-line bg-white pl-3 pr-8 text-[13px] font-medium text-ink outline-none focus:border-brand">
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full appearance-none rounded-lg border border-line bg-white pl-3 pr-8 text-[13px] font-medium text-ink outline-none focus:border-brand">
         {options.map((o) => <option key={o}>{o}</option>)}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-sub" />
@@ -208,11 +208,11 @@ export function FilterSelect({ value, onChange, options, className }: { value: s
 /** Pill-style tab bar with counts, as used on Orders / Customers / Delivery. */
 export function CountTabs<T extends string>({ tabs, value, onChange }: { tabs: { key: T; label: string; count?: number; tone?: Tone }[]; value: T; onChange: (k: T) => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div role="tablist" className="scroll-thin snap-board -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
       {tabs.map((t) => {
         const active = t.key === value;
         return (
-          <button key={t.key} onClick={() => onChange(t.key)} className={cx("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-[13px] font-bold transition", active ? "border-brand bg-brand text-white shadow-md shadow-brand/20" : "border-line bg-white text-ink hover:bg-brand-soft")}>
+          <button key={t.key} role="tab" aria-selected={active} onClick={() => onChange(t.key)} className={cx("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-4 text-[13px] font-bold transition", active ? "border-brand bg-brand text-white shadow-md shadow-brand/20" : "border-line bg-white text-ink hover:bg-brand-soft")}>
             {t.tone && <span className={cx("size-2 rounded-full", active ? "bg-white" : TONE[t.tone].dot)} />}
             {t.label}
             {t.count !== undefined && <span className={cx("rounded-full px-2 py-0.5 text-xs", active ? "bg-white/25" : "bg-slate-100 text-sub")}>{t.count}</span>}
@@ -226,9 +226,9 @@ export function CountTabs<T extends string>({ tabs, value, onChange }: { tabs: {
 /** Underline tabs used inside panels. */
 export function LineTabs<T extends string>({ tabs, value, onChange, className }: { tabs: { key: T; label: string; count?: number }[]; value: T; onChange: (k: T) => void; className?: string }) {
   return (
-    <div className={cx("flex gap-6 border-b border-line", className)}>
+    <div role="tablist" className={cx("scroll-thin flex gap-6 overflow-x-auto border-b border-line", className)}>
       {tabs.map((t) => (
-        <button key={t.key} onClick={() => onChange(t.key)} className={cx("-mb-px border-b-2 pb-2.5 text-sm font-bold transition", t.key === value ? "border-brand text-brand" : "border-transparent text-sub hover:text-ink")}>
+        <button key={t.key} role="tab" aria-selected={t.key === value} onClick={() => onChange(t.key)} className={cx("-mb-px shrink-0 whitespace-nowrap border-b-2 pb-2.5 text-sm font-bold transition", t.key === value ? "border-brand text-brand" : "border-transparent text-sub hover:text-ink")}>
           {t.label}
           {t.count !== undefined && <span className="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-sub">{t.count}</span>}
         </button>
@@ -245,21 +245,21 @@ export function Pagination({ page, pageSize, total, onPage, onPageSize, noun = "
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 pt-4 text-[13px] text-sub">
       <span>Showing {from} to {to} of {total} {noun}</span>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-1.5">
-          <button disabled={page <= 1} onClick={() => onPage(page - 1)} className="grid size-8 place-items-center rounded-lg border border-line bg-white disabled:opacity-40"><ChevronLeft className="size-4" /></button>
+          <button aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)} className="grid size-8 place-items-center rounded-lg border border-line bg-white disabled:opacity-40"><ChevronLeft className="size-4" /></button>
           {nums.map((n, i) => (
             <span key={n} className="flex items-center gap-1.5">
               {i > 0 && n - nums[i - 1]! > 1 && <span>…</span>}
-              <button onClick={() => onPage(n)} className={cx("grid size-8 place-items-center rounded-lg border text-[13px] font-bold", n === page ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-soft")}>{n}</button>
+              <button aria-label={`Page ${n}`} aria-current={n === page ? "page" : undefined} onClick={() => onPage(n)} className={cx("grid size-8 place-items-center rounded-lg border text-[13px] font-bold", n === page ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-soft")}>{n}</button>
             </span>
           ))}
-          <button disabled={page >= pages} onClick={() => onPage(page + 1)} className="grid size-8 place-items-center rounded-lg border border-line bg-white disabled:opacity-40"><ChevronRight className="size-4" /></button>
+          <button aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)} className="grid size-8 place-items-center rounded-lg border border-line bg-white disabled:opacity-40"><ChevronRight className="size-4" /></button>
         </div>
         {onPageSize && (
           <div className="flex items-center gap-2">
             Rows per page
-            <FilterSelect className="w-[76px]" value={String(pageSize)} onChange={(v) => onPageSize(Number(v))} options={["8", "10", "12", "14", "20"]} />
+            <FilterSelect label="Rows per page" className="w-[76px]" value={String(pageSize)} onChange={(v) => onPageSize(Number(v))} options={["8", "10", "12", "14", "20"]} />
           </div>
         )}
       </div>
@@ -270,7 +270,7 @@ export function Pagination({ page, pageSize, total, onPage, onPageSize, noun = "
 /** Standard table styling. Use <Th>/<Td> inside a <table className={tableCls}>. */
 export const tableCls = "w-full text-[13px]";
 export const Th = ({ children, className }: { children?: ReactNode; className?: string }) => (
-  <th className={cx("whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub", className)}>{children}</th>
+  <th scope="col" className={cx("whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub", className)}>{children}</th>
 );
 export const Td = ({ children, className }: { children?: ReactNode; className?: string }) => (
   <td className={cx("whitespace-nowrap px-3 py-2.5 align-middle", className)}>{children}</td>
@@ -290,26 +290,26 @@ export function ProgressBar({ value, tone = "blue", className }: { value: number
   );
 }
 
-export function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <button role="switch" aria-checked={on} onClick={() => onChange(!on)} className={cx("relative h-6 w-11 shrink-0 rounded-full transition", on ? "bg-brand" : "bg-slate-200")}>
+    <button type="button" role="switch" aria-label={label} aria-checked={on} onClick={() => onChange(!on)} className={cx("relative h-6 w-11 shrink-0 rounded-full transition", on ? "bg-brand" : "bg-slate-200")}>
       <span className={cx("absolute top-0.5 size-5 rounded-full bg-white shadow transition-all", on ? "left-[22px]" : "left-0.5")} />
     </button>
   );
 }
 
-/** Right-side slide-over used for create/record forms (New Order, Record Payment…). */
+/** Right-side slide-over used for create/record forms (New Order, Record Payment…). Full-screen on phones. Focus trap + Esc come from <A11yLayer/> in the Shell. */
 export function SlideOver({ open, onClose, title, children, footer, width = 440 }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; width?: number }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-ink/30" onClick={onClose}>
-      <aside className="flex h-full max-w-full flex-col bg-white shadow-2xl" style={{ width }} onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between border-b border-line px-6 py-4">
-          <h2 className="text-lg font-extrabold">{title}</h2>
-          <button onClick={onClose} className="grid size-8 place-items-center rounded-lg text-sub hover:bg-slate-100" aria-label="Close">✕</button>
+      <aside role="dialog" aria-modal="true" aria-label={title} className="flex h-full w-full max-w-full flex-col bg-white shadow-2xl sm:w-[var(--w)]" style={{ "--w": `${width}px` } as CSSProperties} onClick={(e) => e.stopPropagation()}>
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 sm:py-4">
+          <h2 className="min-w-0 truncate text-lg font-extrabold">{title}</h2>
+          <button type="button" onClick={onClose} className="grid size-10 shrink-0 place-items-center rounded-lg text-sub hover:bg-slate-100 sm:size-8" aria-label="Close"><span aria-hidden>✕</span></button>
         </header>
-        <div className="scroll-thin flex-1 overflow-y-auto p-6">{children}</div>
-        {footer && <footer className="flex justify-end gap-3 border-t border-line px-6 py-4">{footer}</footer>}
+        <div className="scroll-thin flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+        {footer && <footer className="flex flex-wrap justify-end gap-3 border-t border-line px-4 py-3 sm:px-6 sm:py-4">{footer}</footer>}
       </aside>
     </div>
   );

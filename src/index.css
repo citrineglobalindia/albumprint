@@ -10,17 +10,58 @@
   --color-side-hover: #172052;
   --color-page: #f4f6fd;
   --color-line: #e6e9f5;
-  --color-sub: #5b6485;
+  --color-sub: #4f5878;
+  /* WCAG AA (>= 4.5:1) for small text: darker variants of the palette steps that are used as text colours */
+  --color-slate-400: #64748b;
+  --color-emerald-600: #047857;
+  --color-orange-600: #c2410c;
+  --color-pink-600: #be185d;
+  --color-amber-600: #b45309;
+  --color-sky-700: #0369a1;
 }
 
 html, body, #root { height: 100%; }
-body { background: var(--color-page); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { background: var(--color-page); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 button { cursor: pointer; }
 .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-thin::-webkit-scrollbar-thumb { background: #cfd4ea; border-radius: 99px; }
 
+/* ── accessibility ── */
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 6px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 0; }
+.app-sidebar :focus-visible { outline-color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* ── layout: tables always scroll inside their card, never the page ── */
+main div:has(> table) { overflow-x: auto; max-width: 100%; }
+main section, main .min-w-0 { min-width: 0; }
+.snap-board { scroll-snap-type: x mandatory; scroll-padding-inline: 12px; }
+.snap-board > * { scroll-snap-align: start; }
+
+/* ── small screens ── */
+@media (max-width: 1023px) {
+  /* 44px minimum touch targets */
+  button, [role="button"], select, summary,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) { min-height: 44px; }
+  button[aria-label], a[aria-label] { min-width: 44px; }
+  input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+  td:has(> input[type="checkbox"]), th:has(> input[type="checkbox"]) { min-width: 44px; }
+  .app-nav a { min-height: 44px; }
+  .tap-sm { min-height: 0 !important; min-width: 0 !important; }
+}
+@media (max-width: 639px) {
+  /* the New Order wizard is full-screen on phones */
+  .fixed:has(> [role="dialog"][aria-label="New Order"]) { padding: 0 !important; }
+  [role="dialog"][aria-label="New Order"] { max-height: 100dvh !important; height: 100dvh; max-width: none !important; border-radius: 0 !important; }
+  [role="dialog"][aria-label="New Order"] ol li > span { display: none; }
+  [role="dialog"][aria-label="New Order"] ol li:has(button[class*="ring-brand"]) > span { display: block; }
+  [role="dialog"][aria-label="New Order"] header, [role="dialog"][aria-label="New Order"] ol, [role="dialog"][aria-label="New Order"] footer { padding-left: 16px; padding-right: 16px; }
+}
+
 @media print {
-  .no-print, .app-sidebar, .app-topbar { display: none !important; }
+  .no-print, .app-sidebar, .app-topbar, .skip-link { display: none !important; }
   html, body, #root { height: auto !important; background: #fff !important; }
   .app-main { overflow: visible !important; padding: 0 !important; }
   section { break-inside: avoid; box-shadow: none !important; }

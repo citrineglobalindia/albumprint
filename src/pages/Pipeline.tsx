@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useReason } from "../components/ReasonDialog";
+import { useAuth } from "../lib/auth";
+import { moveStage as engineMove, nextStages } from "../lib/workflow";
+import { editOrder } from "../lib/orderEdit";
 import { useNavigate } from "react-router-dom";
 import { ActionMenu } from "../components/ActionMenu";
 import { ClipboardList, Settings, Users, Printer, Truck, ShieldCheck, CalendarDays, LayoutGrid, List, Plus, ArrowRight, User, RotateCcw, CheckCircle2, Info, GripVertical } from "lucide-react";
@@ -8,13 +12,12 @@ import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, Sor
 import { useNewOrder } from "../components/NewOrderWizard";
 import { ORDERS, STAGES, EVENTS, PRIORITIES, ASSIGNEES, ALBUM_SIZES, stageLabel, stageTone, type StageKey, type Order, type Priority } from "../lib/data";
 import { fmtDate } from "../lib/format";
-import { useStore, patchOrder, moveOrder, progressFor, SKIPPED_FOR_PRINTING, useSlashFocus, packRange, unpackRange } from "../lib/store";
+import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
 
 // Soft WIP limits per stage (cards in flight before the column is flagged).
 const WIP: Partial<Record<StageKey, number>> = { colour_grading: 8, admin_approval: 6, designing: 10, client_review: 8, final_approval: 5, printing: 8, qc: 6, ready_for_delivery: 8 };
 const COLS = [{ key: "id", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "stage", label: "Stage" }, { key: "priority", label: "Priority" }, { key: "assignee", label: "Assignee" }, { key: "due", label: "Due" }, { key: "progress", label: "Progress" }];
 const PRIO_RANK: Record<Priority, number> = { Low: 0, Normal: 1, High: 2, Urgent: 3, VIP: 4 };
-const blocked = (o: Order, to: StageKey) => o.workflow === "Printing" && SKIPPED_FOR_PRINTING.includes(to);
 
 interface ViewState { q: string; event: string[]; prio: string[]; asg: string[]; wf: string[]; size: string[]; range: ReturnType<typeof packRange>; hidden: string[]; sort: SortState }
 interface Toast { msg: string; undo?: () => void; tone?: "ok" | "warn" }
@@ -46,33 +49,47 @@ export default function Pipeline() {
   const say = (t: Toast) => { setToast(t); window.clearTimeout(tt.current); tt.current = window.setTimeout(() => setToast(null), 6000); };
   useEffect(() => () => window.clearTimeout(tt.current), []);
 
-  /** The one place stage changes happen (drag, menu, Add dialog) so SRS routing rules are enforced everywhere. */
-  const tryMove = (id: string, to: StageKey) => {
+  const { role } = useAuth();
+  const isAdmin = role === "admin";
+  const [reasonDlg, askReason] = useReason();
+  const legal = (o: Order, to: StageKey) => nextStages(o).find((n) => n.to === to);
+  const stageOpts = STAGES.map((x) => ({ value: x.key, label: x.label }));
+
+  /** The one place stage changes happen (drag, menu, Add dialog): always through the workflow engine, which mirrors the DB rules. */
+  const tryMove = (id: string, to: StageKey, reason?: string): boolean => {
     const o = ORDERS.find((x) => x.id === id);
     if (!o || o.stage === to) return false;
-    if (blocked(o, to)) { say({ msg: `${o.id} cannot move to ${stageLabel(to)} — Not required for Printing Only`, tone: "warn" }); return false; }
-    const prev = { stage: o.stage, progress: o.progress };
-    moveOrder(id, to);
-    say({ msg: `${o.id} moved to ${stageLabel(to)}`, undo: () => { patchOrder(id, prev); say({ msg: `${id} moved back to ${stageLabel(prev.stage)}` }); } });
+    const rule = legal(o, to);
+    if (rule?.needsReason && !reason) {
+      askReason({ title: `Move ${o.id} to ${stageLabel(to)}`, message: `${stageLabel(o.stage)} → ${stageLabel(to)} needs a reason (rework / correction).`, confirmLabel: "Move" }, (r) => { tryMove(id, to, r); });
+      return false;
+    }
+    const prev = o.stage;
+    const r = engineMove(id, to, { reason });
+    if (!r.ok) { say({ msg: r.error, tone: "warn" }); return false; }            // illegal drop: nothing moved, the card snaps back
+    say({
+      msg: `${o.id} moved to ${stageLabel(to)}`,
+      undo: () => {
+        // Undo goes back through the same engine; only an admin may force a move that is not a normal transition.
+        const u = engineMove(id, prev, { reason: "Undo of accidental move", override: isAdmin });
+        say(u.ok ? { msg: `${id} moved back to ${stageLabel(prev)}` } : { msg: `Cannot undo: ${u.error}`, tone: "warn" });
+      },
+    });
     return true;
   };
-  const moveStage = (o: Order, d: 1 | -1) => {
-    let i = STAGES.findIndex((x) => x.key === o.stage) + d;
-    while (STAGES[i] && blocked(o, STAGES[i]!.key)) i += d;
-    const t = STAGES[i];
-    if (!t) { say({ msg: d > 0 ? `${o.id} is already at the last stage` : `${o.id} is already at the first stage`, tone: "warn" }); return; }
-    tryMove(o.id, t.key);
+  const stepTo = (o: Order, to: StageKey) => { tryMove(o.id, to); };
+  const confirmAdd = () => {
+    if (!pick) { setPerr("Select an order to add"); return; }
+    const o = ORDERS.find((x) => x.id === pick)!;
+    const r = legal(o, addTo!);
+    if (!r) { setPerr(nextStages(o).length ? `${o.id} (${stageLabel(o.stage)}) can only move to ${nextStages(o).map((n) => stageLabel(n.to)).join(" or ")}` : `${o.id} cannot move: ${o.closed ? "order is closed" : o.hold ? `order is ${o.hold.toLowerCase()}` : "no valid next stage for your role"}`); return; }
+    const to = addTo!;
+    if (tryMove(pick, to) || r.needsReason) { setAddTo(null); setPick(""); setPerr(""); }
   };
   const bump = (o: Order, d: 1 | -1) => {
     const t = PRIORITIES[PRIORITIES.indexOf(o.priority) + d] as Priority | undefined;
     if (!t) { say({ msg: `${o.id} priority is already ${o.priority}`, tone: "warn" }); return; }
-    patchOrder(o.id, { priority: t }); say({ msg: `${o.id} priority set to ${t}` });
-  };
-  const confirmAdd = () => {
-    if (!pick) { setPerr("Select an order to add"); return; }
-    const o = ORDERS.find((x) => x.id === pick)!;
-    if (blocked(o, addTo!)) { setPerr(`Not required for Printing Only — ${o.id} skips ${stageLabel(addTo!)}`); return; }
-    tryMove(pick, addTo!); setAddTo(null); setPick(""); setPerr("");
+    editOrder(o.id, { priority: t }, "priority"); say({ msg: `${o.id} priority set to ${t}` });
   };
 
   const filtered = ORDERS.filter((o) => {
@@ -90,12 +107,12 @@ export default function Pipeline() {
   const MAX = 3;
 
   const kpis: Kpi[] = [
-    { label: "Total Orders", value: filtered.length, delta: 12, icon: ClipboardList, tone: "blue" },
-    { label: "In Production", value: n("files_received", "colour_grading", "designing"), delta: 18, icon: Settings, tone: "violet" },
-    { label: "Awaiting Approval", value: n("admin_approval", "client_review", "final_approval"), delta: -8, icon: Users, tone: "pink" },
-    { label: "Printing & QC", value: n("printing", "qc"), delta: 21, icon: Printer, tone: "blue" },
-    { label: "Ready for Delivery", value: n("ready_for_delivery"), delta: 50, icon: Truck, tone: "teal" },
-    { label: "Delivered", value: n("delivered"), delta: 27, icon: ShieldCheck, tone: "green" },
+    { label: "Total Orders", value: filtered.length, icon: ClipboardList, tone: "blue" },
+    { label: "In Production", value: n("files_received", "colour_grading", "designing"), icon: Settings, tone: "violet" },
+    { label: "Awaiting Approval", value: n("admin_approval", "client_review", "final_approval"), icon: Users, tone: "pink" },
+    { label: "Printing & QC", value: n("printing", "qc"), icon: Printer, tone: "blue" },
+    { label: "Ready for Delivery", value: n("ready_for_delivery"), icon: Truck, tone: "teal" },
+    { label: "Delivered", value: n("delivered"), icon: ShieldCheck, tone: "green" },
   ];
 
   // Workload derived from ORDERS: cumulative orders intake vs delivered, per day across the visible window.
@@ -178,18 +195,18 @@ export default function Pipeline() {
       <FilterChips chips={chips} onClearAll={reset} />
 
       {view === "grid" ? (
-        <div className="scroll-thin flex gap-3 overflow-x-auto pb-3">
+        <div data-testid="board" className="scroll-thin snap-board -mx-3 flex gap-3 overflow-x-auto px-3 pb-3 sm:mx-0 sm:px-0">
           {STAGES.map((s) => {
             const list = byStage(s.key); const t = TONE[s.tone];
             const lim = WIP[s.key]; const hot = lim !== undefined && list.length > lim;
             const dragging = drag ? ORDERS.find((o) => o.id === drag) : null;
-            const nope = !!dragging && blocked(dragging, s.key);
+            const nope = !!dragging && dragging.stage !== s.key && !legal(dragging, s.key);
             return (
-              <div key={s.key} data-stage={s.key}
+              <div key={s.key} data-stage={s.key} aria-label={`${s.label} column`} role="group"
                 onDragOver={(e) => { if (!drag) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== s.key) setOver(s.key); }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver((c) => (c === s.key ? null : c)); }}
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain") || drag; setOver(null); setDrag(null); if (id) tryMove(id, s.key); }}
-                className={cx("w-[210px] shrink-0 rounded-2xl border p-2 transition", t.border, t.soft, over === s.key && !nope && "ring-2 ring-brand ring-offset-1", over === s.key && nope && "opacity-60 ring-2 ring-rose-400", !!drag && over !== s.key && "outline-dashed outline-1 outline-slate-300")}>
+                className={cx("w-[78vw] max-w-[260px] shrink-0 rounded-2xl border p-2 transition sm:w-[210px]", t.border, t.soft, over === s.key && !nope && "ring-2 ring-brand ring-offset-1", over === s.key && nope && "opacity-60 ring-2 ring-rose-400", !!drag && over !== s.key && "outline-dashed outline-1 outline-slate-300")}>
                 <div className="flex items-center justify-between px-1.5 py-1 text-[13px] font-extrabold">
                   <span>{s.label}</span>
                   <span className="flex items-center gap-1">
@@ -207,11 +224,10 @@ export default function Pipeline() {
                       className={cx("cursor-grab rounded-xl border border-line bg-white p-2.5 text-[11px] hover:shadow-md active:cursor-grabbing", drag === o.id && "opacity-40")}>
                       <div className="flex items-start gap-2">
                         <Thumb seed={o.customer} size={34} />
-                        <div className="min-w-0 flex-1 leading-tight"><div className="font-extrabold">{o.id}</div><div className="truncate text-sub">{o.customer}</div><div className="text-sub">{o.event}{o.workflow === "Printing" ? " · Print only" : ""}</div></div>
-                        <ActionMenu width={190} items={[
+                        <div className="min-w-0 flex-1 leading-tight"><div className="font-extrabold">{o.id}{o.hold && <span className="ml-1.5 rounded bg-rose-50 px-1 text-[10px] font-bold text-rose-600">{o.hold}</span>}{o.closed && <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] font-bold text-sub">Closed</span>}</div><div className="truncate text-sub">{o.customer}</div><div className="text-sub">{o.event}{o.workflow === "Printing" ? " · Print only" : ""}</div></div>
+                        <ActionMenu width={210} label={`Actions for ${o.id}`} items={[
                           { label: "Open order", onClick: () => nav(`/orders/${o.id}`) },
-                          { label: "Move to next stage", onClick: () => moveStage(o, 1) },
-                          { label: "Move to previous stage", onClick: () => moveStage(o, -1) },
+                          ...nextStages(o).map((n) => ({ label: `Move to ${stageLabel(n.to)}${n.needsReason ? " (reason)" : ""}`, onClick: () => stepTo(o, n.to) })),
                           { label: "Raise priority", onClick: () => bump(o, 1) },
                           { label: "Lower priority", onClick: () => bump(o, -1) },
                         ]} />
@@ -263,11 +279,12 @@ export default function Pipeline() {
         </Field>
       </SlideOver>
 
+      {reasonDlg}
       {toast && (
-        <div role="status" className={cx("fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-2xl", toast.tone === "warn" ? "bg-amber-600" : "bg-ink")}>
+        <div role={toast.tone === "warn" ? "alert" : "status"} aria-live={toast.tone === "warn" ? "assertive" : "polite"} data-testid={toast.tone === "warn" ? "pipeline-warn" : "pipeline-toast"} className={cx("fixed bottom-4 left-4 right-4 z-[80] mx-auto flex max-w-xl items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-2xl sm:bottom-6", toast.tone === "warn" ? "bg-amber-700" : "bg-ink")}>
           {toast.tone === "warn" ? <Info className="size-4" /> : <CheckCircle2 className="size-4 text-emerald-400" />}
-          <span>{toast.msg}</span>
-          {toast.undo && <button onClick={() => { const u = toast.undo!; u(); }} className="inline-flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-bold hover:bg-white/25"><RotateCcw className="size-3" />Undo</button>}
+          <span className="min-w-0 flex-1">{toast.msg}</span>
+          {toast.undo && <button data-testid="undo-move" onClick={() => { const u = toast.undo!; u(); }} className="inline-flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-bold hover:bg-white/25"><RotateCcw className="size-3" />Undo</button>}
         </div>
       )}
     </div>

@@ -9,6 +9,9 @@ import { RowMenu } from "../components/RowMenu";
 import { useConfirm } from "../components/ConfirmDialog";
 import { STAFF, type Staff, type Tone } from "../lib/data";
 import { fmtDate } from "../lib/format";
+import { logAudit } from "../lib/audit";
+import { loadUsers, saveUsers } from "../lib/users";
+import { usePersistentState } from "../lib/localState";
 
 type Tab = "users" | "roles" | "permissions";
 const ROLE_TONE: Record<string, Tone> = { "Super Admin": "indigo", Designer: "pink", Printer: "orange", "Colour Grading": "blue", "QC Executive": "amber", Reception: "green", Accounts: "violet" };
@@ -147,8 +150,9 @@ function PermGrid({ value, onChange, locked }: { value: RolePerms; onChange: (v:
 
 export default function UsersRoles() {
   const [tab, setTab] = useState<Tab>("users");
-  const [users, setUsers] = useState<Staff[]>(STAFF);
-  const [roles, setRoles] = useState<RoleDef[]>(BASE_ROLES.map((name) => ({ name, desc: ROLE_DESC[name]!, tone: ROLE_TONE[name]! })));
+  const [users, setUsers] = useState<Staff[]>(loadUsers);
+  useEffect(() => { saveUsers(users); }, [users]);
+  const [roles, setRoles] = usePersistentState<RoleDef[]>("roles", () => BASE_ROLES.map((name) => ({ name, desc: ROLE_DESC[name]!, tone: ROLE_TONE[name]! })));
   const [q, setQ] = useState("");
   const [fRole, setFRole] = useState<string[]>([]);
   const [fDept, setFDept] = useState<string[]>([]);
@@ -179,8 +183,8 @@ export default function UsersRoles() {
   const [rp, setRp] = useState<RolePerms>(blankPerm);
   const [rErr, setRErr] = useState<{ name?: string; desc?: string }>({});
   // permissions
-  const [perms, setPerms] = useState<Perms>(initialPerms);
-  const [saved, setSaved] = useState<Perms>(initialPerms);
+  const [saved, setSaved] = usePersistentState<Perms>("perms_saved", initialPerms);
+  const [perms, setPerms] = useState<Perms>(saved);
   const dirty = JSON.stringify(perms) !== JSON.stringify(saved);
   const stash = useRef<Record<string, Act[]>>({});
   const [anchor, setAnchor] = useState<{ ri: number; mi: number } | null>(null);
@@ -188,7 +192,11 @@ export default function UsersRoles() {
 
   const roleNames = roles.map((r) => r.name);
   const roleTone = (n: string): Tone => roles.find((r) => r.name === n)?.tone ?? "slate";
-  const log = (action: string, target: string | null, detail: string) => setAudit((a) => [{ id: `L${Date.now()}${a.length}`, at: new Date().toISOString(), actor: "Admin", action, target, detail }, ...a]);
+  const log = (action: string, target: string | null, detail: string, from?: string, to?: string) => {
+    logAudit({ entity: /^(Role|Permission)/.test(action) ? "permission" : "user", entityId: target ?? detail.split(":")[0]!, action: action.toLowerCase().replace(/\s+/g, "_"), detail, from, to });
+    addLocal(action, target, detail);
+  };
+  const addLocal = (action: string, target: string | null, detail: string) => setAudit((a) => [{ id: `L${Date.now()}${a.length}`, at: new Date().toISOString(), actor: "Admin", action, target, detail }, ...a]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -246,8 +254,11 @@ export default function UsersRoles() {
     setTouched(true);
     if (!formOk) return;
     if (editing) {
+      const before = users.find((u) => u.id === editing);
       setUsers((l) => l.map((u) => (u.id === editing ? { ...u, name: f.name.trim(), email: f.email.trim(), mobile: f.mobile.trim(), role: f.role, dept: f.dept } : u)));
-      log("User updated", editing, `${f.name.trim()} - ${f.role} / ${f.dept}`);
+      const diff = before ? (["name", "email", "mobile", "role", "dept"] as const).filter((k) => before[k] !== (k === "name" ? f.name.trim() : k === "email" ? f.email.trim() : k === "mobile" ? f.mobile.trim() : f[k])) : [];
+      const val = (k: (typeof diff)[number], src: "old" | "new") => (src === "old" ? before![k] : k === "name" ? f.name.trim() : k === "email" ? f.email.trim() : k === "mobile" ? f.mobile.trim() : f[k]);
+      log("User updated", editing, `${f.name.trim()} - ${f.role} / ${f.dept}`, diff.map((k) => `${k}: ${val(k, "old")}`).join("; "), diff.map((k) => `${k}: ${val(k, "new")}`).join("; "));
       show(`${f.name.trim()} updated`);
     } else {
       const id = newId();
@@ -264,9 +275,9 @@ export default function UsersRoles() {
   const setStatus = (ids: string[], status: "Active" | "Inactive") => {
     setUsers((l) => l.map((u) => (ids.includes(u.id) ? { ...u, status } : u)));
     if (status === "Inactive") setSessions((s) => ({ ...s, ...Object.fromEntries(ids.map((i) => [i, []])) }));
-    ids.forEach((i) => log(status === "Active" ? "User activated" : "User deactivated", i, status === "Active" ? "Account re-enabled" : "All sessions ended"));
+    ids.forEach((i) => log(status === "Active" ? "User activated" : "User deactivated", i, status === "Active" ? "Account re-enabled" : "All sessions ended; login blocked", status === "Active" ? "Inactive" : "Active", status));
   };
-  const removeUsers = (ids: string[]) => { setUsers((l) => l.filter((u) => !ids.includes(u.id))); setSel((s) => { const n = new Set(s); ids.forEach((i) => n.delete(i)); return n; }); if (drawer && ids.includes(drawer)) setDrawer(null); };
+  const removeUsers = (ids: string[]) => { ids.forEach((i) => { const u = users.find((x) => x.id === i); if (u) log("User deleted", i, `${u.name} (${u.email})`, `${u.role} / ${u.status}`, "deleted"); }); setUsers((l) => l.filter((u) => !ids.includes(u.id))); setSel((s) => { const n = new Set(s); ids.forEach((i) => n.delete(i)); return n; }); if (drawer && ids.includes(drawer)) setDrawer(null); };
   const toggleSel = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const togglePage = () => setSel((s) => { const n = new Set(s); if (allOnPage) rows.forEach((u) => n.delete(u.id)); else rows.forEach((u) => n.add(u.id)); return n; });
   const resetPw = (u: Staff) => confirm({ title: "Reset password", message: `Send a password reset link to ${u.email}? The current password stops working.`, confirmLabel: "Send reset link" }, () => { log("Password reset", u.id, "Reset link emailed"); show(`Password reset link sent to ${u.email}`); });
@@ -322,12 +333,12 @@ export default function UsersRoles() {
         setUsers((l) => l.map((u) => (u.role === old ? { ...u, role: name } : u)));
         if (fRole.includes(old)) setFRole(fRole.map((r) => (r === old ? name : r)));
       }
-      log("Role updated", null, `${name}: ${countModules(rp)} modules`);
+      log("Role updated", name, `${name}: ${countModules(rp)} modules`, `${old}: ${countModules(perms[old])} modules`, `${name}: ${countModules(rp)} modules`);
       show(`Role ${name} updated`);
     } else {
       setRoles((l) => [...l, { name, desc: rf.desc.trim(), tone: EXTRA_TONES[l.length % EXTRA_TONES.length]! }]);
       setPerms((p) => ({ ...p, [name]: clonePerm(rp) })); setSaved((p) => ({ ...p, [name]: clonePerm(rp) }));
-      log("Role created", null, `${name}: ${countModules(rp)} modules`);
+      log("Role created", name, `${name}: ${countModules(rp)} modules`, undefined, `${countModules(rp)} modules`);
       show(`Role ${name} created`);
     }
     setRSlide(null);
@@ -337,6 +348,7 @@ export default function UsersRoles() {
     while (roleNames.includes(name)) name = `${r.name} Copy ${n++}`;
     setRoles((l) => [...l, { ...r, name }]);
     setPerms((p) => ({ ...p, [name]: clonePerm(p[r.name]!) })); setSaved((p) => ({ ...p, [name]: clonePerm(p[r.name]!) }));
+    log("Role created", name, `Cloned from ${r.name}`, undefined, `${countModules(perms[r.name])} modules`);
     show(`Cloned ${r.name} as ${name}`);
   };
   const deleteRole = (r: RoleDef) => {
@@ -348,6 +360,7 @@ export default function UsersRoles() {
       const drop = (p: Perms) => { const c = { ...p }; delete c[r.name]; return c; };
       setPerms(drop); setSaved(drop);
       setFRole((l) => l.filter((x) => x !== r.name));
+      log("Role deleted", r.name, `${r.name}`, `${countModules(perms[r.name])} modules`, "deleted");
       show(`Role ${r.name} deleted`);
     });
   };
@@ -380,7 +393,13 @@ export default function UsersRoles() {
   const toggleCol = (role: string) => { const all = colAll(role); setPerms((p) => MODULES.reduce((n, m) => setCell(n, role, m, !all), p)); };
   const savePerms = () => {
     if (!dirty) { show("No permission changes to save"); return; }
-    confirm({ title: "Save permissions", message: "Permission changes need step-up authentication (SRS 2.2) and are recorded in the audit log. Confirm to continue?", confirmLabel: "Confirm & save" }, () => { setSaved(perms); log("Permissions changed", null, "Role permission matrix saved"); show("Role permissions saved"); });
+    confirm({ title: "Save permissions", message: "Permission changes need step-up authentication (SRS 2.2) and are recorded in the audit log. Confirm to continue?", confirmLabel: "Confirm & save" }, () => {
+      const diffs: [string, string, string][] = [];
+      Object.keys(perms).forEach((role) => MODULES.forEach((m) => { const a = actLabel(saved[role]?.[m] ?? []), b = actLabel(perms[role]![m]!); if (a !== b) diffs.push([`${role} / ${m}`, a, b]); }));
+      diffs.slice(0, 60).forEach(([what, a, b]) => logAudit({ entity: "permission", entityId: what, action: "permission_change", from: a, to: b }));
+      addLocal("Permissions changed", null, `Role permission matrix saved (${diffs.length} change${diffs.length === 1 ? "" : "s"})`);
+      setSaved(perms); show(`Role permissions saved (${diffs.length} change${diffs.length === 1 ? "" : "s"})`);
+    });
   };
   const resetPerms = () => {
     if (!dirty) { show("Nothing to reset. Permissions match the saved version"); return; }

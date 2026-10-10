@@ -9,35 +9,33 @@ import { Avatar, KpiRow, Panel, LinkAction, PageHeader, PrimaryButton, MoreButto
 import { ORDERS, STAGES, countByStage, stageLabel, stageTone, type StageKey } from "../lib/data";
 import { DateRangePicker, presetRange, inRange, type DateRange } from "../components/controls";
 import { useNewOrder } from "../components/NewOrderWizard";
-import { useStore } from "../lib/store";
+import { useLive } from "../lib/useLive";
+import { AUDIT, type AuditEntry } from "../lib/audit";
+import { stageLabel as sl } from "../lib/data";
 import { fmtDate, inr, isOverdue } from "../lib/format";
 
 const DAY = 86400000;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 const stageQ = (...k: StageKey[]) => `/orders?stage=${k.join(",")}`;
 
-const activity = [
-  { t: "Design approved", d: "Wedding Album - Rahul & Priya", by: "by Admin", ago: "10 min ago", tone: "green" as const, icon: CheckCircle2 },
-  { t: "Colour grading completed", d: "IDP00071 - Naveen Photography", by: "by Suresh", ago: "32 min ago", tone: "violet" as const, icon: Palette },
-  { t: "Sent to printing", d: "IDP00068 - Photo Corner", by: "14x40 Crystal", ago: "2 hours ago", tone: "blue" as const, icon: Printer },
-  { t: "QC completed", d: "IDP00066 - Chethu", by: "12x36 Premium", ago: "3 hours ago", tone: "green" as const, icon: ShieldCheck },
-  { t: "Delivered", d: "IDP00064 - Arjun & Meera", by: "", ago: "4 hours ago", tone: "amber" as const, icon: Truck },
-];
+const ACT: Record<string, { t: string; tone: keyof typeof TONE; icon: typeof Palette }> = {
+  stage_change: { t: "Stage changed", tone: "blue", icon: PackageCheck }, stage_override: { t: "Admin override", tone: "red", icon: AlarmClock },
+  hold: { t: "Put on hold", tone: "orange", icon: Clock }, resume: { t: "Resumed", tone: "green", icon: CheckCircle2 }, cancel: { t: "Order cancelled", tone: "red", icon: AlarmClock },
+  close: { t: "Order closed", tone: "slate", icon: CheckCircle2 }, reopen: { t: "Order reopened", tone: "amber", icon: PackageCheck },
+  upload: { t: "File uploaded", tone: "violet", icon: Palette }, send: { t: "Proof sent to client", tone: "pink", icon: Send },
+  client_approval: { t: "Client approved proof", tone: "green", icon: CheckCircle2 }, client_corrections: { t: "Client asked for corrections", tone: "orange", icon: MessageSquare },
+  priority: { t: "Priority changed", tone: "amber", icon: Clock }, reassign: { t: "Reassigned", tone: "violet", icon: Users }, update: { t: "Order edited", tone: "blue", icon: ClipboardList },
+};
+const ago = (iso: string) => { const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+const actTarget = (a: AuditEntry) => (/^IDP\d+$/.test(a.entityId) ? `/orders/${a.entityId}` : "/audit");
 
-const schedule = [
-  ["10:00 AM", "Admin review - Colour grading (5 jobs)"],
-  ["12:00 PM", "Client follow-up calls (3 pending)"],
-  ["02:00 PM", "Approve designs for printing (4 jobs)"],
-  ["04:00 PM", "QC reports review"],
-  ["05:30 PM", "Team meeting - Production status"],
-];
 
 function IconTile({ icon: Icon, tone }: { icon: typeof Palette; tone: keyof typeof TONE }) {
   return <span className={cx("grid size-10 shrink-0 place-items-center rounded-xl", TONE[tone].soft, TONE[tone].text)}><Icon className="size-5" /></span>;
 }
 
 export default function Dashboard() {
-  useStore();
+  useLive();
   const nav = useNavigate();
   const newOrder = useNewOrder();
   const [range, setRange] = useState<DateRange>(() => presetRange("Last 30 Days"));
@@ -46,14 +44,14 @@ export default function Dashboard() {
   const late = ORDERS.filter((o) => o.stage !== "delivered" && !o.hold && isOverdue(o.due));
   const dues = ORDERS.reduce((a, o) => a + (o.hold === "Cancelled" ? 0 : o.total - o.paid), 0);
   const kpis: (Kpi & { to: string })[] = [
-    { label: "Total Orders", value: ORDERS.length, delta: 12, icon: ClipboardList, tone: "blue", to: "/orders" },
-    { label: "Awaiting Colour Grading", value: c("files_received", "colour_grading"), delta: 0, icon: Palette, tone: "orange", to: stageQ("files_received", "colour_grading") },
-    { label: "In Designing", value: c("designing"), delta: 28, icon: LayoutTemplate, tone: "pink", to: stageQ("designing") },
-    { label: "Client Review Pending", value: c("client_review"), delta: -18, icon: Users, tone: "pink", invert: true, to: stageQ("client_review") },
-    { label: "In Printing", value: c("printing"), delta: 10, icon: Printer, tone: "blue", to: stageQ("printing") },
-    { label: "QC Pending", value: c("qc"), delta: 33, icon: ShieldCheck, tone: "green", to: stageQ("qc") },
-    { label: "Ready for Delivery", value: c("ready_for_delivery"), delta: 50, icon: Truck, tone: "teal", to: stageQ("ready_for_delivery") },
-    { label: "Pending Dues", value: inr(dues), delta: 12, icon: IndianRupee, tone: "red", invert: true, to: "/orders?pay=Unpaid,Partial,Overdue" },
+    { label: "Total Orders", value: ORDERS.length, icon: ClipboardList, tone: "blue", to: "/orders" },
+    { label: "Awaiting Colour Grading", value: c("files_received", "colour_grading"), icon: Palette, tone: "orange", to: stageQ("files_received", "colour_grading") },
+    { label: "In Designing", value: c("designing"), icon: LayoutTemplate, tone: "pink", to: stageQ("designing") },
+    { label: "Client Review Pending", value: c("client_review"), icon: Users, tone: "pink", invert: true, to: stageQ("client_review") },
+    { label: "In Printing", value: c("printing"), icon: Printer, tone: "blue", to: stageQ("printing") },
+    { label: "QC Pending", value: c("qc"), icon: ShieldCheck, tone: "green", to: stageQ("qc") },
+    { label: "Ready for Delivery", value: c("ready_for_delivery"), icon: Truck, tone: "teal", to: stageQ("ready_for_delivery") },
+    { label: "Pending Dues", value: inr(dues), icon: IndianRupee, tone: "red", invert: true, to: "/orders?pay=Unpaid,Partial,Overdue" },
   ];
   const approvals = [
     { label: "Colour Grading Approvals", sub: "Photos awaiting admin approval", n: c("admin_approval"), icon: Palette, tone: "orange" as const, to: "/colour-grading" },
@@ -69,6 +67,14 @@ export default function Dashboard() {
     { t: "Print release pending", s: "Designs ready for print approval", n: c("final_approval"), icon: Send, tone: "red" as const, to: "/printing" },
     { t: "QC pending", s: "Awaiting quality check", n: c("qc"), icon: ShieldCheck, tone: "green" as const, to: "/qc" },
   ];
+  const schedule: [string, string][] = [
+    ["10:00 AM", `Admin review - Colour grading (${c("colour_grading", "admin_approval")} jobs)`],
+    ["12:00 PM", `Client follow-up calls (${c("client_review")} pending)`],
+    ["02:00 PM", `Approve designs for printing (${c("final_approval")} jobs)`],
+    ["04:00 PM", `QC reports review (${c("qc")} in QC)`],
+    ["05:30 PM", "Team meeting - Production status"],
+  ];
+  const feed = AUDIT.slice(0, 6);
   const pipeline = STAGES.map((s) => ({ ...s, count: countByStage(s.key) }));
   const recent = ORDERS.slice(0, 8);
   const latest = ORDERS[0];
@@ -99,7 +105,7 @@ export default function Dashboard() {
         <MoreButton />
       </PageHeader>
 
-      <div className="mb-5 grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 md:[grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
         {kpis.map((k) => <button key={k.label} data-kpi={k.label} onClick={() => nav(k.to)} className="rounded-2xl text-left transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"><KpiCard k={k} /></button>)}
       </div>
 
@@ -189,21 +195,24 @@ export default function Dashboard() {
         </Panel>
 
         <div className="space-y-5">
-          <Panel title="Recent Activity" action={<LinkAction onClick={() => nav("/notifications")}>View All →</LinkAction>} bodyClassName="space-y-3">
-            {latest && (
-              <Link to={`/orders/${latest.id}`} className="flex items-start gap-3 rounded-lg hover:bg-brand-soft/60">
-                <IconTile icon={ClipboardList} tone="red" />
-                <div className="min-w-0 flex-1 text-xs leading-snug"><b className="text-[13px]">New order created</b><div className="text-sub">{latest.id} - {latest.customer}</div><div className="text-sub">{latest.event} - {latest.size}</div></div>
-                <span className="whitespace-nowrap text-[11px] text-sub">latest</span>
-              </Link>
+          <Panel title="Recent Activity"  action={<LinkAction onClick={() => nav("/audit")}>View All →</LinkAction>} bodyClassName="space-y-3">
+            {feed.map((a) => {
+              const m = ACT[a.action] ?? { t: a.action.replace(/_/g, " "), tone: "slate" as const, icon: ClipboardList };
+              const what = a.action === "stage_change" || a.action === "stage_override" ? `${a.entityId}: ${a.from ?? ""} → ${a.to ?? ""}` : `${a.entityId}${a.detail ? ` · ${a.detail}` : ""}${a.reason ? ` · ${a.reason}` : ""}`;
+              return (
+                <Link key={a.id} to={actTarget(a)} data-activity={a.action} className="flex items-start gap-3 rounded-lg hover:bg-brand-soft/60">
+                  <IconTile icon={m.icon} tone={m.tone} />
+                  <div className="min-w-0 flex-1 text-xs leading-snug"><b className="text-[13px]">{m.t}</b><div className="truncate text-sub">{what}</div><div className="text-sub">by {a.actor}</div></div>
+                  <span className="whitespace-nowrap text-[11px] text-sub">{ago(a.at)}</span>
+                </Link>
+              );
+            })}
+            {feed.length === 0 && (
+              <div data-testid="activity-empty" className="rounded-lg border border-dashed border-line p-4 text-center text-xs text-sub">
+                No activity recorded yet. Stage moves, holds, uploads and proofs will appear here as they happen.
+                {latest && <Link to={`/orders/${latest.id}`} className="mt-2 block font-bold text-brand hover:underline">Latest order: {latest.id} - {latest.customer}</Link>}
+              </div>
             )}
-            {activity.map((a) => (
-              <Link key={a.t + a.d} to={/^IDP\d+/.test(a.d.split(" ")[0]!) ? `/orders/${a.d.split(" ")[0]}` : "/orders"} className="flex items-start gap-3 rounded-lg hover:bg-brand-soft/60">
-                <IconTile icon={a.icon} tone={a.tone} />
-                <div className="min-w-0 flex-1 text-xs leading-snug"><b className="text-[13px]">{a.t}</b><div className="text-sub">{a.d}</div><div className="text-sub">{a.by}</div></div>
-                <span className="whitespace-nowrap text-[11px] text-sub">{a.ago}</span>
-              </Link>
-            ))}
           </Panel>
           <Panel title="Workflow Alerts" action={<LinkAction onClick={() => nav("/orders")}>View All →</LinkAction>} bodyClassName="space-y-2.5">
             {alerts.map((a) => (

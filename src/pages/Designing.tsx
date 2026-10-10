@@ -1,26 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical } from "lucide-react";
+import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
 import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
 import { Combobox } from "../components/controls";
-import { Err, FieldBox, Kbd, strOpts } from "../components/pageKit";
+import { Err, FieldBox, Kbd, Segmented, Banner, strOpts } from "../components/pageKit";
+import { ProofPanel } from "../components/ProofPanel";
+import { useAuth } from "../lib/auth";
+import { flushAll } from "../lib/persist";
+import { currentActor, logAudit } from "../lib/audit";
+import { useStore, notify } from "../lib/store";
+import { moveStage } from "../lib/workflow";
+import { createProof, latestProof, proofApproved, proofUrl, revokeProof, type Proof } from "../lib/proofs";
+import { FILES, addFile, lockFile } from "../lib/files";
+import { CUSTOMERS } from "../lib/data";
+import { addCorrection as addDesignCorrection, correctionsFor, metaFor, save as saveMeta, setCorrectionStatus } from "../lib/design";
 import { ORDERS, STAFF } from "../lib/data";
 import { fmtDate } from "../lib/format";
 
-type DStatus = "In Designing" | "With Client" | "Corrections Requested" | "Approved";
-const STATUS_PROGRESS: Record<DStatus, number> = { "In Designing": 40, "With Client": 75, "Corrections Requested": 50, Approved: 100 };
-const STATUS_TONE = { "In Designing": "green", "With Client": "amber", "Corrections Requested": "red", Approved: "teal" } as const;
+type DStatus = "Not Started" | "In Designing" | "Pending Admin Review" | "Ready to Send" | "With Client" | "Corrections Requested" | "Client Approved" | "Locked for Print" | "In Production";
+const STATUS_PROGRESS: Record<DStatus, number> = { "Not Started": 0, "In Designing": 40, "Pending Admin Review": 55, "Ready to Send": 65, "With Client": 75, "Corrections Requested": 50, "Client Approved": 90, "Locked for Print": 95, "In Production": 100 };
+const STATUS_TONE = { "Not Started": "slate", "In Designing": "green", "Pending Admin Review": "indigo", "Ready to Send": "teal", "With Client": "amber", "Corrections Requested": "red", "Client Approved": "teal", "Locked for Print": "teal", "In Production": "green" } as const;
+const CHANNELS = ["WhatsApp", "Email", "Link"] as const;
+interface CorrItem { key: string; source: "Admin" | "Client"; page: number; text: string; by: string; status: "Open" | "In Progress" | "Resolved"; assignee: string; run: (s: "Open" | "In Progress" | "Resolved") => void }
 
 const TEMPLATES = ["Classic Elegance", "Modern Minimal", "Royal Heritage", "Cinematic", "Pastel Dreams", "Traditional", "Dark Luxe", "Nature Bliss"];
 const TPL_TABS = ["Design Templates", "Layouts", "Backgrounds", "Stickers", "Frames", "Elements"];
 const ZMIN = 40, ZMAX = 150, ZFIT = 85;
 
-interface Correction { id: string; page: number; text: string; by: string; status: "Open" | "In Progress" | "Resolved"; assignee: string }
-const CORRECTIONS0: Correction[] = [
-  { id: "COR-001", page: 12, text: "Warm up the skin tones on the right photo.", by: "Client", status: "Open", assignee: "Ramesh" },
-  { id: "COR-002", page: 5, text: "Replace the bottom-left photo with the sangeet shot.", by: "Client", status: "In Progress", assignee: "Ramesh" },
-  { id: "COR-003", page: 1, text: "Cover title font too thin - use bolder script.", by: "Admin", status: "Open", assignee: "Ameer Khan" },
-];
 const DESIGNERS = [...new Set([...STAFF.filter((s) => s.role === "Designer").map((s) => s.name.split(" ").slice(0, 2).join(" ")), "Admin"])];
 const BG_SWATCHES = ["#fbf7f0", "#ffffff", "#f3e8ff", "#fde68a", "#fecdd3", "#bae6fd", "#bbf7d0", "#1e293b"];
 
@@ -54,7 +60,14 @@ const nowLabel = () => "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", {
 
 export default function Designing() {
   const { orderId } = useParams();
+  useStore();
+  const { role } = useAuth();
+  const isAdmin = role === "admin";
   const order = ORDERS.find((o) => o.id === (orderId ?? "IDP00072")) ?? ORDERS.find((o) => o.id === "IDP00072")!;
+  const meta = metaFor(order.id);
+  const proof = latestProof(order.id);
+  const clientApproved = proofApproved(order.id);
+  const lockedFile = FILES.find((f) => f.orderId === order.id && f.category === "Final Print" && f.state === "Locked" && !f.archived);
 
   const initDoc = (): Doc => ({ tpl: 0, spreads: Array.from({ length: Math.ceil(order.pages / 2) + 1 }, (_, i) => ({ id: i, overlays: [] })) });
   const [doc, setDoc] = useState<Doc>(initDoc);
@@ -70,8 +83,6 @@ export default function Designing() {
   const [editOv, setEditOv] = useState<number | null>(null);
   const [tplTab, setTplTab] = useState("Design Templates");
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
-  const [status, setStatus] = useState<DStatus>("In Designing");
-  const [corrections, setCorrections] = useState(CORRECTIONS0);
   const [comments, setComments] = useState(COMMENTS0);
   const [cDraft, setCDraft] = useState("");
   const [cPage, setCPage] = useState("1");
@@ -81,10 +92,19 @@ export default function Designing() {
   const [crText, setCrText] = useState("");
   const [crAssignee, setCrAssignee] = useState(DESIGNERS[0]!);
   const [crErr, setCrErr] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState([{ text: "Include couple name on cover and check colour tone for page 12.", by: "Admin", when: "2 hours ago" }]);
+  const notes = meta.notes;
+  const setNotes = (n: typeof meta.notes) => { meta.notes = n; notify(); logAudit({ entity: "design", entityId: order.id, action: "notes_changed" }); };
   const [noteDraft, setNoteDraft] = useState("");
   const [adding, setAdding] = useState(false);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<ReactNode>("");
+  const [sendOpen, setSendOpen] = useState(false);
+  const [channel, setChannel] = useState<(typeof CHANNELS)[number]>("WhatsApp");
+  const [days, setDays] = useState("7");
+  const [sendErr, setSendErr] = useState("");
+  const [backOpen, setBackOpen] = useState(false);
+  const [backPage, setBackPage] = useState("1");
+  const [backText, setBackText] = useState("");
+  const [backErr, setBackErr] = useState("");
   const [saveMenu, setSaveMenu] = useState(false);
   const [versions, setVersions] = useState(1);
   const [bgOpen, setBgOpen] = useState(false);
@@ -104,8 +124,14 @@ export default function Designing() {
   const spreads = doc.spreads;
   const cur = spreads[Math.min(page, spreads.length - 1)]!;
   const pageNo = page === 0 ? 1 : page * 2;
-  const openCorr = corrections.filter((c) => c.status !== "Resolved").length;
-  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+  const actor = currentActor();
+  const corrItems: CorrItem[] = [
+    ...correctionsFor(order.id).map((c): CorrItem => ({ key: c.id, source: "Admin", page: c.page, text: c.text, by: c.by, status: c.status, assignee: c.assignee, run: (st) => setCorrectionStatus(c, st) })),
+    ...(proof?.comments ?? []).map((c, i): CorrItem => ({ key: `P${proof!.version}-${i + 1}`, source: "Client", page: c.page, text: c.text, by: `Client (v${proof!.version})`, assignee: "Ramesh Kumar", status: c.resolved ? "Resolved" : c.inProgress ? "In Progress" : "Open",
+      run: (st) => { c.resolved = st === "Resolved"; c.inProgress = st === "In Progress"; notify(); logAudit({ entity: "proof", entityId: order.id, action: "correction_" + st.toLowerCase().replace(" ", "_"), detail: `v${proof!.version} page ${c.page}` }); } })),
+  ];
+  const openCorr = corrItems.filter((c) => c.status !== "Resolved").length;
+  const flash = (m: ReactNode, ms = 2600) => { setToast(m); setTimeout(() => setToast(""), ms); };
   const log = (text: string) => setEvents((e) => [...e, { when: nowLabel(), text }]);
 
   /* ───────── history ───────── */
@@ -193,10 +219,9 @@ export default function Designing() {
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
   };
   const copyLink = async () => {
-    const link = `https://albumpro.app/proof/${order.id}/${Math.random().toString(36).slice(2, 10)}`;
-    try { await navigator.clipboard.writeText(link); } catch { /* clipboard may be unavailable */ }
-    flash("Secure proof link copied: " + link);
-    log("Secure proof link generated");
+    if (!liveProof) return flash("No live proof link - send for client review first");
+    try { await navigator.clipboard.writeText(proofUrl(liveProof)); } catch { /* clipboard may be unavailable */ }
+    flash("Proof link copied: " + proofUrl(liveProof)); log("Proof link copied");
   };
   const saveAction = (k: "draft" | "version" | "discard") => {
     setSaveMenu(false);
@@ -205,13 +230,75 @@ export default function Designing() {
     else { setDoc(initDoc()); setPast([]); setFuture([]); setPage(0); setSelOv(null); flash("Unsaved changes discarded"); }
   };
 
-  const canSend = status === "In Designing" || status === "Corrections Requested";
-  const send = () => {
-    if (!canSend) return;
-    if (openCorr > 0 && status === "Corrections Requested") { flash("Resolve open corrections first"); return; }
-    setStatus("With Client"); flash("Proof sent to client for review");
+  /* ───────── workflow: review → client proof → lock ───────── */
+  const stage = order.stage;
+  const status: DStatus = stage === "designing"
+    ? meta.submitted ? "Pending Admin Review" : openCorr > 0 ? "Corrections Requested" : meta.adminApproved ? "Ready to Send" : "In Designing"
+    : stage === "client_review" ? (clientApproved ? "Client Approved" : "With Client")
+    : stage === "final_approval" ? "Locked for Print"
+    : ["new_order", "files_received", "colour_grading", "admin_approval"].includes(stage) ? "Not Started" : "In Production";
+  const err = (m: string) => flash(m);
+  const adminOnly = (what: string) => { if (!isAdmin) { flash(`Only an admin can ${what}`); return false; } return true; };
+  const validate = (): string => {
+    if (stage !== "designing") return stage === "client_review" ? "Already with the client - use Resend in the Client proof panel" : "Order is not in the Designing stage";
+    if (!(order.pages > 0)) return "Add at least one page before sending";
+    if (openCorr > 0) return "Resolve all open corrections first";
+    return "";
   };
-  const nextCorrId = (cs: Correction[]) => `COR-${String(Math.max(0, ...cs.map((c) => Number(c.id.slice(4)))) + 1).padStart(3, "0")}`;
+  const submitForReview = () => {
+    const m = validate(); if (m) return err(m);
+    saveMeta(order.id, { submitted: true, submittedAt: new Date().toISOString() }, "design_submitted");
+    log("Design submitted for admin review"); flash("Submitted - pending admin review");
+  };
+  const approveDesign = () => {
+    if (!adminOnly("approve a design")) return;
+    const m = validate(); if (m) return err(m);
+    saveMeta(order.id, { submitted: false, adminApproved: true }, "design_approved");
+    log("Design approved by admin"); flash("Design approved - ready to send to client");
+  };
+  const sendBack = () => {
+    if (!adminOnly("send a design back")) return;
+    const pg = Number(backPage);
+    if (!Number.isInteger(pg) || pg < 1 || pg > order.pages) return setBackErr(`Page must be between 1 and ${order.pages}`);
+    if (backText.trim().length < 5) return setBackErr("A reason is required (at least 5 characters)");
+    addDesignCorrection(order.id, pg, backText.trim(), "Admin", DESIGNERS[0]!);
+    saveMeta(order.id, { submitted: false, adminApproved: false }, "design_sent_back", backText.trim());
+    log(`Design sent back with correction on page ${pg}`); setBackOpen(false); setBackText(""); setBackErr(""); setRTab("corrections"); flash("Sent back to designer with correction");
+  };
+  const openSend = () => {
+    const m = validate(); if (m) return err(m);
+    if (!meta.adminApproved && !isAdmin) return err("Admin must approve the design before it is sent to the client");
+    setSendErr(""); setSendOpen(true);
+  };
+  const cust = CUSTOMERS.find((c) => c.name === order.customer);
+  const recipient = channel === "WhatsApp" ? order.mobile : channel === "Email" ? cust?.email ?? "" : "Shareable link (no message sent)";
+  const confirmSend = async () => {
+    const d = Number(days);
+    if (!Number.isInteger(d) || d < 1 || d > 60) return setSendErr("Expiry must be 1-60 days");
+    if (channel === "Email" && !recipient) return setSendErr("No email on file for this customer - use WhatsApp or Link");
+    const m = validate(); if (m) return setSendErr(m);
+    const p = createProof(order.id, order.pages, channel, d);
+    const r = moveStage(order.id, "client_review");
+    if (!r.ok) { revokeProof(p); notify(); setSendErr(r.error); return; }
+    saveMeta(order.id, { submitted: false }, "design_sent_to_client"); flushAll();
+    try { await navigator.clipboard.writeText(proofUrl(p)); } catch { /* clipboard may be unavailable */ }
+    setSendOpen(false); log(`Proof v${p.version} sent via ${channel}`);
+    flash(<span>Proof v{p.version} sent via {channel} - link copied. <a href={`/proof/${p.token}`} target="_blank" rel="noreferrer" className="font-bold underline">Open client view</a></span>, 8000);
+  };
+  const lockForPrint = () => {
+    if (!adminOnly("approve for print")) return;
+    if (!proofApproved(order.id)) return err("Client approval is required before the print version can be locked");
+    const r = moveStage(order.id, "final_approval"); if (!r.ok) return err(r.error);
+    const f = addFile(order.id, "Final Print", `${order.id}-final-print.pdf`, order.pages * 2.4 * 1024 ** 2 | 0);
+    if (!f.ok) return err(f.error);
+    lockFile(f.file.id); notify(); flushAll(); log("Final print version locked"); flash(`Print version locked (${f.file.name} v${f.file.version})`);
+  };
+  const releaseToPrinting = () => {
+    if (!adminOnly("release to printing")) return;
+    const r = moveStage(order.id, "printing"); if (!r.ok) return err(r.error);
+    flushAll(); log("Released to printing"); flash("Released to printing");
+  };
+  const liveProof: Proof | undefined = proof && ["sent", "viewed"].includes(proof.status) ? proof : undefined;
   const postComment = () => {
     const pg = Number(cPage);
     if (cDraft.trim().length < 3) return setCErr("Write a comment (at least 3 characters)");
@@ -226,7 +313,7 @@ export default function Designing() {
     if (crText.trim().length < 5) e.text = "Describe the correction (at least 5 characters)";
     setCrErr(e);
     if (Object.keys(e).length) return;
-    setCorrections((cs) => [...cs, { id: nextCorrId(cs), page: pg, text: crText.trim(), by: "Admin", status: "Open", assignee: crAssignee }]);
+    addDesignCorrection(order.id, pg, crText.trim(), actor.name, crAssignee);
     setCrText(""); setCorrOpen(false); log(`Correction added on page ${pg}, assigned to ${crAssignee}`); flash(`Correction assigned to ${crAssignee}`);
   };
 
@@ -449,7 +536,7 @@ export default function Designing() {
             )}
             {rTab === "corrections" && (
               <div className="space-y-3">
-                {!corrOpen ? (
+                {!isAdmin ? null : !corrOpen ? (
                   <OutlineButton icon={Plus} className="w-full justify-center" onClick={() => { setCorrOpen(true); setCrPage(String(pageNo)); setCrErr({}); }}>Add correction</OutlineButton>
                 ) : (
                   <div className="space-y-2 rounded-xl border border-brand/40 bg-brand-soft/30 p-3 text-[13px]">
@@ -463,16 +550,18 @@ export default function Designing() {
                     <div className="flex gap-2"><button onClick={addCorrection} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-white">Add &amp; assign</button><button onClick={() => setCorrOpen(false)} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold">Cancel</button></div>
                   </div>
                 )}
-                {corrections.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-line p-3 text-[13px]">
-                    <div className="flex items-center gap-2"><b>{c.id}</b><span className="text-xs text-sub">Page {c.page} - {c.by}</span>
+                {!corrItems.length && <p className="py-4 text-center text-[13px] text-sub">No corrections for this order.</p>}
+                {corrItems.map((c) => (
+                  <div key={c.key} data-testid="correction" className="rounded-xl border border-line p-3 text-[13px]">
+                    <div className="flex items-center gap-2"><b>{c.key}</b><span className="text-xs text-sub">Page {c.page} - {c.by}</span>
                       <Pill className="ml-auto" tone={c.status === "Resolved" ? "green" : c.status === "Open" ? "red" : "amber"}>{c.status}</Pill></div>
                     <p className="mt-2">{c.text}</p>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-sub"><Avatar name={c.assignee} size={18} />Assigned to <b className="text-ink">{c.assignee}</b></div>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-sub"><Avatar name={c.assignee} size={18} />Assigned to <b className="text-ink">{c.assignee}</b>
+                      <button onClick={() => { setPage(c.page <= 1 ? 0 : Math.min(spreads.length - 1, Math.ceil(c.page / 2))); setSelOv(null); }} className="ml-auto font-bold text-brand">Go to page {c.page}</button></div>
                     {c.status !== "Resolved" && (
                       <div className="mt-2 flex gap-2">
-                        {c.status === "Open" && <OutlineButton onClick={() => setCorrections((cs) => cs.map((x) => x.id === c.id ? { ...x, status: "In Progress" } : x))}>Start</OutlineButton>}
-                        <OutlineButton onClick={() => setCorrections((cs) => cs.map((x) => x.id === c.id ? { ...x, status: "Resolved" } : x))}>Mark Resolved</OutlineButton>
+                        {c.status === "Open" && <OutlineButton onClick={() => c.run("In Progress")}>Start</OutlineButton>}
+                        <OutlineButton onClick={() => c.run("Resolved")}>Mark Resolved</OutlineButton>
                       </div>
                     )}
                   </div>
@@ -488,20 +577,43 @@ export default function Designing() {
               <Pill tone={STATUS_TONE[status]}>{status}</Pill>
             </div>
             <div className="mt-3 flex items-center gap-3"><ProgressBar value={STATUS_PROGRESS[status]} tone="green" /><b className="text-xs text-emerald-600">{STATUS_PROGRESS[status]}%</b></div>
-            <button onClick={send} disabled={!canSend} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark disabled:bg-slate-300">
-              <CheckCircle2 className="size-4" />{canSend ? "Send for Client Review" : status === "With Client" ? "Awaiting Client" : status}
-            </button>
-            {status === "With Client" && (
-              <div className="mt-2 flex gap-2">
-                <OutlineButton className="flex-1 justify-center" onClick={() => setStatus("Approved")}>Client Approved</OutlineButton>
-                <OutlineButton className="flex-1 justify-center" onClick={() => { setStatus("Corrections Requested"); setCorrections((c) => [...c, { id: nextCorrId(c), page: pageNo, text: "Client requested change on this page.", by: "Client", status: "Open", assignee: "Ramesh" }]); setRTab("corrections"); }}>Request Correction</OutlineButton>
+            {lockedFile && <div data-testid="lock-badge" className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700"><Lock className="size-3.5" />Print version locked - {lockedFile.name} v{lockedFile.version}</div>}
+            {stage === "designing" && (
+              <div className="mt-4 space-y-2">
+                {status === "Pending Admin Review" && !isAdmin && <Banner tone="blue">Submitted - waiting for admin review</Banner>}
+                {!meta.adminApproved && !isAdmin && (
+                  <button onClick={submitForReview} disabled={meta.submitted} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark disabled:bg-slate-300"><CheckCircle2 className="size-4" />{meta.submitted ? "Pending admin review" : "Submit for admin review"}</button>
+                )}
+                {isAdmin && !meta.adminApproved && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={approveDesign} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700"><ShieldCheck className="size-4" />Approve design</button>
+                    <button onClick={() => { setBackPage(String(pageNo)); setBackErr(""); setBackOpen(true); }} className="h-11 rounded-xl border border-rose-300 text-sm font-bold text-rose-600 hover:bg-rose-50">Send back with correction</button>
+                  </div>
+                )}
+                {(meta.adminApproved || isAdmin) && (
+                  <button onClick={openSend} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark"><Send className="size-4" />{proof ? (proof.status === "corrections" ? `Resubmit to client (v${proof.version + 1})` : "Send new proof to client") : "Send for Client Review"}</button>
+                )}
               </div>
             )}
+            {stage === "client_review" && (
+              <div className="mt-4 space-y-2">
+                <button disabled className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-300 text-sm font-bold text-white">{clientApproved ? "Client approved" : "Awaiting Client"}</button>
+                {isAdmin && <button onClick={lockForPrint} disabled={!clientApproved} title={clientApproved ? "" : "Needs client approval"} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300"><Lock className="size-4" />Approve for print (lock)</button>}
+              </div>
+            )}
+            {stage === "final_approval" && (
+              <div className="mt-4">
+                {isAdmin ? <button onClick={releaseToPrinting} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark"><Send className="size-4" />Release to printing</button> : <Banner tone="blue">Locked - awaiting admin release to printing</Banner>}
+              </div>
+            )}
+            {!["designing", "client_review", "final_approval"].includes(stage) && <div className="mt-4"><Banner tone="amber">Order is at the "{stage.replace(/_/g, " ")}" stage - proofing starts once it reaches Designing.</Banner></div>}
             <div className="mt-2 grid grid-cols-2 gap-2">
               <OutlineButton className="h-10 justify-center" icon={Download} onClick={() => { download(`${order.id}-proof.txt`, `Album proof\nOrder: ${order.id}\nClient: ${order.customer}\nPages: ${order.pages}\nTemplate: ${TEMPLATES[doc.tpl]}\nStatus: ${status}\n`); flash("Proof downloaded"); log("Proof downloaded"); }}>Download Proof</OutlineButton>
               <OutlineButton className="h-10 justify-center" icon={Link2} onClick={copyLink}>Share Link</OutlineButton>
             </div>
           </Panel>
+
+          <ProofPanel orderId={order.id} />
 
           <Panel title="Quick Notes" action={<LinkAction onClick={() => setAdding((a) => !a)}>Add Note</LinkAction>} bodyClassName="p-4">
             {adding && (
@@ -530,6 +642,23 @@ export default function Designing() {
           </Panel>
         </div>
       </div>
+      <SlideOver open={sendOpen} onClose={() => setSendOpen(false)} title="Send for client review" footer={<><button onClick={() => setSendOpen(false)} className="h-10 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button><button onClick={confirmSend} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Send proof</button></>}>
+        <div className="space-y-5 text-[13px]">
+          <div className="rounded-xl bg-slate-50 p-3"><b>{order.id}</b> - {order.customer} - {order.event}<div className="text-xs text-sub">{order.pages} pages{proof ? ` - this will be version ${proof.version + 1}` : ""}</div></div>
+          <div><div className="mb-1.5 font-semibold">Send via</div><Segmented value={channel} options={CHANNELS} onChange={(v) => { setChannel(v); setSendErr(""); }} /></div>
+          <div><div className="mb-1.5 font-semibold">Recipient</div><div data-testid="recipient" className="rounded-lg border border-line px-3 py-2.5">{recipient || <span className="text-rose-600">No email on file</span>}</div></div>
+          <label className="block font-semibold">Link expires after (days)<input aria-label="Expiry days" type="number" min={1} max={60} value={days} onChange={(e) => { setDays(e.target.value); setSendErr(""); }} className="mt-1.5 h-10 w-full rounded-lg border border-line px-3 text-sm font-normal outline-none focus:border-brand" /></label>
+          <p className="text-xs text-sub">Any previous live link for this order is revoked. The new link is copied to your clipboard.</p>
+          <Err>{sendErr}</Err>
+        </div>
+      </SlideOver>
+      <SlideOver open={backOpen} onClose={() => setBackOpen(false)} title="Send back with correction" footer={<><button onClick={() => setBackOpen(false)} className="h-10 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button><button onClick={sendBack} className="h-10 rounded-lg bg-rose-600 px-5 text-sm font-bold text-white">Send back</button></>}>
+        <div className="space-y-4 text-[13px]">
+          <label className="block font-semibold">Page no.<input aria-label="Send back page" type="number" min={1} max={order.pages} value={backPage} onChange={(e) => setBackPage(e.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-line px-3 text-sm font-normal outline-none focus:border-brand" /></label>
+          <label className="block font-semibold">Reason / correction<textarea aria-label="Send back reason" value={backText} onChange={(e) => { setBackText(e.target.value); setBackErr(""); }} className="mt-1.5 h-28 w-full resize-none rounded-lg border border-line p-2.5 text-sm font-normal outline-none focus:border-brand" /></label>
+          <Err>{backErr}</Err>
+        </div>
+      </SlideOver>
       <SlideOver open={timelineOpen} onClose={() => setTimelineOpen(false)} title="Status Timeline">
         <ol className="space-y-4 border-l-2 border-line pl-4">
           {[...events, { when: "Now", text: `Current status: ${status}` }].map((e, i) => (

@@ -2,7 +2,7 @@ import { persistArray } from "./persist";
 import { logAudit } from "./audit";
 
 // SRS §11 client proofing. In production only a hash of the token is stored server-side; here the token is kept to drive the demo portal.
-export interface ProofComment { page: number; text: string; at: string; resolved?: boolean }
+export interface ProofComment { page: number; text: string; at: string; resolved?: boolean; inProgress?: boolean }
 export interface Proof {
   id: string; orderId: string; version: number; token: string; createdAt: string; expiresAt: string; sentVia: "WhatsApp" | "Email" | "Link";
   status: "sent" | "viewed" | "approved" | "corrections" | "expired" | "revoked"; viewedAt?: string; respondedAt?: string; approvedBy?: string; comments: ProofComment[]; pages: number;
