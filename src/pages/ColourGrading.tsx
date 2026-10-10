@@ -1,20 +1,28 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image as ImageIcon, UploadCloud, Send, Save, Check, X, AlertCircle, Lock } from "lucide-react";
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, TodayChip, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { ORDERS, PRIORITIES, type Priority, type Tone } from "../lib/data";
-import { MultiSelect, Combobox } from "../components/controls";
+import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
+import { ALL_TIME, desRange, inRangeOpt, rangeLabel, serRange, type SavedRange } from "../components/pageKit";
+import { RowMenu } from "../components/RowMenu";
+import { BulkBar, BulkBtn, ExportBtn, SelectTd, SelectTh, Toolbar, rangeChip, runBulk, useSelection } from "../components/listKit";
+import { downloadCsv } from "../lib/csv";
 import { useStore, useSlashFocus } from "../lib/store";
 import { fmtDate, TODAY } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
 import { fmtSize } from "../lib/files";
 import { slaState } from "../lib/sla";
-import { GJOBS, COLORISTS, ensureGradingJobs, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
+import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
 
 type Tab = "queue" | "progress" | "submitted" | "approved" | "rework";
 const STATUS_TONE: Record<GStatus, Tone> = { New: "blue", "In Progress": "blue", Rework: "red", Submitted: "violet", Approved: "green" };
 const inTab = (j: GJob, t: Tab) => t === "queue" ? ["New", "In Progress", "Rework"].includes(j.status) : t === "progress" ? j.status === "In Progress" : t === "submitted" ? j.status === "Submitted" : t === "approved" ? j.status === "Approved" : j.status === "Rework";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
+const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "status", label: "Status" }];
+interface ViewState { tab: Tab; col: string[]; prio: string[]; status: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
+const PRIO_RANK: Record<string, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
 
 export default function ColourGrading() {
   const { role } = useAuth();
@@ -26,6 +34,12 @@ export default function ColourGrading() {
   const [q, setQ] = useState("");
   const [col, setCol] = useState<string[]>([]);
   const [prio, setPrio] = useState<string[]>([]);
+  const [fStatus, setFStatus] = useState<string[]>([]);
+  const [range, setRange] = useState<DateRange>(ALL_TIME());
+  const [sort, setSort] = useState<SortState>(null);
+  const [hidden, setHidden] = useState<string[]>([]);
+  const sel = useSelection();
+  const nav = useNavigate();
   const [page, setPage] = useState(1);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -45,19 +59,37 @@ export default function ColourGrading() {
   const run = (r: Out) => { show(r.msg); return r.ok; };
   const guard = (area: "grading") => { if (can(role, area)) return true; show(`Your role (${role}) cannot perform colour grading actions`); return false; };
 
-  const base = useMemo(() => GJOBS.filter((j) => {
+  const vis = (k: string) => !hidden.includes(k);
+  const reset = () => setPage(1);
+  const base = GJOBS.filter((j) => {
     const o = ordOf(j.orderId); if (!o) return false;
-    const s = q.trim().toLowerCase();
-    if (s && ![j.orderId, o.customer, o.event].some((v) => v.toLowerCase().includes(s))) return false;
+    const t = q.trim().toLowerCase();
+    if (t && ![j.orderId, o.customer, o.event].some((v) => v.toLowerCase().includes(t))) return false;
     if (col.length && !col.includes(j.colorist)) return false;
     if (prio.length && !prio.includes(j.priority)) return false;
-    return true;
-  }), [q, col, prio, GJOBS.length, GJOBS.map((j) => j.status).join()]); // eslint-disable-line react-hooks/exhaustive-deps
-  const list = base.filter((j) => inTab(j, tab));
+    if (fStatus.length && !fStatus.includes(j.status)) return false;
+    return inRangeOpt(j.due, range);
+  });
+  const list = sortRows(base.filter((j) => inTab(j, tab)), sort, (j, k) => {
+    switch (k) { case "order": return j.orderId; case "customer": return ordOf(j.orderId).customer.toLowerCase(); case "event": return ordOf(j.orderId).event; case "files": return gradedFiles(j.orderId).length; case "colorist": return j.colorist; case "priority": return PRIO_RANK[j.priority] ?? 9; case "due": return j.due; default: return j.status; }
+  });
   const rows = list.slice((page - 1) * pageSize, page * pageSize);
-  const cur = GJOBS.find((j) => j.orderId === activeId) ?? list[0] ?? null;
+  const selected = sel.within(list.map((j) => j.orderId));
+  const cur = GJOBS.find((j) => j.orderId === activeId) ?? null;
   const cnt = (s: GStatus) => GJOBS.filter((j) => j.status === s).length;
   const overdue = GJOBS.filter((j) => j.status !== "Approved" && j.status !== "Submitted" && ordOf(j.orderId) && new Date(j.due) < TODAY).length;
+
+  const exportRows = (items: GJob[]) => { downloadCsv("grading-jobs.csv", [["Order", "Customer", "Event", "Colorist", "Priority", "Due", "Status", "Rounds"], ...items.map((j) => [j.orderId, ordOf(j.orderId).customer, ordOf(j.orderId).event, j.colorist, j.priority, j.due, j.status, j.rounds])]); show(`Exported ${items.length} jobs`); };
+  const chips = [
+    ...col.map((x) => ({ label: `Colorist: ${x}`, onRemove: () => setCol(col.filter((y) => y !== x)) })),
+    ...prio.map((x) => ({ label: `Priority: ${x}`, onRemove: () => setPrio(prio.filter((y) => y !== x)) })),
+    ...fStatus.map((x) => ({ label: `Status: ${x}`, onRemove: () => setFStatus(fStatus.filter((y) => y !== x)) })),
+    ...rangeChip("Due", range.preset, rangeLabel(range), () => setRange(ALL_TIME())),
+    ...(q ? [{ label: `Search: ${q}`, onRemove: () => setQ("") }] : []),
+  ];
+  const clearAll = () => { setCol([]); setPrio([]); setFStatus([]); setRange(ALL_TIME()); setQ(""); reset(); };
+  const view: ViewState = { tab, col, prio, status: fStatus, range: serRange(range), q, hidden, sort };
+  const applyView = (v: ViewState) => { setTab(v.tab); setCol(v.col); setPrio(v.prio); setFStatus(v.status); setRange(desRange(v.range)); setQ(v.q); setHidden(v.hidden); setSort(v.sort); reset(); };
 
   const kpis: Kpi[] = [
     { label: "New Jobs", value: cnt("New"), icon: ClipboardList, tone: "blue" },
@@ -117,51 +149,80 @@ export default function ColourGrading() {
       {!work && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />View only — colour grading work is limited to the Colour Grading team and Admin.</div>}
       <KpiRow items={kpis} cols={6} />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
-        <Panel bodyClassName="!p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((j) => inTab(j, t.key)).length }))} />
-            <div ref={searchWrap} className="w-64"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by order ID, customer, event...  ( / )" /></div>
-          </div>
-          <div className="mt-3 flex justify-end gap-3">
-            <MultiSelect className="w-40" label="Colorist" options={COLORISTS} value={col} onChange={(v) => { setCol(v); setPage(1); }} />
-            <MultiSelect className="w-36" label="Priority" options={PRIORITIES} value={prio} onChange={(v) => { setPrio(v); setPage(1); }} />
-            {(col.length > 0 || prio.length > 0) && <button onClick={() => { setCol([]); setPrio([]); }} className="text-xs font-bold text-brand">Clear</button>}
-          </div>
-          <div className="mt-3 overflow-x-auto">
-            <table className={tableCls}>
-              <thead><tr><Th>Order ID</Th><Th>Customer</Th><Th>Event</Th><Th>Files</Th><Th>Colorist</Th><Th>Priority</Th><Th>SLA due</Th><Th>Status</Th><Th className="text-right">Actions</Th></tr></thead>
-              <tbody>
-                {rows.map((j) => {
-                  const oo = ordOf(j.orderId); const a = rowAction(j); const s = slaState(oo);
-                  return (
-                    <tr key={j.orderId} data-testid={`job-${j.orderId}`} onClick={() => setActiveId(j.orderId)} className={cx(trCls, "cursor-pointer", cur?.orderId === j.orderId && "bg-brand-soft")}>
-                      <Td className="font-bold">{j.orderId}</Td><Td>{oo.customer}</Td><Td>{oo.event}</Td>
-                      <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>
-                      <Td><span className="inline-flex items-center gap-2"><Avatar name={j.colorist} size={24} />{j.colorist}</span></Td>
-                      <Td><PriorityPill p={j.priority as Priority} /></Td>
-                      <Td className={s.status === "breached" ? "text-rose-600" : ""}>{fmtDate(j.due)}</Td>
-                      <Td><Pill tone={STATUS_TONE[j.status]} className="min-w-[84px] justify-center">{j.status}</Pill></Td>
-                      <Td className="text-right"><span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        {isAdmin && j.status === "Submitted" ? (<>
-                          <button aria-label={`Approve ${j.orderId}`} onClick={() => approve(j.orderId)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700"><Check className="size-3.5" />Approve</button>
-                          <button aria-label={`Reject ${j.orderId}`} onClick={() => { setActiveId(j.orderId); setRejecting(true); }} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-300 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50"><X className="size-3.5" />Reject</button>
-                        </>) : (
-                          <button onClick={a.run} className={cx("h-8 w-[84px] rounded-lg border text-xs font-bold", a.primary ? "border-brand bg-brand text-white hover:bg-brand-dark" : "border-line bg-white hover:bg-brand-soft")}>{a.label}</button>
-                        )}
-                      </span></Td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-sub">No jobs found.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <Pagination page={page} pageSize={pageSize} total={list.length} onPage={setPage} noun="jobs" />
-        </Panel>
+      <Panel title="Grading Jobs" subtitle="Click a job for instructions, graded files and review" action={<ExportBtn onClick={() => exportRows(list)} />} bodyClassName="!p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); reset(); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((j) => inTab(j, t.key)).length }))} />
+          <div ref={searchWrap} className="w-64"><SearchInput value={q} onChange={(v) => { setQ(v); reset(); }} placeholder="Search by order ID, customer, event...  ( / )" /></div>
+        </div>
+        <div className="mt-3"><Toolbar right={<><SavedViews<ViewState> storageKey="colour-grading" current={view} onApply={applyView} /><ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} /></>}>
+          <DateRangePicker value={range} onChange={(r) => { setRange(r); reset(); }} align="left" />
+          <MultiSelect className="w-40" label="Colorist" options={COLORISTS} value={col} onChange={(v) => { setCol(v); reset(); }} />
+          <MultiSelect className="w-36" label="Priority" options={PRIORITIES} value={prio} onChange={(v) => { setPrio(v); reset(); }} />
+          <MultiSelect className="w-40" label="Status" options={["New", "In Progress", "Submitted", "Rework", "Approved"]} value={fStatus} onChange={(v) => { setFStatus(v); reset(); }} />
+        </Toolbar></div>
+        <FilterChips chips={chips} onClearAll={clearAll} />
+        <BulkBar count={selected.length} onClear={sel.clear}>
+          {work && <BulkBtn tone="primary" testid="bulk-start" onClick={() => { if (guard("grading")) runBulk(selected, (id) => startGrading(id), show, "Started"); }}>Start selected</BulkBtn>}
+          {isAdmin && <BulkBtn testid="bulk-approve" onClick={() => runBulk(selected, (id) => (isAdmin ? approveGrading(id) : no("Only an admin can approve grading")), show, "Approved")}><Check className="size-3.5" />Approve selected</BulkBtn>}
+          <BulkBtn testid="bulk-export" onClick={() => exportRows(GJOBS.filter((j) => selected.includes(j.orderId)))}>Export selected</BulkBtn>
+        </BulkBar>
+        <div className="overflow-x-auto">
+          <table className={tableCls}>
+            <thead><tr>
+              <SelectTh rows={rows.map((j) => j.orderId)} sel={sel} />
+              {vis("order") && <SortTh k="order" sort={sort} onSort={setSort}>Order ID</SortTh>}
+              {vis("customer") && <SortTh k="customer" sort={sort} onSort={setSort}>Customer</SortTh>}
+              {vis("event") && <SortTh k="event" sort={sort} onSort={setSort}>Event</SortTh>}
+              {vis("files") && <SortTh k="files" sort={sort} onSort={setSort}>Files</SortTh>}
+              {vis("colorist") && <SortTh k="colorist" sort={sort} onSort={setSort}>Colorist</SortTh>}
+              {vis("priority") && <SortTh k="priority" sort={sort} onSort={setSort}>Priority</SortTh>}
+              {vis("due") && <SortTh k="due" sort={sort} onSort={setSort}>SLA due</SortTh>}
+              {vis("status") && <SortTh k="status" sort={sort} onSort={setSort}>Status</SortTh>}
+              <Th className="text-right">Actions</Th>
+            </tr></thead>
+            <tbody>
+              {rows.map((j) => {
+                const oo = ordOf(j.orderId); const a = rowAction(j); const s = slaState(oo);
+                return (
+                  <tr key={j.orderId} data-testid={`job-${j.orderId}`} onClick={() => setActiveId(j.orderId)} className={cx(trCls, "cursor-pointer", (cur?.orderId === j.orderId || sel.has(j.orderId)) && "bg-brand-soft")}>
+                    <SelectTd id={j.orderId} sel={sel} />
+                    {vis("order") && <Td className="font-bold">{j.orderId}</Td>}
+                    {vis("customer") && <Td>{oo.customer}</Td>}
+                    {vis("event") && <Td>{oo.event}</Td>}
+                    {vis("files") && <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>}
+                    {vis("colorist") && <Td><span className="inline-flex items-center gap-2"><Avatar name={j.colorist} size={24} />{j.colorist}</span></Td>}
+                    {vis("priority") && <Td><PriorityPill p={j.priority as Priority} /></Td>}
+                    {vis("due") && <Td className={s.status === "breached" ? "text-rose-600" : ""}>{fmtDate(j.due)}</Td>}
+                    {vis("status") && <Td><Pill tone={STATUS_TONE[j.status]} className="min-w-[84px] justify-center">{j.status}</Pill></Td>}
+                    <Td className="text-right"><span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      {isAdmin && j.status === "Submitted" ? (<>
+                        <button aria-label={`Approve ${j.orderId}`} onClick={() => approve(j.orderId)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700"><Check className="size-3.5" />Approve</button>
+                        <button aria-label={`Reject ${j.orderId}`} onClick={() => { setActiveId(j.orderId); setRejecting(true); }} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-300 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50"><X className="size-3.5" />Reject</button>
+                      </>) : (
+                        <button onClick={a.run} className={cx("h-8 w-[84px] rounded-lg border text-xs font-bold", a.primary ? "border-brand bg-brand text-white hover:bg-brand-dark" : "border-line bg-white hover:bg-brand-soft")}>{a.label}</button>
+                      )}
+                      <RowMenu label={`Actions for ${j.orderId}`} items={[
+                        { label: "View job", onClick: () => setActiveId(j.orderId) },
+                        ...(j.status === "New" ? [{ label: "Start grading", onClick: () => { if (guard("grading")) run(startGrading(j.orderId)); } }] : []),
+                        ...(j.status === "Rework" ? [{ label: "Acknowledge revision", onClick: () => { if (guard("grading")) run(ackRevision(j.orderId)); } }] : []),
+                        ...(j.status === "Submitted" ? [{ label: "Approve → Designing", onClick: () => approve(j.orderId) }, { label: "Reject…", onClick: () => { setActiveId(j.orderId); setRejecting(true); }, danger: true }] : []),
+                        { label: "Export row", onClick: () => exportRows([j]) },
+                        { label: "Open order", onClick: () => nav(`/orders/${j.orderId}`) },
+                      ]} />
+                    </span></Td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && <tr><td colSpan={11} className="py-10 text-center text-sub">No jobs found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pageSize={pageSize} total={list.length} onPage={setPage} noun="jobs" />
+      </Panel>
 
-        {cur && o ? (
-          <Panel bodyClassName="!p-5" className="xl:sticky xl:top-4">
+      <SlideOver open={!!cur && !!o} onClose={() => { setActiveId(null); setRejecting(false); }} title={cur ? `Grading ${cur.orderId}` : "Grading"} width={520}>
+        {cur && o && (
+          <div>
             <div className="flex items-start justify-between">
               <div><h3 className="text-xl font-extrabold">{cur.orderId}</h3><div className="text-[13px] text-sub">{o.customer} • {o.event} • {o.size}</div></div>
               <Pill tone={STATUS_TONE[cur.status]}>{cur.status}</Pill>
@@ -243,9 +304,9 @@ export default function ColourGrading() {
                 {cur.events.map((h, i) => <li key={i} className="rounded-lg border border-line px-3 py-1.5"><b>{h.text}</b><span className="block text-sub">{h.by} · {fmtDT(h.at)}</span></li>)}
               </ul>
             </div>
-          </Panel>
-        ) : <Panel bodyClassName="!p-5"><p className="text-sm text-sub">Select a job to see its details.</p></Panel>}
-      </div>
+                    </div>
+        )}
+      </SlideOver>
 
       <SlideOver open={creating} onClose={() => setCreating(false)} title="New Grading Job"
         footer={<><OutlineButton onClick={() => setCreating(false)}>Cancel</OutlineButton><PrimaryButton onClick={saveJob}>Create Job</PrimaryButton></>}>

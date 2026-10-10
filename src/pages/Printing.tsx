@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Printer, PlayCircle, Layers, Package, ShieldCheck, Flag, ArrowRight, CheckCircle2, Circle, Download, AlertTriangle, Truck, Lock, Hourglass } from "lucide-react";
+import { Printer, PlayCircle, Layers, Package, ShieldCheck, Flag, ArrowRight, CheckCircle2, Circle, AlertTriangle, Truck, Lock, Hourglass } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, Pagination, Td, trCls, tableCls, PrimaryButton, TodayChip, MoreButton, SlideOver, Field, inputCls, cx, type Kpi } from "../components/ui";
-import { MultiSelect, Combobox } from "../components/controls";
-import { Banner, DateField, Err, FieldBox, orderOpt, strOpts, TODAY_ISO, useSlashSearch } from "../components/pageKit";
+import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
+import { ALL_TIME, Banner, DateField, Err, FieldBox, desRange, inRangeOpt, orderOpt, rangeLabel, serRange, strOpts, TODAY_ISO, useSlashSearch, type SavedRange } from "../components/pageKit";
+import { RowMenu } from "../components/RowMenu";
+import { BulkBar, BulkBtn, ExportBtn, SelectTd, SelectTh, Toolbar, rangeChip, runBulk, useSelection } from "../components/listKit";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
@@ -14,6 +16,9 @@ import { PJOBS, PSTAGES, EXC_KINDS, PAPERS, OPERATORS, ensureProduction, release
 
 const STAGE_ICON: Record<PStage, typeof Printer> = { Waiting: Hourglass, "File Prep": Layers, Printing: PlayCircle, Finishing: Layers, Assembly: Package, Packaging: Package, Completed: Flag, "Sent to QC": ShieldCheck };
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
+const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "album", label: "Album" }, { key: "paper", label: "Paper" }, { key: "sheets", label: "Sheets × Copies" }, { key: "stage", label: "Stage" }, { key: "operator", label: "Operator" }, { key: "flags", label: "Flags" }, { key: "due", label: "Due" }];
+const FLAGS = ["Open exception", "Vendor job", "Reprint", "On hold"];
+interface ViewState { stage: string[]; op: string[]; paper: string[]; flags: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
 const blankVendor = (): Vendor => ({ name: "", sentDate: TODAY_ISO, expectedBack: "", tracking: "", cost: 0, status: "Planned" });
 
 export default function Printing() {
@@ -25,6 +30,12 @@ export default function Printing() {
   const [toast, show] = useToast();
   const [fStage, setFStage] = useState<string[]>([]);
   const [fOp, setFOp] = useState<string[]>([]);
+  const [fPaper, setFPaper] = useState<string[]>([]);
+  const [fFlags, setFFlags] = useState<string[]>([]);
+  const [range, setRange] = useState<DateRange>(ALL_TIME());
+  const [sort, setSort] = useState<SortState>(null);
+  const [hidden, setHidden] = useState<string[]>([]);
+  const sel2 = useSelection();
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [selId, setSelId] = useState<string | null>(null);
@@ -42,11 +53,22 @@ export default function Printing() {
   const guard = () => { if (work) return true; show(`Your role (${role}) cannot perform printing actions`); return false; };
 
   const counts = Object.fromEntries(PSTAGES.map((s) => [s, PJOBS.filter((j) => j.stage === s).length])) as Record<PStage, number>;
-  const filtered = useMemo(() => {
+  const flagsOf = (j: (typeof PJOBS)[number]) => [openExc(j).length > 0 && "Open exception", j.vendor && j.vendor.status !== "Received" && "Vendor job", j.reprints > 0 && "Reprint", ordOf(j.orderId)?.hold && "On hold"].filter(Boolean) as string[];
+  const filtered = sortRows(PJOBS.filter((j) => {
     const t = q.trim().toLowerCase();
-    return PJOBS.filter((j) => (!fStage.length || fStage.includes(j.stage)) && (!fOp.length || fOp.includes(j.operator)) && (!t || `${j.orderId} ${ordOf(j.orderId)?.customer ?? ""} ${j.operator}`.toLowerCase().includes(t)));
-  }, [q, fStage, fOp, PJOBS.length, PJOBS.map((j) => j.stage + j.operator).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (fStage.length && !fStage.includes(j.stage)) return false;
+    if (fOp.length && !fOp.includes(j.operator)) return false;
+    if (fPaper.length && !fPaper.includes(j.paper)) return false;
+    if (fFlags.length && !fFlags.some((f) => flagsOf(j).includes(f))) return false;
+    if (!inRangeOpt(j.due, range)) return false;
+    return !t || `${j.orderId} ${ordOf(j.orderId)?.customer ?? ""} ${j.operator}`.toLowerCase().includes(t);
+  }), sort, (j, k) => {
+    switch (k) { case "order": return j.orderId; case "customer": return (ordOf(j.orderId)?.customer ?? "").toLowerCase(); case "album": return ordOf(j.orderId)?.pages ?? 0; case "paper": return j.paper; case "sheets": return j.sheets * j.copies; case "stage": return PSTAGES.indexOf(j.stage); case "operator": return j.operator; case "flags": return flagsOf(j).length; default: return j.due; }
+  });
   const rows = filtered.slice((page - 1) * 8, page * 8);
+  const selected = sel2.within(filtered.map((j) => j.orderId));
+  const vis = (k: string) => !hidden.includes(k);
+  const reset = () => setPage(1);
   const sel = PJOBS.find((j) => j.orderId === selId) ?? null;
   const so = sel ? ordOf(sel.orderId) : null;
   const closed = !!so?.closed;
@@ -72,6 +94,19 @@ export default function Printing() {
     setSpec({ paper: j.paper, sheets: String(j.sheets), copies: String(j.copies), cover: j.cover ?? "", lamination: j.lamination ?? "", box: j.box ?? "", finishing: j.finishing ?? "" }); setSelId(orderId); setSpecOpen(true);
   };
 
+  const exportRows = (items: typeof PJOBS) => { downloadCsv("print-jobs.csv", [["Order", "Customer", "Stage", "Paper", "Sheets", "Copies", "Operator", "Due"], ...items.map((j) => [j.orderId, ordOf(j.orderId)?.customer ?? "", j.stage, j.paper, j.sheets, j.copies, j.operator, j.due])]); show(`Exported ${items.length} jobs`); };
+  const chips = [
+    ...fStage.map((x) => ({ label: `Stage: ${x}`, onRemove: () => setFStage(fStage.filter((y) => y !== x)) })),
+    ...fOp.map((x) => ({ label: `Operator: ${x}`, onRemove: () => setFOp(fOp.filter((y) => y !== x)) })),
+    ...fPaper.map((x) => ({ label: `Paper: ${x}`, onRemove: () => setFPaper(fPaper.filter((y) => y !== x)) })),
+    ...fFlags.map((x) => ({ label: `Flag: ${x}`, onRemove: () => setFFlags(fFlags.filter((y) => y !== x)) })),
+    ...rangeChip("Due", range.preset, rangeLabel(range), () => setRange(ALL_TIME())),
+    ...(q ? [{ label: `Search: ${q}`, onRemove: () => setQ("") }] : []),
+  ];
+  const clearAll = () => { setFStage([]); setFOp([]); setFPaper([]); setFFlags([]); setRange(ALL_TIME()); setQ(""); reset(); };
+  const view: ViewState = { stage: fStage, op: fOp, paper: fPaper, flags: fFlags, range: serRange(range), q, hidden, sort };
+  const applyView = (v: ViewState) => { setFStage(v.stage); setFOp(v.op); setFPaper(v.paper); setFFlags(v.flags); setRange(desRange(v.range)); setQ(v.q); setHidden(v.hidden); setSort(v.sort); reset(); };
+
   const kpis: Kpi[] = [
     { label: "Waiting / File Prep", value: counts.Waiting + counts["File Prep"], icon: Hourglass, tone: "violet" },
     { label: "Printing", value: counts.Printing, icon: PlayCircle, tone: "teal" },
@@ -94,13 +129,13 @@ export default function Printing() {
       <div className="min-w-0 space-y-4">
         <Panel title="Production Pipeline" subtitle="Click a stage to filter the job list." bodyClassName="pt-3">
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            <button onClick={() => setFStage([])} className={cx("min-w-[70px] flex-1 rounded-xl border bg-sky-50 p-2.5 text-center", fStage.length === 0 ? "border-brand ring-2 ring-brand/30" : "border-transparent")}>
+            <button onClick={() => { setFStage([]); reset(); }} className={cx("min-w-[70px] flex-1 rounded-xl border bg-sky-50 p-2.5 text-center", fStage.length === 0 ? "border-brand ring-2 ring-brand/30" : "border-transparent")}>
               <div className="truncate text-[11px] text-sub">All Jobs</div><div className="text-lg font-extrabold">{PJOBS.length}</div>
             </button>
             {PSTAGES.map((s) => { const I = STAGE_ICON[s]; return (
               <div key={s} className="flex min-w-0 flex-1 items-center gap-1.5">
                 <ArrowRight className="size-3 shrink-0 text-slate-400" />
-                <button data-stage={s} onClick={() => setFStage(fStage.length === 1 && fStage[0] === s ? [] : [s])} className={cx("min-w-[70px] flex-1 rounded-xl border bg-slate-50 p-2.5 text-center", fStage.includes(s) ? "border-brand ring-2 ring-brand/30" : "border-transparent")}>
+                <button data-stage={s} onClick={() => { setFStage(fStage.length === 1 && fStage[0] === s ? [] : [s]); reset(); }} className={cx("min-w-[70px] flex-1 rounded-xl border bg-slate-50 p-2.5 text-center", fStage.includes(s) ? "border-brand ring-2 ring-brand/30" : "border-transparent")}>
                   <I className="mx-auto size-5 text-brand" /><div className="truncate text-[11px] text-sub">{s}</div><div className="text-lg font-extrabold">{counts[s]}</div>
                 </button>
               </div>); })}
@@ -108,31 +143,65 @@ export default function Printing() {
         </Panel>
 
         <div ref={tableRef} />
-        <Panel title="Printing Jobs" subtitle="Click a row for the timeline, exceptions and vendor outsourcing" action={<button onClick={() => { downloadCsv("print-jobs.csv", [["Order", "Customer", "Stage", "Paper", "Sheets", "Copies", "Operator", "Due"], ...filtered.map((j) => [j.orderId, ordOf(j.orderId)?.customer ?? "", j.stage, j.paper, j.sheets, j.copies, j.operator, j.due])]); show(`Exported ${filtered.length} jobs`); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold hover:bg-brand-soft"><Download className="size-4 text-sub" />Export</button>}>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <MultiSelect className="w-44" label="Stage" options={[...PSTAGES]} value={fStage} onChange={(v) => { setFStage(v); setPage(1); }} />
-            <MultiSelect className="w-40" label="Operator" options={OPERATORS} value={fOp} onChange={(v) => { setFOp(v); setPage(1); }} />
-            <SearchInput className="w-60" value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search order, customer... ( / )" />
-          </div>
+        <Panel title="Printing Jobs" subtitle="Click a row for the timeline, exceptions and vendor outsourcing" action={<ExportBtn onClick={() => exportRows(filtered)} />}>
+          <Toolbar right={<><SavedViews<ViewState> storageKey="printing" current={view} onApply={applyView} /><ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} /></>}>
+            <DateRangePicker value={range} onChange={(r) => { setRange(r); reset(); }} align="left" />
+            <MultiSelect className="w-40" label="Stage" options={[...PSTAGES]} value={fStage} onChange={(v) => { setFStage(v); reset(); }} />
+            <MultiSelect className="w-40" label="Operator" options={OPERATORS} value={fOp} onChange={(v) => { setFOp(v); reset(); }} />
+            <MultiSelect className="w-40" label="Paper" options={PAPERS} value={fPaper} onChange={(v) => { setFPaper(v); reset(); }} />
+            <MultiSelect className="w-40" label="Flags" options={FLAGS} value={fFlags} onChange={(v) => { setFFlags(v); reset(); }} />
+            <SearchInput className="w-72" value={q} onChange={(v) => { setQ(v); reset(); }} placeholder="Search order, customer... ( / )" />
+          </Toolbar>
+          <FilterChips chips={chips} onClearAll={clearAll} />
+          <BulkBar count={selected.length} onClear={sel2.clear}>
+            {work && <BulkBtn tone="primary" testid="bulk-advance" onClick={() => { if (guard()) runBulk(selected, (id) => advanceProduction(id), show, "Advanced"); }}><ArrowRight className="size-3.5" />Advance selected</BulkBtn>}
+            <BulkBtn testid="bulk-export" onClick={() => exportRows(PJOBS.filter((j) => selected.includes(j.orderId)))}>Export selected</BulkBtn>
+          </BulkBar>
           <div className="overflow-x-auto">
             <table className={tableCls}>
-              <thead><tr>{["Order ID", "Customer", "Album", "Paper", "Sheets × Copies", "Stage", "Operator", "Flags", "Due", ""].map((h) => <th key={h} className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">{h}</th>)}</tr></thead>
+              <thead><tr>
+                <SelectTh rows={rows.map((j) => j.orderId)} sel={sel2} />
+                {vis("order") && <SortTh k="order" sort={sort} onSort={setSort}>Order ID</SortTh>}
+                {vis("customer") && <SortTh k="customer" sort={sort} onSort={setSort}>Customer</SortTh>}
+                {vis("album") && <SortTh k="album" sort={sort} onSort={setSort}>Album</SortTh>}
+                {vis("paper") && <SortTh k="paper" sort={sort} onSort={setSort}>Paper</SortTh>}
+                {vis("sheets") && <SortTh k="sheets" sort={sort} onSort={setSort}>Sheets × Copies</SortTh>}
+                {vis("stage") && <SortTh k="stage" sort={sort} onSort={setSort}>Stage</SortTh>}
+                {vis("operator") && <SortTh k="operator" sort={sort} onSort={setSort}>Operator</SortTh>}
+                {vis("flags") && <SortTh k="flags" sort={sort} onSort={setSort}>Flags</SortTh>}
+                {vis("due") && <SortTh k="due" sort={sort} onSort={setSort}>Due</SortTh>}
+                <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Actions</th>
+              </tr></thead>
               <tbody>
                 {rows.map((j) => {
-                  const o = ordOf(j.orderId); const I = STAGE_ICON[j.stage];
+                  const o = ordOf(j.orderId); const I = STAGE_ICON[j.stage]; const nxt = PSTAGES[PSTAGES.indexOf(j.stage) + 1];
                   return (
-                    <tr key={j.orderId} data-testid={`pjob-${j.orderId}`} onClick={() => setSelId(j.orderId)} className={cx(trCls, "cursor-pointer", selId === j.orderId && "bg-brand-soft")}>
-                      <Td><div className="flex items-center gap-2"><Thumb seed={j.orderId} size={30} /><div><div className="font-bold">{j.orderId}</div><div className="text-[11px] text-sub">{o.event}</div></div></div></Td>
-                      <Td>{o.customer}</Td><Td>{o.size}<div className="text-[11px] text-sub">{o.pages} pages</div></Td><Td>{j.paper}</Td><Td>{j.sheets} × {j.copies}</Td>
-                      <Td><Pill tone={j.stage === "Sent to QC" ? "green" : "blue"} icon={I}>{j.stage}</Pill></Td>
-                      <Td>{j.operator}</Td>
-                      <Td><span className="flex gap-1">{openExc(j).length > 0 && <Pill tone="red">{openExc(j).length} exc</Pill>}{j.vendor && j.vendor.status !== "Received" && <Pill tone="amber">Vendor</Pill>}{j.reprints > 0 && <Pill tone="orange">R{j.reprints}</Pill>}{o.hold && <Pill tone="slate">{o.hold}</Pill>}</span></Td>
-                      <Td className="font-semibold text-rose-600">{fmtDate(j.due)}</Td>
-                      <Td><button onClick={(e) => { e.stopPropagation(); setSelId(j.orderId); }} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button></Td>
+                    <tr key={j.orderId} data-testid={`pjob-${j.orderId}`} onClick={() => setSelId(j.orderId)} className={cx(trCls, "cursor-pointer", (selId === j.orderId || sel2.has(j.orderId)) && "bg-brand-soft")}>
+                      <SelectTd id={j.orderId} sel={sel2} />
+                      {vis("order") && <Td><div className="flex items-center gap-2"><Thumb seed={j.orderId} size={30} /><div><div className="font-bold">{j.orderId}</div><div className="text-[11px] text-sub">{o.event}</div></div></div></Td>}
+                      {vis("customer") && <Td>{o.customer}</Td>}
+                      {vis("album") && <Td>{o.size}<div className="text-[11px] text-sub">{o.pages} pages</div></Td>}
+                      {vis("paper") && <Td>{j.paper}</Td>}
+                      {vis("sheets") && <Td>{j.sheets} × {j.copies}</Td>}
+                      {vis("stage") && <Td><Pill tone={j.stage === "Sent to QC" ? "green" : "blue"} icon={I}>{j.stage}</Pill></Td>}
+                      {vis("operator") && <Td>{j.operator}</Td>}
+                      {vis("flags") && <Td><span className="flex gap-1">{openExc(j).length > 0 && <Pill tone="red">{openExc(j).length} exc</Pill>}{j.vendor && j.vendor.status !== "Received" && <Pill tone="amber">Vendor</Pill>}{j.reprints > 0 && <Pill tone="orange">R{j.reprints}</Pill>}{o.hold && <Pill tone="slate">{o.hold}</Pill>}</span></Td>}
+                      {vis("due") && <Td className="font-semibold text-rose-600">{fmtDate(j.due)}</Td>}
+                      <Td><div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => setSelId(j.orderId)} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button>
+                        <RowMenu label={`Actions for ${j.orderId}`} items={[
+                          { label: "View job", onClick: () => setSelId(j.orderId) },
+                          ...(nxt ? [{ label: nxt === "Sent to QC" ? "Send to QC" : `Advance to ${nxt}`, onClick: () => { if (guard()) run(advanceProduction(j.orderId)); } }] : []),
+                          { label: "Edit specs", onClick: () => { if (guard()) openSpec(j.orderId); } },
+                          { label: "Raise exception…", onClick: () => setSelId(j.orderId) },
+                          { label: "Export row", onClick: () => exportRows([j]) },
+                          { label: "Open order", onClick: () => nav(`/orders/${j.orderId}`) },
+                        ]} />
+                      </div></Td>
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <tr><td colSpan={10} className="py-10 text-center text-sub">No jobs match the filters.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={12} className="py-10 text-center text-sub">No jobs match the filters.</td></tr>}
               </tbody>
             </table>
           </div>
