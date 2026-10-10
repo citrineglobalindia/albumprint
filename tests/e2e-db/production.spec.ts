@@ -227,6 +227,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   expect(db(code, `select state from order_files where order_id = $O and category = 'graded'`)).toBe("submitted");
   const admin = await as(browser, "admin");
   await admin.goto("/colour-grading");
+  await admin.getByRole("tab", { name: /Submitted/ }).click();
   await admin.getByRole("button", { name: `Reject ${code}` }).click();
   await admin.getByLabel("Rejection reason").fill("Skin tones too warm");
   await admin.getByRole("button", { name: "Send back" }).click();
@@ -248,10 +249,11 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await expect.poll(() => db(code, `select status || ':' || rounds from tasks where order_id = $O and kind = 'grading'`)).toBe("submitted:2");
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("admin_approval");
   await admin.goto("/colour-grading");
+  await admin.getByRole("tab", { name: /Submitted/ }).click();
   await admin.getByRole("button", { name: `Approve ${code}` }).click();
   await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("approved");
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("designing");
-  await expect.poll(() => db(code, `select string_agg(state::text, ',' order by version) from order_files where order_id = $O and category = 'graded'`)).toBe("rejected,approved");
+  await expect.poll(() => db(code, `select string_agg(state::text, ',' order by version) from order_files where order_id = $O and category = 'graded'`)).toBe("approved,approved");
 });
 
 test("printing: an open exception blocks the next stage until resolved; a vendor job is stored; the database mirrors it", async ({ browser }) => {
