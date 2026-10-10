@@ -122,8 +122,10 @@ select t.eq($$select qc_status::text from orders where id = (select v::uuid from
 select t.err($$update qc_inspections set notes = 'rewritten history' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: a decided round is immutable', 'immutable');
 select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'printing', 'back cover scratched')$$, 'qc: order returned to printing');
 select t.eq($$select qc_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'failed', 'qc: a Failed round is not downgraded to Rework by the return');
+select t.eq($$select stage::text || ':' || reprints::text from print_jobs where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing:2', 'qc: the verdict re-opened the print job (reprint 2) although QC cannot edit print jobs');
+select t.eq($$select count(*)::text from print_exceptions where order_id = (select v::uuid from t.p50 where k='B') and kind = 'reprint' and resolved$$, '1', 'qc: a reprint record names the QC reason');
+select t.eq($$select count(*)::text from production_events where order_id = (select v::uuid from t.p50 where k='B') and text like 'Returned from QC:%'$$, '1', 'qc: and the printing timeline says why');
 select t.as('printing');
-select t.ok($$update print_jobs set stage = 'printing', reprints = reprints + 1 where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: printing reprints after the QC return');
 select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'qc')$$, 'qc: order back in QC');
 select t.as('qc');
 select t.ok($$insert into qc_inspections(order_id, decision, checklist) select v::uuid, 'in_progress', '{}' from t.p50 where k='B'$$, 'qc: round 2 starts');

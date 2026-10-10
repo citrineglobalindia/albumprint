@@ -135,6 +135,23 @@ test.describe("administration (database mode)", () => {
     await expect(page.getByLabel("Legal Name")).toHaveValue(`Studio ${stamp} Pvt Ltd`);
   });
 
+  test("SLA hours and business hours are stored in sla_rules / the workflow setting and read by the SLA clock", async ({ page }) => {
+    await loginAs(page, "admin");
+    await expect.poll(() => page.evaluate(async () => (await import("/src/lib/db/admin.ts")).isAdminUser())).toBe(true);   // sign-in hydration finished
+    const hours = await page.evaluate(async () => {
+      const ls = await import("/src/lib/localState.ts"), sla = await import("/src/lib/sla.ts");
+      const cur = ls.loadSettings();
+      const stages = JSON.parse(String(cur.wf_stages ?? "[]")) as { key: string; enabled: boolean; sla: number }[];
+      const next = stages.length ? stages.map((x) => (x.key === "printing" ? { ...x, sla: 55 } : x)) : [{ key: "printing", enabled: true, sla: 55 }];
+      const err = await ls.saveSettings({ ...cur, wf_stages: JSON.stringify(next), bh_start: "9", sla_warn_pct: "60" });
+      return { err, h: sla.stageSlaHours("printing"), start: sla.bizConfig().start, warn: sla.bizConfig().warnPct };
+    });
+    expect(hours).toEqual({ err: null, h: 55, start: 9, warn: 60 });
+    expect(sql(`select hours from sla_rules where stage='printing'`)).toBe("55");
+    expect(sql(`select value->>'bh_start' || '/' || (value->>'sla_warn_pct') from settings where key='workflow'`)).toBe("9/60");
+    sql(`update sla_rules set hours = 72 where stage='printing'; update settings set value = value || '{"bh_start":"10","sla_warn_pct":"75"}' where key='workflow'`);
+  });
+
   test("notification triggers and the communication log use the database", async ({ page }) => {
     await loginAs(page, "admin");
     await page.goto("/notifications");

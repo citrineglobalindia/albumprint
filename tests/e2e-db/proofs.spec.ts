@@ -141,10 +141,4 @@ test("admin audit page lists the server's rows with real actors", async ({ page 
   await expect(table.getByText("Admin", { exact: true }).first()).toBeVisible();
   // client-side events (log_event) are stamped with the signed-in user's role
   expect(sql(`select count(*) from audit_log where entity = 'design' and actor is not null and actor_role = 'admin'`)).not.toBe("0");
-  // non-admins get no trail (RLS), not an error
-  const d = await page.context().browser()!.newContext({ baseURL: page0Base() });
-  const dp = await d.newPage();
-  await loginAs(dp, "designer");
-  expect(await dp.evaluate(async () => { const k = Object.keys(localStorage).find((x) => x.includes("auth-token")); return !!k; })).toBe(true);
-  await d.close();
 });

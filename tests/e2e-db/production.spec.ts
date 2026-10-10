@@ -53,7 +53,7 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
   await qc.getByRole("button", { name: /Fail \/ Rework/ }).click();
   await qc.getByLabel("Failure reason").fill("Back cover scratched");
   await qc.getByRole("button", { name: /Confirm rework/ }).click();
-  await expect(qc.getByText(/at least one defect code/i)).toBeVisible();
+  await expect(qc.getByText(/at least one defect code/i).first()).toBeVisible();
   expect(() => db(code, `update qc_inspections set decision = 'failed', reason = 'x', return_to = 'printing' where order_id = $O`)).toThrow();   // the database refuses too
   await qc.getByRole("button", { name: "Scratch", exact: true }).click();
   await qc.getByRole("button", { name: /Confirm rework/ }).click();
@@ -84,13 +84,13 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
   await reception.getByLabel("Carrier").fill("DTDC");
   await reception.getByLabel("Tracking", { exact: true }).fill("D123456");
   await reception.getByTestId("dispatch").click();
-  await expect(reception.getByText(/Dispatch blocked/)).toBeVisible();
+  await expect(reception.getByText(/Dispatch blocked/).first()).toBeVisible();
   await expect.poll(() => db(code, `select mode || '|' || courier || '|' || tracking_no || '|' || status from deliveries where order_id = $O`)).toBe("courier|DTDC|D123456|ready");
 
   // a client that was told "allow delivery without payment" still cannot get past the database's payment hold
   await reception.evaluate(() => localStorage.setItem("albumpro.settings", JSON.stringify({ deliveryNoPay: true })));
   await reception.getByTestId("dispatch").click();
-  await expect(reception.getByText(/payment hold/)).toBeVisible();
+  await expect(reception.getByText(/payment hold/).first()).toBeVisible();
   expect(db(code, `select status from deliveries where order_id = $O`)).toBe("ready");
   await reception.evaluate(() => localStorage.removeItem("albumpro.settings"));
 
@@ -108,7 +108,7 @@ test("printing → QC (fail needs a defect, rework, pass) → delivery: dues blo
   await reception.getByTestId(`del-${code}`).getByRole("button", { name: "Open" }).click();
   await reception.getByLabel("Received by").fill("Raj Kumar");
   await reception.getByTestId("mark-delivered").click();
-  await expect(reception.getByText(/Proof of delivery is required/)).toBeVisible();
+  await expect(reception.getByText(/Proof of delivery is required/).first()).toBeVisible();
   const sig = randomBytes(2048);
   await reception.getByTestId("pod-input").setInputFiles({ name: "signature.jpg", mimeType: "image/jpeg", buffer: sig });
   await reception.getByLabel("POD note").fill("signed at the counter");
@@ -193,7 +193,7 @@ test("a locked print file is immutable: cannot be archived, replaced or deleted 
   // UI: archive is refused
   await admin.getByRole("button", { name: "Actions for final.pdf" }).click();
   await admin.getByRole("menuitem", { name: "Archive" }).click();
-  await expect(admin.getByText(/Locked files cannot be archived/)).toBeVisible();
+  await expect(admin.getByText(/Locked files cannot be archived/).first()).toBeVisible();
   // database: every way of changing a locked file is refused
   for (const stmt of [`update order_files set archived = true where ${where}`, `update order_files set storage_path = 'elsewhere' where ${where}`, `update order_files set state = 'draft' where ${where}`,
     `update order_files set checksum = 'abc' where ${where}`, `delete from order_files where ${where}`]) expect(() => sql(stmt), stmt).toThrow(/locked|immutable/i);
