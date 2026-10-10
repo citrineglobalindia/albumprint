@@ -211,17 +211,19 @@ test("a locked print file is immutable: cannot be archived, replaced or deleted 
 
 test("role gating: view-only roles see why, and the database holds the line", async ({ browser }) => {
   const code = fixtureOrder({ stage: "printing" });
-  const accounts = await as(browser, "accounts");
-  await accounts.goto("/printing");
-  await expect(accounts.getByRole("status").filter({ hasText: /View only/ })).toBeVisible();
-  await expect(accounts.getByRole("button", { name: "Release to Printing" })).toHaveCount(0);
-  await accounts.goto("/files");
-  await expect(accounts.getByText(/can view and download files but not upload/)).toBeVisible();
-  const colour = await as(browser, "colour");
+  sql(`insert into print_jobs(order_id, paper_type, sheets, copies) select id, 'Matte', 40, 1 from orders where code = '${code}'`);
+  const reception = await as(browser, "reception");                                  // reception has no printing workspace
+  await reception.goto("/printing");
+  await expect(reception.getByRole("button", { name: "Release to Printing" })).toHaveCount(0);
+  await expect(reception.getByTestId(`pjob-${code}`)).toHaveCount(0);
+  const colour = await as(browser, "colour");                                         // grading team has no business in deliveries
   await colour.goto("/delivery");
   await expect(colour.getByTestId(`del-${code}`)).toHaveCount(0);
-  // direct API attempts as the wrong role are refused by row-level security (no row changes)
-  const r = sql(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', (select id::text from profiles where role = 'accounts'), true);
-    update print_jobs set stage = 'file_prep'; select count(*) from print_jobs; commit;`);
-  expect(r).not.toMatch(/UPDATE [1-9]/);
+  // the same limits hold when the API is called directly with that role's session
+  const as_ = (role: string, stmt: string) => sql(`begin; select set_config('request.jwt.claim.sub', '${sql(`select id from profiles where role = '${role}'`)}', true); set local role authenticated; ${stmt}; commit;`);
+  expect(() => as_("accounts", `insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select id, 'other', 'a.pdf', 'pdf', 1, 'x/other/a.pdf-v1' from orders where code = '${code}'`)).toThrow(/row-level security/);
+  expect(() => as_("accounts", `insert into storage.objects(bucket_id, name) values ('order-files', '${code}/other/a.pdf-v1')`)).toThrow(/row-level security/);
+  expect(() => as_("colour", `insert into print_jobs(order_id) select id from orders where code = '${code}'`)).toThrow(/row-level security|duplicate/);
+  expect(as_("reception", `update print_jobs set stage = 'file_prep' where order_id = (select id from orders where code = '${code}')`)).toContain("UPDATE 0");
+  expect(sql(`select stage from print_jobs where order_id = (select id from orders where code = '${code}')`)).toBe("waiting");
 });
