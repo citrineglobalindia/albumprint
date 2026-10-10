@@ -122,7 +122,7 @@ export default function Delivery() {
             {canAct && cur.status === "Ready" && o.stage === "ready_for_delivery" && (
               <div className="space-y-2">
                 <button onClick={() => { if (saveDetails()) show("Delivery details saved"); }} className="h-9 w-full rounded-lg border border-line text-xs font-bold hover:bg-brand-soft">Save details</button>
-                {isAdmin && blocked && <input aria-label="Override reason" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Admin override reason (dues outstanding)" className={inputCls} />}
+                {isAdmin && blocked && <input aria-label="Dispatch override reason" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Admin override reason (dues outstanding)" className={inputCls} />}
                 <button data-testid="dispatch" onClick={() => { if (!saveDetails()) return; if (run(dispatchDelivery(cur.orderId, override))) setOverride(""); }} className={cx("inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-white", blocked && !isAdmin ? "bg-slate-400" : "bg-brand hover:bg-brand-dark")}><Send className="size-4" />{cur.mode === "Pickup" ? "Release for pickup" : "Dispatch"}{blocked && isAdmin ? " (override)" : ""}</button>
               </div>
             )}

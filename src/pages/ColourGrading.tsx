@@ -115,7 +115,7 @@ export default function ColourGrading() {
         <MoreButton />
       </PageHeader>
       {!work && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />View only — colour grading work is limited to the Colour Grading team and Admin.</div>}
-      <KpiRow items={kpis} />
+      <KpiRow items={kpis} cols={6} />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
         <Panel bodyClassName="!p-4">

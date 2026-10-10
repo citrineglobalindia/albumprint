@@ -89,7 +89,7 @@ export default function Printing() {
         <MoreButton />
       </PageHeader>
       {!work && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />View only — printing work is limited to the Printing team and Admin.</div>}
-      <KpiRow items={kpis} />
+      <KpiRow items={kpis} cols={6} />
 
       <div className="min-w-0 space-y-4">
         <Panel title="Production Pipeline" subtitle="Click a stage to filter the job list." bodyClassName="pt-3">

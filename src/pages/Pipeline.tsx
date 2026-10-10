@@ -199,7 +199,11 @@ export default function Pipeline() {
       <FilterChips chips={chips} onClearAll={reset} />
 
       {view === "grid" ? (
-        <div data-testid="board" className="scroll-thin snap-board -mx-3 flex gap-3 overflow-x-auto px-3 pb-3 sm:mx-0 sm:px-0">
+        <div data-testid="board" className={cx("scroll-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-3 sm:mx-0 sm:px-0", !drag && "snap-board")}
+          onDragOver={(e) => {   // edge auto-scroll so far-away columns are reachable while dragging
+            const r = e.currentTarget.getBoundingClientRect();
+            if (e.clientX > r.right - 70) e.currentTarget.scrollLeft += 18; else if (e.clientX < r.left + 70) e.currentTarget.scrollLeft -= 18;
+          }}>
           {STAGES.map((s) => {
             const list = byStage(s.key); const t = TONE[s.tone];
             const lim = WIP[s.key]; const hot = lim !== undefined && list.length > lim;
@@ -214,7 +218,7 @@ export default function Pipeline() {
                 <div className="flex items-center justify-between px-1.5 py-1 text-[13px] font-extrabold">
                   <span>{s.label}</span>
                   <span className="flex items-center gap-1">
-                    {lim !== undefined && <span title={`WIP limit ${lim}`} className={cx("rounded-md px-1.5 py-0.5 text-[10px] font-bold", hot ? "bg-rose-500 text-white" : "bg-white/70 text-sub")}>WIP {list.length}/{lim}</span>}
+                    {lim !== undefined && <span title={`WIP limit ${lim}`} className={cx("rounded-md px-1.5 py-0.5 text-[10px] font-bold", hot ? "bg-rose-700 text-white" : "bg-white/70 text-sub")}>WIP {list.length}/{lim}</span>}
                     <span data-testid={`count-${s.key}`} className={cx("rounded-md bg-white px-2 py-0.5 text-xs", t.text)}>{list.length}</span>
                   </span>
                 </div>

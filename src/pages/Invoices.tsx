@@ -7,7 +7,7 @@ import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { ORDERS } from "../lib/data";
-import { fmtDate, inr } from "../lib/format";
+import { fmtDate, inr, inrShort } from "../lib/format";
 import { downloadCsv } from "../lib/csv";
 import { can, discountLimit, type Out } from "../lib/production";
 import { INVOICES, PAYMENTS, ensureFinance, calc, invTotal, invPaid, invStatus, draftFor, createInvoice, approveDiscount, sendInvoice, type Draft, type Invoice } from "../lib/finance";
@@ -42,9 +42,9 @@ export default function Invoices() {
   const closed = !!(cur && ordOf(cur.orderId)?.closed);
 
   const kpis: Kpi[] = [
-    { label: "Invoiced", value: inr(invs.reduce((a, i) => a + invTotal(i), 0)), icon: FileText, tone: "blue" },
-    { label: "Collected", value: inr(invs.reduce((a, i) => a + invPaid(i), 0)), icon: IndianRupee, tone: "green" },
-    { label: "Outstanding", value: inr(invs.filter((i) => i.status !== "Draft").reduce((a, i) => a + invTotal(i) - invPaid(i), 0)), icon: IndianRupee, tone: "orange", invert: true },
+    { label: "Invoiced", value: inrShort(invs.reduce((a, i) => a + invTotal(i), 0)), icon: FileText, tone: "blue" },
+    { label: "Collected", value: inrShort(invs.reduce((a, i) => a + invPaid(i), 0)), icon: IndianRupee, tone: "green" },
+    { label: "Outstanding", value: inrShort(invs.filter((i) => i.status !== "Draft").reduce((a, i) => a + invTotal(i) - invPaid(i), 0)), icon: IndianRupee, tone: "orange", invert: true },
     { label: "Overdue", value: invs.filter((i) => invStatus(i) === "Overdue").length, icon: AlertCircle, tone: "red", invert: true },
     { label: "Needs approval", value: invs.filter((i) => i.approval === "pending").length, icon: ShieldAlert, tone: "pink", invert: true },
   ];

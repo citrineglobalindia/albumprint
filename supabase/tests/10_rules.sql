@@ -40,10 +40,10 @@ insert into t.users select role, id from profiles;
 select t.as('reception');
 select t.ok($$insert into customers(studio_name, mobile, email, city) values ('Sharma Studio','9876543210','rahul@sharma.in','Mumbai')$$, 'reception creates customer');
 select t.eq($$select code from customers$$, 'IDC000001', 'customer code is server-generated');
-select t.eq($$select mobile from customers_safe$$, '9876543210', 'reception sees unmasked mobile');
+select t.eq($$select mobile from list_customers()$$, '9876543210', 'reception sees unmasked mobile');
 select t.as('colour');
 select t.eq($$select count(*)::text from customers$$, '0', 'colour grader cannot read raw customer rows');
-select t.eq($$select mobile from customers_safe$$, '987•••••10', 'colour grader sees masked mobile');
+select t.eq($$select mobile from list_customers()$$, '987•••••10', 'colour grader sees masked mobile');
 select t.err($$insert into customers(studio_name, mobile) values ('Hack Studio','1112223334')$$, 'colour grader cannot create customer');
 
 -- ───── Design + Printing: full lifecycle ─────
@@ -185,4 +185,13 @@ select t.err($$insert into role_permissions values ('colour','new_module','full'
 select t.ok($$update role_permissions set level = 'full' where role = 'colour' and module = 'payments'$$, 'permission self-edit is a no-op');
 select t.as('system');
 select t.eq($$select level::text from role_permissions where role = 'colour' and module = 'payments'$$, 'none', 'colour permissions unchanged');
+-- ───── anonymous access is closed ─────
+reset role; grant usage on schema t to anon; grant execute on all functions in schema t to anon; set role anon;
+select t.err($$select count(*) from orders$$, 'anon cannot read orders', 'permission denied');
+select t.err($$select count(*) from list_customers()$$, 'anon cannot list customers', 'permission denied');
+select t.err($$select advance_order(gen_random_uuid(), 'files_received')$$, 'anon cannot call advance_order', 'permission denied');
+reset role; set role authenticated;
+select t.err($$select recompute_payment_state(gen_random_uuid())$$, 'signed-in users cannot call internal functions', 'permission denied');
+select t.err($$select audit_row()$$, 'signed-in users cannot call trigger functions', 'permission denied');
+reset role;
 \echo ALL TESTS PASSED

@@ -61,7 +61,7 @@ export default function QualityControl() {
         <TodayChip /><MoreButton />
       </PageHeader>
       {!work && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />View only — inspections are limited to the QC team and Admin.</div>}
-      <KpiRow items={kpis} />
+      <KpiRow items={kpis} cols={6} />
 
       {openPending.length > 0 && (
         <Panel title="Rework tasks awaiting admin" subtitle="QC cannot return an order to Designing / Colour Grading directly" className="mb-4" bodyClassName="!p-4">

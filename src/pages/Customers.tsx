@@ -158,12 +158,12 @@ export default function Customers() {
   const cities = Array.from(new Set(CUSTOMERS.map((c) => c.city).filter(Boolean))).sort();
 
   const kpis: Kpi[] = [
-    { label: "Total Customers", value: all.length, delta: 12, icon: Users, tone: "blue" },
-    { label: "Active Customers", value: all.filter((c) => c.status === "Active").length, delta: 8, icon: ShieldCheck, tone: "green" },
-    { label: "VIP Customers", value: all.filter((c) => c.type === "VIP").length, delta: 22, icon: Crown, tone: "amber" },
-    { label: "Pending Follow-ups", value: all.reduce((a, c) => a + followsOf(c.id).filter((x) => !x.done).length, 0), delta: -15, icon: Phone, tone: "pink" },
-    { label: "Repeat Customers", value: all.filter(repeat).length, delta: 18, icon: Repeat, tone: "violet" },
-    { label: "Outstanding Dues", value: inr(all.reduce((a, c) => a + c.dues, 0)), delta: 12, icon: IndianRupee, tone: "red", invert: true },
+    { label: "Total Customers", value: all.length, icon: Users, tone: "blue" },
+    { label: "Active Customers", value: all.filter((c) => c.status === "Active").length, icon: ShieldCheck, tone: "green" },
+    { label: "VIP Customers", value: all.filter((c) => c.type === "VIP").length, icon: Crown, tone: "amber" },
+    { label: "Pending Follow-ups", value: all.reduce((a, c) => a + followsOf(c.id).filter((x) => !x.done).length, 0), icon: Phone, tone: "pink" },
+    { label: "Repeat Customers", value: all.filter(repeat).length, icon: Repeat, tone: "violet" },
+    { label: "Outstanding Dues", value: inr(all.reduce((a, c) => a + c.dues, 0)), icon: IndianRupee, tone: "red", invert: true },
   ];
 
   const reset = () => { setQ(""); setType([]); setCity([]); setStatus([]); setTagF([]); setDuesOnly(false); setSegment(null); setRange(presetRange("All Time")); setPage(1); };
@@ -231,14 +231,14 @@ export default function Customers() {
           <div className="mt-1 overflow-x-auto">
             <table className={tableCls}>
               <thead><tr>
-                <Th><input type="checkbox" checked={allChecked} onChange={() => setChecked((p) => { const n = new Set(p); rows.forEach((c) => allChecked ? n.delete(c.id) : n.add(c.id)); return n; })} /></Th>
+                <Th><input type="checkbox" aria-label="Select all customers on this page" checked={allChecked} onChange={() => setChecked((p) => { const n = new Set(p); rows.forEach((c) => allChecked ? n.delete(c.id) : n.add(c.id)); return n; })} /></Th>
                 {th("id", "Customer ID")}{th("name", "Customer Name")}{th("studio", "Studio / Company")}{th("mobile", "Mobile")}{th("email", "Email")}{th("city", "City")}{th("type", "Type")}
                 {th("orders", "Active Orders")}{th("lifetime", "Lifetime Value")}{th("lastOrder", "Last Order")}<Th className="text-right">Actions</Th>
               </tr></thead>
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id} data-row={c.id} onClick={() => setActiveId(c.id)} className={cx(trCls, "cursor-pointer", activeId === c.id && "bg-brand-soft")}>
-                    <Td><input type="checkbox" checked={checked.has(c.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })} /></Td>
+                    <Td><input type="checkbox" aria-label={`Select ${c.name}`} checked={checked.has(c.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })} /></Td>
                     {show_("id") && <Td className="text-brand">{c.id}</Td>}
                     {show_("name") && <Td><span className="inline-flex items-center gap-2"><Avatar name={c.name} size={28} /><span className="font-semibold text-brand">{c.name}</span></span></Td>}
                     {show_("studio") && <Td>{c.studio}</Td>}{show_("mobile") && <Td>{c.mobile}</Td>}{show_("email") && <Td className="text-brand">{c.email}</Td>}{show_("city") && <Td>{c.city}</Td>}{show_("type") && <Td><TypePill t={c.type} /></Td>}
@@ -266,7 +266,7 @@ export default function Customers() {
               <Thumb seed={cur.name} size={64} rounded="rounded-full" />
               <div className="min-w-0 flex-1">
                 <Pill tone={cur.status === "Active" ? "green" : "slate"} dot>{cur.status}</Pill>
-                <h3 className="mt-1 text-xl font-extrabold">{cur.name}</h3>
+                <h2 className="mt-1 text-xl font-extrabold">{cur.name}</h2>
                 <div className="text-[13px] text-sub">{cur.studio}</div>
               </div>
               <div className="flex flex-col items-end gap-2">

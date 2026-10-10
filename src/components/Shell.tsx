@@ -322,7 +322,7 @@ export default function Shell() {
       <Sidebar open={drawer} desktop={desktop} onClose={() => setDrawer(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar openPalette={() => setPalette(true)} onMenu={() => setDrawer(true)} menuOpen={drawer} />
-        <main id="main" tabIndex={-1} className="app-main scroll-thin min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><Outlet /></main>
+        <main id="main" tabIndex={-1} className="app-main scroll-thin min-w-0 flex-1 overflow-y-auto px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><Outlet /></main>
       </div>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <A11yLayer />

@@ -127,7 +127,7 @@ export default function OrderDetail() {
       </Panel>
 
       <Panel className="mb-5" title="Workflow" subtitle={printingOnly ? "Printing Only — design stages are not required" : "Design + Printing"}>
-        <div className="scroll-thin flex items-start gap-1 overflow-x-auto pb-2">
+        <div role="region" aria-label="Workflow stages" tabIndex={0} className="scroll-thin flex items-start gap-1 overflow-x-auto pb-2">
           {STAGES.map((s, i) => {
             const skipped = printingOnly && SKIPPED.includes(s.key);
             const done = !skipped && i < cur;

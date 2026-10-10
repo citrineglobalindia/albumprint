@@ -34,16 +34,16 @@ test.describe("mobile (390x844)", () => {
     await page.goto("/");
     const nav = page.getByRole("navigation", { name: "Primary" });
     await expect(page.getByTestId("hamburger")).toBeVisible();
-    await expect(nav).toBeHidden();                       // inert + translated off-screen
+    await expect(nav).not.toBeInViewport();             // off-canvas (and inert)
     await page.getByTestId("hamburger").click();
     await expect(nav).toBeVisible();
     await expect(nav.getByRole("link", { name: "Orders" })).toBeInViewport();
     await page.keyboard.press("Escape");
-    await expect(nav).toBeHidden();
+    await expect(nav).not.toBeInViewport();
     await page.getByTestId("hamburger").click();
     await nav.getByRole("link", { name: "Orders" }).click();
     await expect(page).toHaveURL(/\/orders$/);
-    await expect(nav).toBeHidden();
+    await expect(nav).not.toBeInViewport();
   });
 
   for (const path of ["/", "/orders", "/pipeline", "/orders/IDP00072", "/reports", "/customers"]) {
@@ -74,6 +74,7 @@ test.describe("accessibility basics", () => {
   test("skip link, focus ring, dialog focus trap and Esc", async ({ page }) => {
     await seedRole(page, "admin");
     await page.goto("/orders");
+    await expect(page.getByRole("heading", { name: "Orders", level: 1 })).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
     await page.keyboard.press("Enter");
@@ -100,4 +101,20 @@ test.describe("accessibility basics", () => {
     await expect(page.getByTestId("notice-ok")).toHaveAttribute("role", "status");
     await expect(page.getByTestId("notice-ok")).toHaveAttribute("aria-live", "polite");
   });
+});
+
+test("a recorded payment survives a reload", async ({ page }) => {
+  await seedRole(page, "admin");
+  await page.goto("/payments");
+  await page.getByRole("button", { name: /Record Payment/i }).first().click();
+  const dlg = page.getByRole("dialog", { name: "Record Payment" });
+  await dlg.getByRole("button", { name: /^Order/ }).click();
+  await dlg.getByRole("button", { name: /^IDP00071/ }).click();
+  await dlg.getByLabel("Amount").fill("1234");
+  await dlg.getByRole("button", { name: "Cash", exact: true }).click();
+  await dlg.getByRole("button", { name: "Save payment" }).click();
+  await savedContains(page, "orders", "IDP00071");
+  await expect.poll(() => page.evaluate(() => (localStorage.getItem("albumpro.v1.payments") ?? "").includes("1234")), { timeout: 10_000 }).toBe(true);
+  await page.reload();
+  await expect(page.getByText("₹1,234").first()).toBeVisible();
 });

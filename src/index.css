@@ -18,6 +18,7 @@
   --color-pink-600: #be185d;
   --color-amber-600: #b45309;
   --color-sky-700: #0369a1;
+  --color-rose-600: #be123c;
 }
 
 html, body, #root { height: 100%; }

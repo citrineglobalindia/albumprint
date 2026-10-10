@@ -96,7 +96,7 @@ export function ensureFinance() {
     const src = ORDERS.filter((o) => o.paid > 0 || o.stage === "delivered").slice(0, 16).reverse();
     src.forEach((o, k) => {
       const sub = Math.round(o.total / (1 + GST_RATE));
-      INVOICES.unshift({ no: `INV-${YEAR}-${String(k + 1).padStart(4, "0")}`, kind: "invoice", orderId: o.id, customer: o.customer, date: o.pendingAt, due: iso(new Date(new Date(o.pendingAt).getTime() + (7 + (k % 3) * 8) * 864e5)), lines: [{ desc: `${o.event} album ${o.size} (${o.pages} pages)`, qty: 1, price: sub }], gstPct: 18, igst: false, discountPct: 0, status: "Sent", approval: "none", sentAt: o.pendingAt });
+      INVOICES.unshift({ no: `INV-${YEAR}-${String(k + 1).padStart(4, "0")}`, kind: "invoice", orderId: o.id, customer: o.customer, date: o.pendingAt, due: iso(new Date(new Date(o.pendingAt).getTime() + [0, 7, 15, 3][k % 4]! * 864e5)), lines: [{ desc: `${o.event} album ${o.size} (${o.pages} pages)`, qty: 1, price: sub }], gstPct: 18, igst: false, discountPct: 0, status: "Sent", approval: "none", sentAt: o.pendingAt });
     });
     changed = true;
   }

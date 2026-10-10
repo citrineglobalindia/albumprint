@@ -7,7 +7,7 @@ import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { ORDERS } from "../lib/data";
-import { fmtDate, inr } from "../lib/format";
+import { fmtDate, inr, inrShort } from "../lib/format";
 import { downloadCsv } from "../lib/csv";
 import { can, type Out } from "../lib/production";
 import { PAYMENTS, MODES, ensureFinance, position, recordPayment, refundPayment, type Mode } from "../lib/finance";
@@ -46,10 +46,10 @@ export default function Payments() {
   const outstanding = ORDERS.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
   const overdueAmt = ORDERS.filter((o) => position(o).overdue).reduce((a, o) => a + (o.total - o.paid), 0);
   const kpis: Kpi[] = [
-    { label: "Collected", value: inr(collected - refunded), icon: IndianRupee, tone: "green" },
-    { label: "Outstanding", value: inr(outstanding), icon: Wallet, tone: "orange", invert: true },
-    { label: "Overdue", value: inr(overdueAmt), icon: AlertCircle, tone: "red", invert: true },
-    { label: "Refunded", value: inr(refunded), icon: RotateCcw, tone: "pink", invert: true },
+    { label: "Collected", value: inrShort(collected - refunded), icon: IndianRupee, tone: "green" },
+    { label: "Outstanding", value: inrShort(outstanding), icon: Wallet, tone: "orange", invert: true },
+    { label: "Overdue", value: inrShort(overdueAmt), icon: AlertCircle, tone: "red", invert: true },
+    { label: "Refunded", value: inrShort(refunded), icon: RotateCcw, tone: "pink", invert: true },
     { label: "Receipts issued", value: PAYMENTS.length, icon: Receipt, tone: "blue" },
   ];
 

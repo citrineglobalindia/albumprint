@@ -164,7 +164,7 @@ export const PriorityPill = ({ p }: { p: Priority }) => <Pill tone={PRIORITY_TON
 const PAY_TONE: Record<PayStatus, Tone> = { Paid: "green", Partial: "amber", Unpaid: "red", Overdue: "red" };
 export const PayPill = ({ s }: { s: PayStatus }) => <Pill tone={PAY_TONE[s]}>{s === "Partial" ? "Partial" : s}</Pill>;
 
-const AVATAR_BG = ["bg-indigo-500", "bg-violet-500", "bg-sky-500", "bg-emerald-500", "bg-pink-500", "bg-amber-500", "bg-teal-500", "bg-rose-500"];
+const AVATAR_BG = ["bg-indigo-600", "bg-violet-600", "bg-sky-700", "bg-emerald-700", "bg-pink-600", "bg-amber-700", "bg-teal-700", "bg-rose-600"];   // all >= 4.5:1 with white initials
 export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   const h = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
   return (
@@ -215,7 +215,7 @@ export function CountTabs<T extends string>({ tabs, value, onChange }: { tabs: {
           <button key={t.key} role="tab" aria-selected={active} onClick={() => onChange(t.key)} className={cx("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-4 text-[13px] font-bold transition", active ? "border-brand bg-brand text-white shadow-md shadow-brand/20" : "border-line bg-white text-ink hover:bg-brand-soft")}>
             {t.tone && <span className={cx("size-2 rounded-full", active ? "bg-white" : TONE[t.tone].dot)} />}
             {t.label}
-            {t.count !== undefined && <span className={cx("rounded-full px-2 py-0.5 text-xs", active ? "bg-white/25" : "bg-slate-100 text-sub")}>{t.count}</span>}
+            {t.count !== undefined && <span className={cx("rounded-full px-2 py-0.5 text-xs", active ? "bg-white text-brand" : "bg-slate-100 text-sub")}>{t.count}</span>}
           </button>
         );
       })}
@@ -303,21 +303,23 @@ export function SlideOver({ open, onClose, title, children, footer, width = 440 
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-ink/30" onClick={onClose}>
-      <aside role="dialog" aria-modal="true" aria-label={title} className="flex h-full w-full max-w-full flex-col bg-white shadow-2xl sm:w-[var(--w)]" style={{ "--w": `${width}px` } as CSSProperties} onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="flex h-full w-full max-w-full flex-col bg-white shadow-2xl sm:w-[var(--w)]" style={{ "--w": `${width}px` } as CSSProperties} onClick={(e) => e.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 sm:py-4">
           <h2 className="min-w-0 truncate text-lg font-extrabold">{title}</h2>
           <button type="button" onClick={onClose} className="grid size-10 shrink-0 place-items-center rounded-lg text-sub hover:bg-slate-100 sm:size-8" aria-label="Close"><span aria-hidden>✕</span></button>
         </header>
         <div className="scroll-thin flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
         {footer && <footer className="flex flex-wrap justify-end gap-3 border-t border-line px-4 py-3 sm:px-6 sm:py-4">{footer}</footer>}
-      </aside>
+      </div>
     </div>
   );
 }
 
 export function Field({ label, required, children, hint }: { label: string; required?: boolean; children: ReactNode; hint?: string }) {
   return (
-    <label className="mb-4 block">
+    // A <label> that wraps buttons (combobox, toggles) re-dispatches the click to its first control once the clicked button has re-rendered away
+    // (e.g. "Add new customer" instantly flipped back to "Use existing"). Cancel that label activation for clicks that started on a button.
+    <label className="mb-4 block" onClick={(e) => { const t = e.target as HTMLElement; if (t !== e.currentTarget && t.closest("button")) e.preventDefault(); }}>
       <span className="mb-1.5 block text-[13px] font-semibold text-ink">{label}{required && <span className="text-rose-500"> *</span>}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-sub">{hint}</span>}

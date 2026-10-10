@@ -18,6 +18,11 @@ Business rules live in the database so the UI and API cannot bypass them (SRS AL
 - Closed orders are read-only; reopen needs admin + reason. Cancelling preserves all history.
 - Every change on key tables writes `audit_log` (actor, role, old/new, reason). The log cannot be edited or deleted.
 
-## Deploying
-Not deployed anywhere yet. Create a **new, dedicated** Supabase project for AlbumPro, then apply `migrations/*.sql` in order (SQL editor, `supabase db push`, or the Supabase MCP `apply_migration`).
-Then create users in Supabase Auth and insert matching `profiles` rows (role + department).
+## Deployed
+Applied to the dedicated AlbumPro Supabase project (ref `wwwbzqsckoofuryqjrxe`, "My Project", org Stepstones Solutions) as migrations 0001–0006.
+Smoke-tested live (rolled back): order codes are generated, reception cannot approve grading, direct stage edits are blocked, the colour grader sees masked phone numbers and zero raw customer rows, `anon` is locked out.
+The Supabase security advisor's remaining notes are intentional: `counters` has RLS and no policy (only trigger functions touch it) and `advance_order`, `lock_final_print_file`, `has_perm`, `current_app_role` are callable RPCs.
+
+`DROP VIEW customers_safe` hangs on the hosted project, so migration 0006 retires that view (security_invoker, no grants) instead of dropping it. `list_customers()` is the masked directory the app should call.
+
+Before first use: create users in Supabase Auth and insert matching `profiles` rows (role + department). Nothing is seeded except permissions, transitions, SLA rules and settings.

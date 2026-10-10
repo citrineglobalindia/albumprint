@@ -9,8 +9,8 @@ test.describe("orders", () => {
     await page.getByRole("button", { name: "Create Order" }).first().click();
     const dlg = page.getByRole("dialog", { name: "New Order" });
     await expect(dlg).toBeVisible();
-    await dlg.getByRole("button", { name: /Search by name, studio or mobile/ }).click();
-    await page.getByRole("button", { name: /Sharma Studio/ }).click();
+    await dlg.getByRole("button", { name: /^Customer/ }).click();
+    await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
     for (let i = 0; i < 4; i++) await dlg.getByRole("button", { name: "Next" }).click();
     await dlg.getByRole("button", { name: "Create Order" }).click();
     await expect(page).toHaveURL(/\/orders\/IDP00073$/);
@@ -26,8 +26,8 @@ test.describe("orders", () => {
     await page.goto("/orders");
     await page.getByRole("button", { name: "Create Order" }).first().click();
     const dlg = page.getByRole("dialog", { name: "New Order" });
-    await dlg.getByRole("button", { name: /Search by name, studio or mobile/ }).click();
-    await page.getByRole("button", { name: /Add new customer/ }).click();
+    await dlg.getByRole("button", { name: /^Customer/ }).click();
+    await page.getByRole("button", { name: "Add new customer", exact: true }).click();
     await dlg.getByPlaceholder("Studio / customer name").fill("E2E Test Studio");
     await dlg.getByPlaceholder("Mobile number").fill("9876501234");
     for (let i = 0; i < 4; i++) await dlg.getByRole("button", { name: "Next" }).click();

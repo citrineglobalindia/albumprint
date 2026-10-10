@@ -164,7 +164,7 @@ create table proofs (            -- §11 client proofing; only the hash of the s
   version int not null,
   token_hash text not null unique,
   expires_at timestamptz not null,
-  status text not null default 'sent' check (status in ('sent','viewed','approved','corrections_requested','expired')),
+  status text not null default 'sent' check (status in ('sent','viewed','approved','corrections_requested','expired','revoked')),
   responded_at timestamptz, client_note text,
   sent_by uuid references profiles(id), sent_at timestamptz not null default now()
 );

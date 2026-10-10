@@ -287,7 +287,7 @@ export default function Orders() {
                 const skipped = d.workflow === "Printing" && ["colour_grading", "admin_approval", "designing", "client_review", "final_approval"].includes(s.key);
                 return (
                   <li key={s.key} className={cx("flex items-center gap-2.5 text-[13px]", skipped && "opacity-40")}>
-                    <span className={cx("grid size-5 place-items-center rounded-full text-[10px] font-bold", i < cur ? "bg-emerald-500 text-white" : i === cur ? "bg-brand text-white" : "bg-slate-100 text-sub")}>{i < cur ? <Check className="size-3" /> : i + 1}</span>
+                    <span className={cx("grid size-5 place-items-center rounded-full text-[10px] font-bold", i < cur ? "bg-emerald-600 text-white" : i === cur ? "bg-brand text-white" : "bg-slate-100 text-sub")}>{i < cur ? <Check className="size-3" /> : i + 1}</span>
                     <span className={cx(i === cur && "font-extrabold text-brand")}>{s.label}</span>{skipped && <span className="text-xs text-sub">(not required)</span>}
                   </li>
                 );
