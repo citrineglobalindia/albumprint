@@ -264,7 +264,7 @@ test("printing: an open exception blocks the next stage until resolved; a vendor
   await printing.getByLabel("Exception type").selectOption("Machine fault");
   await printing.getByLabel("Exception note").fill("Plotter jam");
   await printing.getByRole("button", { name: /Raise|Log|Start/ }).last().click();
-  await expect.poll(() => db(code, `select kind || '|' || note || '|' || resolved from print_exceptions where order_id = $O`)).toBe("machine_fault|Plotter jam|f");
+  await expect.poll(() => db(code, `select kind || '|' || note || '|' || resolved from print_exceptions where order_id = $O`)).toBe("machine_fault|Plotter jam|false");
   await printing.getByTestId("advance").click();
   await expect(printing.getByText(/Resolve the open exception first/).first()).toBeVisible();
   expect(db(code, `select stage from print_jobs where order_id = $O`)).toBe("waiting");
@@ -301,6 +301,7 @@ test("release to printing: an admin releases an order at Final Approval with its
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("printing");
   await expect.poll(() => db(code, `select stage || '|' || paper_type || '|' || sheets || '|' || copies from print_jobs where order_id = $O`)).toMatch(/^waiting\|.+\|40\|1$/);
   await admin.reload();
+  await admin.getByPlaceholder(/Search order, customer/).fill(code);
   await expect(admin.getByTestId(`pjob-${code}`)).toBeVisible();
 });
 
