@@ -9,3 +9,6 @@ playwright-report
 supabase/local/.bin
 supabase/local/*.pid
 supabase/local/*.log
+supabase/local/.postgrest-*.pid
+supabase/local/.auth-*.pid
+supabase/local/.*.log
