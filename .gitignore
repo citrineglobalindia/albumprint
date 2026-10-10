@@ -6,3 +6,6 @@ playwright-report
 *.tsbuildinfo
 .env
 .env.local
+supabase/local/.bin
+supabase/local/*.pid
+supabase/local/*.log
