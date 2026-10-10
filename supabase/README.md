@@ -33,3 +33,7 @@ Migration 0007 was applied to the live project in steps (the Supabase tool holds
 
 ## Connecting the app
 Copy `.env.example` to `.env`, set `VITE_USE_SUPABASE=true`, the project URL and the publishable key. Without it the app runs in demo mode (browser storage) — the automated tests always use demo mode.
+
+## First-login password change and file storage (migration 0008)
+`complete_password_change()` lets a user clear their own `must_change_password` flag; the app shows a "Set your own password" screen until they do.
+Private storage bucket `order-files` (path `<order code>/<category>/<file>-v<n>`): read needs permission to view orders, upload needs production-work permission, and there is no update/delete policy so stored files are immutable.

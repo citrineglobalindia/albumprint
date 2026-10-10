@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase, backendOn } from "./supabase";
+import ChangePassword from "../pages/ChangePassword";
 import { Navigate, useLocation } from "react-router-dom";
 
 // SRS §1.2 role model. Demo-only auth: replace with real session/MFA service.
@@ -17,7 +18,8 @@ export const ROLES: Record<RoleKey, { label: string; user: string; email: string
 
 export interface AuthResult { ok: boolean; error?: string; needsConfirmation?: boolean }
 interface Auth {
-  role: RoleKey | null; user: string; email: string; loading: boolean; backend: boolean;
+  role: RoleKey | null; user: string; email: string; loading: boolean; backend: boolean; mustChangePassword: boolean;
+  finishPasswordChange: (newPassword: string) => Promise<AuthResult>;
   login: (r: RoleKey) => void;                                       // demo mode only
   signIn: (email: string, password: string) => Promise<AuthResult>;  // Supabase
   signUp: (email: string, password: string) => Promise<AuthResult>;  // Supabase (only invited emails receive a profile)
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(backendOn);
+  const [mustChange, setMustChange] = useState(false);
 
   // Supabase: load the signed-in user's profile (role comes from the database, never from the browser).
   useEffect(() => {
@@ -47,9 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let alive = true;
     const load = async (uid: string | null) => {
       if (!uid) { if (alive) { setRole(null); setName(""); setEmail(""); mirror(null); setLoading(false); } return; }
-      const { data } = await sb.from("profiles").select("full_name,email,role,active").eq("id", uid).maybeSingle();
+      const { data } = await sb.from("profiles").select("full_name,email,role,active,must_change_password").eq("id", uid).maybeSingle();
       if (!alive) return;
-      if (data && data.active && data.role in ROLES) { setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); mirror(data.role as RoleKey, data.full_name); }
+      if (data && data.active && data.role in ROLES) { setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name); }
       else { setRole(null); mirror(null); }                       // signed in but not an invited/active staff member → no access
       setLoading(false);
     };
@@ -75,18 +78,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.resetPasswordForEmail(e.trim().toLowerCase(), { redirectTo: `${location.origin}/login` });
     return error ? { ok: false, error: error.message } : { ok: true };
   };
+  const finishPasswordChange: Auth["finishPasswordChange"] = async (pw) => {
+    if (!supabase) return { ok: false, error: "Backend is not configured" };
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    if (error) return { ok: false, error: error.message };
+    const { error: e2 } = await supabase.rpc("complete_password_change");
+    if (e2) return { ok: false, error: e2.message };
+    setMustChange(false);
+    return { ok: true };
+  };
   const logout = () => { mirror(null); setRole(null); if (supabase) void supabase.auth.signOut(); };
 
-  return <Ctx.Provider value={{ role, user: backendOn ? name : role ? ROLES[role].user : "", email: backendOn ? email : role ? ROLES[role].email : "", loading, backend: backendOn, login, signIn, signUp, resetPassword, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ role, user: backendOn ? name : role ? ROLES[role].user : "", email: backendOn ? email : role ? ROLES[role].email : "", loading, backend: backendOn, mustChangePassword: backendOn && mustChange, finishPasswordChange, login, signIn, signUp, resetPassword, logout }}>{children}</Ctx.Provider>;
 }
 export const useAuth = () => useContext(Ctx);
 
 /** Redirects to /login when signed out, and to "/" when the role may not open the path. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { role, loading } = useAuth();
+  const { role, loading, mustChangePassword } = useAuth();
   const { pathname } = useLocation();
   if (loading) return <div className="grid min-h-screen place-items-center text-sm text-sub" role="status">Loading…</div>;
   if (!role) return <Navigate to="/login" replace state={{ from: pathname }} />;
+  if (mustChangePassword) return <ChangePassword />;
   const base = "/" + (pathname.split("/")[1] ?? "");
   const allowed = ROLES[role].nav.includes(base) || pathname.startsWith("/orders/") && ROLES[role].nav.includes("/orders");
   if (!allowed && pathname !== "/") return <Navigate to="/" replace />;
