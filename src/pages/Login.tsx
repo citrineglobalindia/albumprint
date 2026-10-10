@@ -42,7 +42,7 @@ export default function Login() {
     return () => window.clearTimeout(t);
   }, [cooldown]);
   const resend = () => { setResent(true); setCooldown(30); setOtp(""); };
-  if (role) return <Navigate to="/" replace />;
+  if (role) return <Navigate to={from} replace />;
 
   const choose = (r: RoleKey) => { setPick(r); setEmail(ROLES[r].email); setErr(""); };
   const submit = () => {

@@ -7,6 +7,7 @@ import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, ty
 import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, price, type Spec } from "../lib/pricing";
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
+import { logAudit } from "../lib/audit";
 
 // SRS §4.3 (order fields), §5 (workflow routing), §6.1 (album spec), §3.2 (pricing).
 interface Draft {
@@ -73,6 +74,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: p.total, paid: 0, progress: 0,
     };
     ORDERS.unshift(order);
+    logAudit({ entity: "order", entityId: order.id, action: "create", detail: `${order.workflow} · ${d.spec.albumType} ${order.size} · ${inr(p.total)}${d.newCustomer ? " · new customer " + custName : ""}` });
     show(`Order ${order.id} created`);
     onClose(); nav(`/orders/${order.id}`);
   };

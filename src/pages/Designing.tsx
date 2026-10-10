@@ -361,7 +361,7 @@ export default function Designing() {
 
       {toast && <div className="fixed right-6 top-6 z-50 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white shadow-xl">{toast}</div>}
 
-      <div className="grid grid-cols-[170px_minmax(0,1fr)_340px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[170px_minmax(0,1fr)_340px] gap-4">
         <Panel className="flex max-h-[760px] flex-col" bodyClassName="flex min-h-0 flex-1 flex-col p-3">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-[15px] font-extrabold">Pages ({order.pages})</h3>
@@ -393,8 +393,8 @@ export default function Designing() {
 
         <div className="min-w-0 space-y-4">
           <Panel bodyClassName="p-3">
-            <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-sub">
-              <div className="flex gap-1">
+            <div className="scroll-thin mb-3 flex max-w-full flex-wrap items-center gap-3 overflow-x-auto text-[11px] text-sub">
+              <div className="flex min-w-0 flex-wrap gap-1">
                 <button onClick={undo} disabled={!past.length} title="Ctrl+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Undo2 className="size-4 text-ink" />Undo</button>
                 <button onClick={redo} disabled={!future.length} title="Ctrl+Shift+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Redo2 className="size-4 text-ink" />Redo</button>
                 <button onClick={() => setZoom(ZFIT)} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100"><Maximize className="size-4 text-ink" />Fit</button>
@@ -411,7 +411,7 @@ export default function Designing() {
                 <span className="font-semibold text-ink">{pageNo} / {order.pages}</span>
                 <button aria-label="Next page" disabled={page >= spreads.length - 1} onClick={() => { setPage(page + 1); setSelOv(null); }} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
               </div>
-              <div className="ml-auto flex gap-1">
+              <div className="ml-auto flex flex-wrap gap-1">
                 {tools.map(({ I, l, run }) => (
                   <button key={l} onClick={run} className={cx("grid h-12 min-w-14 place-items-center rounded-lg px-1.5 hover:bg-slate-100", l === "Background" && bgOpen && "bg-brand-soft")}><I className="size-4 text-ink" />{l}</button>
                 ))}
@@ -479,8 +479,8 @@ export default function Designing() {
           </Panel>
 
           <Panel bodyClassName="p-4">
-            <div className="mb-3 flex items-center justify-between border-b border-line">
-              <div className="flex gap-5 overflow-x-auto">
+            <div className="mb-3 flex min-w-0 items-center justify-between gap-3 border-b border-line">
+              <div className="scroll-thin flex min-w-0 gap-5 overflow-x-auto">
                 {TPL_TABS.map((t) => (
                   <button key={t} onClick={() => setTplTab(t)} className={cx("-mb-px whitespace-nowrap border-b-2 pb-2 text-[13px] font-bold", t === tplTab ? "border-brand text-brand" : "border-transparent text-sub")}>{t}</button>
                 ))}

@@ -2,14 +2,25 @@ import { test, expect } from "@playwright/test";
 import { seedRole } from "./helpers";
 
 test.describe("login and roles", () => {
-  test("signed-out visit redirects to /login; signing in as Reception lands on the Reception home", async ({ page }) => {
-    await page.goto("/orders");
-    await expect(page).toHaveURL(/\/login$/);
-    await page.getByRole("button", { name: "Reception", exact: true }).click();
+  const signIn = async (page: import("@playwright/test").Page, role: string) => {
+    await page.getByRole("button", { name: role, exact: true }).click();
     await page.getByPlaceholder("••••••••").fill("secret1");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.getByPlaceholder("······").fill("123456");
     await page.getByRole("button", { name: /Verify/ }).click();
+  };
+
+  test("signed-out visit redirects to /login and returns to the requested page after sign-in", async ({ page }) => {
+    await page.goto("/orders");
+    await expect(page).toHaveURL(/\/login$/);
+    await signIn(page, "Reception");
+    await expect(page).toHaveURL(/\/orders$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Orders");
+  });
+
+  test("signing in directly as Reception lands on the Reception home", async ({ page }) => {
+    await page.goto("/login");
+    await signIn(page, "Reception");
     await expect(page).toHaveURL(/localhost:\d+\/$/);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Reception Desk");    // role-specific home, not the admin dashboard
     await expect(page.getByRole("link", { name: "Payments" })).toBeVisible();
