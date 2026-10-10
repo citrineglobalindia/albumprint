@@ -12,3 +12,6 @@ supabase/local/*.log
 supabase/local/.postgrest-*.pid
 supabase/local/.auth-*.pid
 supabase/local/.*.log
+
+# local storage stand-in bytes
+supabase/local/.storage

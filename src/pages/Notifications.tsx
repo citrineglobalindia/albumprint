@@ -6,6 +6,9 @@ import { useToast } from "../components/Toast";
 import { notifStore, useNotifs } from "../lib/notifStore";
 import { ORDERS, type Order, type Tone } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
+import { backendOn } from "../lib/supabase";
+import { dbListComm, dbListTemplates, dbQueueComm, dbRequeueComm, dbSetTemplateChannel, type CommMsg, type Tpl } from "../lib/db/admin";
+import { orderUid } from "../lib/db/orders";
 
 // SRS §17.1 triggered notifications and §17.2 communication log.
 const TRIGGERS = [
@@ -25,10 +28,14 @@ const TRIGGERS = [
 ];
 const CHANNELS = ["WhatsApp", "Email", "SMS", "Call", "Internal Note"] as const;
 type Ch = (typeof CHANNELS)[number];
+const CH_DB: Record<Ch, string> = { WhatsApp: "whatsapp", Email: "email", SMS: "sms", Call: "call", "Internal Note": "internal_note" };
+const CH_FROM_DB = Object.fromEntries(Object.entries(CH_DB).map(([k, v]) => [v, k])) as Record<string, Ch>;
+const fmtAt = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(" at", ",").replace(/am|pm/, (x) => x.toUpperCase());
+const msgFromDb = (m: CommMsg): Msg => ({ id: m.id, ch: CH_FROM_DB[m.channel] ?? "Internal Note", dir: m.direction === "inbound" ? "Inbound" : "Outbound", tpl: m.template || "—", to: m.recipient || "—", at: fmtAt(m.at), ts: m.at, status: m.status[0]!.toUpperCase() + m.status.slice(1), order: m.order, msg: m.summary });
 const CH_ICON = { WhatsApp: MessageCircle, Email: Mail, SMS: Smartphone, Call: Phone, "Internal Note": StickyNote };
 const STATUSES = ["Read", "Delivered", "Sent", "Queued", "Failed"];
 const STATUS_TONE: Record<string, Tone> = { Read: "green", Delivered: "blue", Sent: "slate", Queued: "amber", Failed: "red" };
-interface Msg { id: number; ch: Ch; dir: "Inbound" | "Outbound"; tpl: string; to: string; at: string; ts: string; status: string; order: string; msg: string }
+interface Msg { id: number | string; ch: Ch; dir: "Inbound" | "Outbound"; tpl: string; to: string; at: string; ts: string; status: string; order: string; msg: string }
 const SEED_LOG: Omit<Msg, "id">[] = [
   { ch: "WhatsApp", dir: "Outbound", tpl: "proof_ready", to: "+91 98•••• 43210", at: "3 Oct 2026, 11:02 AM", ts: "2026-10-03T11:02:00", status: "Read", order: "IDP00072", msg: "Proof link shared with client" },
   { ch: "WhatsApp", dir: "Inbound", tpl: "—", to: "+91 99•••• 54321", at: "3 Oct 2026, 10:48 AM", ts: "2026-10-03T10:48:00", status: "Read", order: "IDP00071", msg: "Client requested page 12 colour change" },
@@ -64,7 +71,9 @@ const inRng = (ts: string, r: DateRange) => { if (!r.from || !r.to) return true;
 export default function Notifications() {
   const [tab, setTab] = useState<"log" | "threads" | "triggers">("log");
   const idRef = useRef(100);
-  const [log, setLog] = useState<Msg[]>(() => SEED_LOG.map((m, i) => ({ ...m, id: i + 1 })));
+  const [log, setLog] = useState<Msg[]>(() => (backendOn ? [] : SEED_LOG.map((m, i) => ({ ...m, id: i + 1 }))));
+  const [tpls, setTpls] = useState<Tpl[]>([]);
+  useEffect(() => { if (backendOn) { void dbListComm().then((r) => setLog(r.map(msgFromDb))); void dbListTemplates().then(setTpls); } }, []);
   const [q, setQ] = useState("");
   const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
   const [fCh, setFCh] = useState<string[]>([]);
@@ -73,7 +82,7 @@ export default function Notifications() {
   const [sort, setSort] = useState<SortState>(null);
   const [on, setOn] = useState<Record<string, [boolean, boolean]>>(Object.fromEntries(TRIGGERS.map(([t]) => [t, [true, t !== "Correction Received"]])));
   const [page, setPage] = useState(1);
-  const [detail, setDetail] = useState<number | null>(null);
+  const [detail, setDetail] = useState<number | string | null>(null);
   const [thread, setThread] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [compose, setCompose] = useState(false);
@@ -96,10 +105,13 @@ export default function Notifications() {
   const failed = log.filter((l) => l.status === "Failed").length;
   const failedInView = view.filter((m) => m.status === "Failed");
   const kpis: Kpi[] = [
-    { label: "Sent Today", value: 40 + log.filter((l) => l.dir === "Outbound").length, delta: 12, icon: ArrowUpRight, tone: "blue" },
-    { label: "Delivered / Read", value: 33 + log.filter((l) => l.status === "Read" || l.status === "Delivered").length, delta: 8, icon: MessageCircle, tone: "green" },
-    { label: "Failed", value: failed, delta: 0, icon: Smartphone, tone: "red", invert: true },
-    { label: "Inbound Replies", value: 8 + log.filter((l) => l.dir === "Inbound").length, delta: 20, icon: ArrowDownLeft, tone: "violet" },
+    backendOn ? { label: "Queued", value: log.filter((l) => l.status === "Queued").length, icon: ArrowUpRight, tone: "blue" }
+      : { label: "Sent Today", value: 40 + log.filter((l) => l.dir === "Outbound").length, delta: 12, icon: ArrowUpRight, tone: "blue" },
+    backendOn ? { label: "Delivered / Read", value: log.filter((l) => l.status === "Read" || l.status === "Delivered").length, icon: MessageCircle, tone: "green" }
+      : { label: "Delivered / Read", value: 33 + log.filter((l) => l.status === "Read" || l.status === "Delivered").length, delta: 8, icon: MessageCircle, tone: "green" },
+    { label: "Failed", value: failed, delta: backendOn ? undefined : 0, icon: Smartphone, tone: "red", invert: true },
+    backendOn ? { label: "Inbound Replies", value: log.filter((l) => l.dir === "Inbound").length, icon: ArrowDownLeft, tone: "violet" }
+      : { label: "Inbound Replies", value: 8 + log.filter((l) => l.dir === "Inbound").length, delta: 20, icon: ArrowDownLeft, tone: "violet" },
   ];
   const chips = [
     ...(q.trim() ? [{ label: `Search: ${q.trim()}`, onRemove: () => setQ("") }] : []),
@@ -110,8 +122,14 @@ export default function Notifications() {
   ];
   const clearAll = () => { setQ(""); setRange(presetRange("All Time")); setFCh([]); setFStatus([]); setFDir([]); setPage(1); };
 
-  const retryIds = (ids: number[]) => {
+  const retryIds = (ids: (number | string)[]) => {
     if (!ids.length) { show("No failed messages to retry"); return; }
+    if (backendOn) {      // optimistic: re-queue now, put the rows back if the database refuses (no provider is connected, so nothing is actually sent)
+      const before = log;
+      setLog((l) => l.map((m) => (ids.includes(m.id) ? { ...m, status: "Queued" } : m)));
+      void dbRequeueComm(ids as string[]).then((err) => { if (err) { setLog(before); show(`Could not re-queue: ${err}`); } else show(ids.length === 1 ? "Message re-queued" : `${ids.length} messages re-queued`); });
+      return;
+    }
     setLog((l) => l.map((m) => (ids.includes(m.id) ? { ...m, status: "Queued" } : m)));
     show(ids.length === 1 ? "Retrying message..." : `Retrying ${ids.length} failed messages...`);
     timers.current.push(window.setTimeout(() => { setLog((l) => l.map((m) => (ids.includes(m.id) ? { ...m, status: "Delivered", at: nowStr(), ts: NOW } : m))); show(ids.length === 1 ? "Message delivered on retry" : `${ids.length} messages delivered on retry`); }, 1200));
@@ -126,7 +144,7 @@ export default function Notifications() {
   const pickOrder = (id: string) => { const o = ORDERS.find((x) => x.id === id); setF((p) => ({ ...p, order: id, to: o ? (p.ch === "Email" ? maskEmail(emailOf(o)) : p.ch === "Internal Note" ? "Admin" : maskPhone(o.mobile)) : p.to, custom: false })); };
   const pickCh = (c: Ch) => setF((p) => { const o = ORDERS.find((x) => x.id === p.order); return { ...p, ch: c, custom: false, to: o ? (c === "Email" ? maskEmail(emailOf(o)) : c === "Internal Note" ? "Admin" : maskPhone(o.mobile)) : p.to }; });
   const pickTpl = (t: string) => setF((p) => ({ ...p, tpl: t, body: t ? TPL[t]! : p.body }));
-  const send = () => {
+  const send = async () => {
     const e: { order?: string; to?: string; body?: string } = {};
     if (!f.order) e.order = "Select the order this message relates to";
     const to = f.custom ? f.to.trim() : recipientAuto;
@@ -136,6 +154,14 @@ export default function Notifications() {
     if (!f.body.trim()) e.body = "Message body is required";
     setErrs(e);
     if (Object.keys(e).length) return;
+    if (backendOn) {
+      const r = await dbQueueComm({ orderUid: orderUid(f.order) ?? null, channel: CH_DB[f.ch], recipient: to, template: f.tpl, summary: resolve(f.body.trim(), v) });
+      if (r.error || !r.row) { show(`Could not queue the message: ${r.error}`); return; }
+      setLog((l) => [msgFromDb(r.row!), ...l]);
+      clearAll(); setSort(null); setTab("log"); setCompose(false);
+      show(f.ch === "Internal Note" ? "Internal note saved" : `${f.ch} message queued for ${f.order} (provider sending is not connected)`);
+      return;
+    }
     const msg: Msg = { id: idRef.current++, ch: f.ch, dir: "Outbound", tpl: f.tpl || "—", to: f.custom ? (f.ch === "Email" ? maskEmail(to) : f.ch === "Internal Note" ? to : maskPhone(to)) : to, at: nowStr(), ts: NOW, status: f.ch === "Internal Note" ? "Sent" : "Queued", order: f.order, msg: resolve(f.body.trim(), v) };
     setLog((l) => [msg, ...l]);
     clearAll(); setSort(null); setTab("log");
@@ -143,9 +169,14 @@ export default function Notifications() {
     show(`${f.ch} message queued for ${f.order}`);
     if (f.ch !== "Internal Note") timers.current.push(window.setTimeout(() => setLog((l) => l.map((m) => (m.id === msg.id ? { ...m, status: "Delivered" } : m))), 1500));
   };
-  const sendReply = () => {
+  const sendReply = async () => {
     if (!thread || !reply.trim()) return;
     const o = ORDERS.find((x) => x.id === thread);
+    if (backendOn) {
+      const r = await dbQueueComm({ orderUid: orderUid(thread) ?? null, channel: "whatsapp", recipient: o ? maskPhone(o.mobile) : "", template: "", summary: reply.trim() });
+      if (r.error || !r.row) { show(`Could not queue the reply: ${r.error}`); return; }
+      setLog((l) => [msgFromDb(r.row!), ...l]); setReply(""); return;
+    }
     const msg: Msg = { id: idRef.current++, ch: "WhatsApp", dir: "Outbound", tpl: "—", to: o ? maskPhone(o.mobile) : "—", at: nowStr(), ts: NOW, status: "Queued", order: thread, msg: reply.trim() };
     setLog((l) => [msg, ...l]); setReply("");
     timers.current.push(window.setTimeout(() => setLog((l) => l.map((m) => (m.id === msg.id ? { ...m, status: "Delivered" } : m))), 1200));
@@ -167,6 +198,7 @@ export default function Notifications() {
         <button onClick={markAll} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><CheckCheck className="size-4" />Mark all read{unread > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[11px] text-white">{unread}</span>}</button>
         <PrimaryButton icon={Send} onClick={() => openCompose()}>Send message</PrimaryButton>
       </PageHeader>
+      {backendOn && <p data-testid="queue-note" className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Outbound messages are recorded in the communication log with status Queued. Delivery through WhatsApp, e-mail and SMS providers is not connected yet, so nothing is actually sent.</p>}
       <KpiRow items={kpis} />
       <Panel>
         <LineTabs className="mb-4" value={tab} onChange={setTab} tabs={[{ key: "log", label: "Communication Log" }, { key: "threads", label: "Conversations", count: threads.length }, { key: "triggers", label: "Triggered Notifications" }]} />
@@ -214,7 +246,24 @@ export default function Notifications() {
               </button></li>); })}
           </ul>
         )}
-        {tab === "triggers" && (
+        {tab === "triggers" && backendOn && (
+          <div className="scroll-thin overflow-x-auto">
+            <table className={tableCls} data-testid="trigger-table">
+              <thead><tr><Th>Trigger</Th><Th>Recipient</Th><Th>Behaviour</Th><Th>WhatsApp</Th><Th>Email</Th><Th>SMS</Th><Th>In-app</Th></tr></thead>
+              <tbody>{tpls.map((t) => (
+                <tr key={t.key} className={trCls}><Td className="font-bold">{t.name}</Td><Td>{t.recipient}</Td><Td className="text-sub">{t.behaviour}</Td>
+                  {([["whatsapp", "WhatsApp", t.whatsapp], ["email", "Email", t.email], ["sms", "SMS", t.sms], ["in_app", "In-app", t.inApp]] as const).map(([ch, lbl, val]) => (
+                    <Td key={ch}><Toggle label={`${t.name}: ${lbl}`} on={val} onChange={(x) => {
+                      const prop = ch === "in_app" ? "inApp" : ch;
+                      setTpls((l) => l.map((y) => (y.key === t.key ? { ...y, [prop]: x } : y)));
+                      void dbSetTemplateChannel(t.key, ch, x).then((err) => { if (err) { setTpls((l) => l.map((y) => (y.key === t.key ? { ...y, [prop]: !x } : y))); show(err); } else show(`${t.name}: ${lbl} ${x ? "enabled" : "disabled"}`); });
+                    }} /></Td>))}
+                </tr>))}
+                {tpls.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-sub">No notification triggers found.</td></tr>}</tbody>
+            </table>
+          </div>
+        )}
+        {tab === "triggers" && !backendOn && (
           <div className="scroll-thin overflow-x-auto">
             <table className={tableCls}>
               <thead><tr><Th>Trigger</Th><Th>Recipient</Th><Th>Behaviour</Th><Th>WhatsApp</Th><Th>Email</Th></tr></thead>
@@ -244,8 +293,8 @@ export default function Notifications() {
 
       {/* conversation thread for one order */}
       <SlideOver width={520} open={!!thread} onClose={() => setThread(null)} title={thOrder ? `${thread} · ${thOrder.customer}` : thread ?? ""} footer={<>
-        <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()} aria-label="Reply" placeholder="Reply on WhatsApp…" className={cx(inputCls, "flex-1")} />
-        <button onClick={sendReply} disabled={!reply.trim()} className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white disabled:opacity-40"><Send className="size-4" /></button>
+        <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void sendReply()} aria-label="Reply" placeholder="Reply on WhatsApp…" className={cx(inputCls, "flex-1")} />
+        <button onClick={() => void sendReply()} disabled={!reply.trim()} className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white disabled:opacity-40"><Send className="size-4" /></button>
       </>}>
         <div data-testid="thread" className="space-y-3">
           {th?.ms.map((m) => { const I = CH_ICON[m.ch]; const out = m.dir === "Outbound"; return (
@@ -263,7 +312,7 @@ export default function Notifications() {
 
       <SlideOver width={500} open={compose} onClose={() => setCompose(false)} title="Send message" footer={<>
         <button onClick={() => setCompose(false)} className="h-11 px-5 text-sm font-bold">Cancel</button>
-        <PrimaryButton icon={Send} onClick={send}>Send</PrimaryButton>
+        <PrimaryButton icon={Send} onClick={() => void send()}>{backendOn ? "Queue message" : "Send"}</PrimaryButton>
       </>}>
         <div className="mb-4"><span className="mb-1.5 block text-[13px] font-semibold">Channel <span className="text-rose-500">*</span></span><Combobox options={CHANNELS.map((c) => ({ value: c, label: c }))} value={f.ch} onChange={(x) => pickCh(x as Ch)} /></div>
         <div className="mb-4"><span className="mb-1.5 block text-[13px] font-semibold">Order <span className="text-rose-500">*</span></span>

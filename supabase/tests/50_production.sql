@@ -1,0 +1,218 @@
+\set ON_ERROR_STOP on
+\set QUIET on
+-- Production: colour grading, printing, QC rounds, delivery, file register. Reuses the t.* harness created by 10_rules.sql.
+reset role;
+create table t.p50(k text primary key, v text);
+grant select, insert, update on t.p50 to authenticated;
+create function t.jump(p_order uuid, p_to text) returns void language plpgsql as $$
+begin perform t.as('system'); perform advance_order(p_order, p_to::stage_key, 'fixture', true); end $$;
+grant execute on function t.jump(uuid, text) to authenticated;
+
+-- ───── fixtures ─────
+select t.as('system');
+insert into customers(studio_name, mobile) values ('Prod Studio', '9000000050');
+insert into orders(customer_id, type, due_date, total) select id, 'design_printing', current_date + 14, 20000 from customers where studio_name = 'Prod Studio';
+insert into orders(customer_id, type, due_date, total) select id, 'printing_only',   current_date + 14, 20000 from customers where studio_name = 'Prod Studio';
+insert into orders(customer_id, type, due_date, total) select id, 'printing_only',   current_date + 14, 5000  from customers where studio_name = 'Prod Studio';
+insert into t.p50 select 'A', id::text from (select id from orders where customer_id = (select id from customers where studio_name='Prod Studio') and type='design_printing') x;
+insert into t.p50 select 'B', id::text from (select id from orders where customer_id = (select id from customers where studio_name='Prod Studio') and type='printing_only' and total=20000) x;
+insert into t.p50 select 'C', id::text from (select id from orders where customer_id = (select id from customers where studio_name='Prod Studio') and type='printing_only' and total=5000) x;
+insert into t.p50 select 'codeA', code from orders where id = (select v::uuid from t.p50 where k='A');
+insert into t.p50 select 'colour', id::text from t.users where role = 'colour';
+select t.jump((select v::uuid from t.p50 where k='A'), 'colour_grading');
+
+-- ═════════ colour grading ═════════
+select t.as('admin');
+select t.ok($$select upsert_grading_task((select v::uuid from t.p50 where k='A'), (select v::uuid from t.p50 where k='colour'), 'high', now() + interval '3 days', 'warm tones')$$, 'grading: admin creates and assigns the job');
+select t.eq($$select (select count(*) from tasks where order_id = (select v::uuid from t.p50 where k='A') and kind='grading')::text || ':' || priority::text || ':' || status::text from tasks where order_id = (select v::uuid from t.p50 where k='A') and kind='grading'$$, '1:high:pending', 'grading: one job, high priority, New');
+select t.ok($$select upsert_grading_task((select v::uuid from t.p50 where k='A'), null, 'high', null, null)$$, 'grading: a second upsert re-uses the same job');
+select t.eq($$select count(*)::text from tasks where order_id = (select v::uuid from t.p50 where k='A') and kind='grading'$$, '1', 'grading: still one job per order');
+select t.err($$insert into tasks(order_id, kind) select v::uuid, 'grading' from t.p50 where k='A'$$, 'grading: duplicate job refused', 'duplicate|unique');
+select t.err($$select upsert_grading_task((select v::uuid from t.p50 where k='B'))$$, 'grading: Printing Only orders skip grading', 'skip colour grading');
+select t.as('colour');
+select t.err($$select upsert_grading_task((select v::uuid from t.p50 where k='A'), null, 'urgent', null, null)$$, 'grading: a grader cannot change priority/assignment', 'only an admin');
+select t.err($$update tasks set status = 'submitted' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: cannot skip Start', 'cannot go from');
+select t.ok($$update tasks set status = 'in_progress' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: grader starts');
+select t.eq($$select (started_at is not null)::text from tasks where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'true', 'grading: start time stamped');
+select t.err($$update tasks set status = 'submitted' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: cannot submit without a graded file', 'graded file');
+select t.ok($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'graded', 'g.zip', 'zip', 1000, (select v from t.p50 where k='codeA') || '/graded/g.zip-v1' from t.p50 where k='A'$$, 'grading: grader uploads a graded file');
+select t.ok($$update tasks set status = 'submitted' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: grader submits');
+select t.eq($$select rounds::text || ':' || (submitted_at is not null)::text from tasks where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, '1:true', 'grading: round counted by the database');
+select t.eq($$select state::text from order_files where category='graded' and order_id = (select v::uuid from t.p50 where k='A')$$, 'submitted', 'grading: graded files follow the job (Submitted)');
+select t.err($$update tasks set status = 'approved' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: graders cannot approve their own work', 'only an admin');
+select t.err($$update order_files set state = 'approved' where category='graded'$$, 'grading: grader cannot approve a file by hand', 'only an admin');
+select t.as('admin');
+select t.err($$update tasks set status = 'revision' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: rejection needs a reason', 'reason');
+select t.ok($$update tasks set status = 'revision', revision_note = 'skin tones too warm' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: admin sends it back');
+select t.eq($$select state::text from order_files where category='graded' and order_id = (select v::uuid from t.p50 where k='A')$$, 'rejected', 'grading: graded files Rejected');
+select t.as('colour');
+select t.ok($$update tasks set status = 'in_progress' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: grader acknowledges the revision');
+select t.eq($$select revision_ack::text from tasks where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'true', 'grading: acknowledgement recorded');
+select t.ok($$update tasks set status = 'submitted' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: resubmitted');
+select t.eq($$select rounds::text from tasks where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, '2', 'grading: round 2');
+select t.as('admin');
+select t.ok($$update tasks set status = 'approved' where kind='grading' and order_id = (select v::uuid from t.p50 where k='A')$$, 'grading: admin approves');
+select t.eq($$select state::text from order_files where category='graded' and order_id = (select v::uuid from t.p50 where k='A')$$, 'approved', 'grading: graded files Approved');
+select t.as('accounts');
+select t.err($$insert into production_events(order_id, area, text) select v::uuid, 'grading', 'sneaky' from t.p50 where k='A'$$, 'timeline: accounts cannot write grading events', 'row-level security');
+select t.as('colour');
+select t.ok($$insert into production_events(order_id, area, text, actor_name) select v::uuid, 'grading', 'Submitted for Admin approval', 'Karthik V' from t.p50 where k='A'$$, 'timeline: grader logs an event');
+select t.err($$update production_events set text = 'edited'$$, 'timeline: events cannot be edited', 'permission denied');
+
+-- ═════════ printing ═════════
+select t.jump((select v::uuid from t.p50 where k='B'), 'printing');
+select t.as('colour');
+select t.err($$insert into print_jobs(order_id, paper_type, sheets, copies) select v::uuid, 'Matte', 40, 1 from t.p50 where k='B'$$, 'printing: colour grader cannot release to printing', 'row-level security');
+select t.as('printing');
+select t.ok($$insert into print_jobs(order_id, paper_type, sheets, copies, operator, due_at) select v::uuid, 'Matte', 40, 2, auth.uid(), now() + interval '5 days' from t.p50 where k='B'$$, 'printing: operator releases the job');
+select t.eq($$select stage::text from print_jobs where order_id = (select v::uuid from t.p50 where k='B')$$, 'waiting', 'printing: starts at Waiting');
+select t.eq($$select print_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'waiting', 'printing: order.print_status follows the job');
+select t.err($$insert into print_jobs(order_id, copies) select v::uuid, 99 from t.p50 where k='C'$$, 'printing: copies are capped at 50', 'check|row-level|violates');
+select t.err($$update print_jobs set stage = 'printing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: stages cannot be skipped', 'in order');
+select t.ok($$update print_jobs set stage = 'file_prep' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Waiting → File Prep');
+select t.err($$update print_jobs set stage = 'printing', reprints = reprints + 1 where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: nothing to reprint at File Prep', 'nothing to reprint');
+select t.ok($$insert into print_exceptions(order_id, kind, note) select v::uuid, 'machine_fault', 'plotter jam' from t.p50 where k='B'$$, 'printing: exception raised');
+select t.err($$update print_jobs set stage = 'printing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: an open exception blocks the next stage', 'open exception');
+select t.err($$update print_exceptions set note = 'changed'$$, 'printing: exception text is fixed', 'cannot be edited');
+select t.ok($$update print_exceptions set resolved = true where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: exception resolved');
+select t.eq($$select (resolved_at is not null and resolved_by = auth.uid())::text from print_exceptions where order_id = (select v::uuid from t.p50 where k='B')$$, 'true', 'printing: resolution stamped');
+select t.err($$update print_exceptions set resolved = false$$, 'printing: resolved exceptions stay resolved', 'cannot be reopened');
+select t.ok($$update print_jobs set stage = 'printing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: File Prep → Printing');
+select t.ok($$insert into print_vendor_jobs(order_id, vendor_name, sent_date, expected_back, cost, status) select v::uuid, 'Lab One', current_date, current_date + 3, 1500, 'sent' from t.p50 where k='B'$$, 'printing: outsourced to a vendor');
+select t.eq($$select outsourced_to from print_jobs where order_id = (select v::uuid from t.p50 where k='B')$$, 'Lab One', 'printing: vendor name mirrored on the job');
+select t.err($$insert into print_vendor_jobs(order_id, vendor_name, sent_date, expected_back) select v::uuid, 'X', current_date, current_date - 1 from t.p50 where k='C'$$, 'printing: vendor dates must be ordered', 'check|row-level|violates');
+select t.err($$update print_jobs set stage = 'finishing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: vendor job must be back before finishing', 'vendor job');
+select t.ok($$update print_vendor_jobs set status = 'received' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: vendor job received');
+select t.as('admin');
+select t.ok($$update orders set on_hold = true, hold_reason = 'client asked to wait' where id = (select v::uuid from t.p50 where k='B')$$, 'printing: order put on hold');
+select t.as('printing');
+select t.err($$update print_jobs set stage = 'finishing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: no progress while on hold', 'on hold');
+select t.as('admin');
+select t.ok($$update orders set on_hold = false, hold_reason = null where id = (select v::uuid from t.p50 where k='B')$$, 'printing: hold lifted');
+select t.as('printing');
+select t.ok($$update print_jobs set stage = 'finishing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Printing → Finishing');
+select t.ok($$update print_jobs set stage = 'printing', reprints = reprints + 1 where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: reprint restarts at Printing');
+select t.eq($$select reprints::text from print_jobs where order_id = (select v::uuid from t.p50 where k='B')$$, '1', 'printing: reprint counted');
+select t.err($$update print_jobs set reprints = reprints + 2 where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: reprints count one at a time', 'one at a time');
+select t.ok($$update print_jobs set stage = 'finishing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: back to Finishing');
+select t.ok($$update print_jobs set stage = 'assembly' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Assembly');
+select t.ok($$update print_jobs set stage = 'packaging' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Packaging');
+select t.ok($$update print_jobs set stage = 'completed' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Completed');
+select t.ok($$update print_jobs set stage = 'sent_to_qc' where order_id = (select v::uuid from t.p50 where k='B')$$, 'printing: Sent to QC');
+select t.eq($$select count(*)::text from print_stage_log where order_id = (select v::uuid from t.p50 where k='B')$$, '10', 'printing: every stage change is logged by the database');
+select t.eq($$select count(*)::text from print_stage_log where order_id = (select v::uuid from t.p50 where k='B') and reprint_no = 1$$, '6', 'printing: second pass is logged under reprint 1');
+select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'qc')$$, 'printing: order moves to QC');
+select t.as('reception');
+select t.eq($$select count(*)::text from print_jobs$$, '1', 'printing: reception can see the job');
+
+-- ═════════ quality control ═════════
+select t.as('qc');
+select t.err($$insert into qc_inspections(order_id, decision) select v::uuid, 'in_progress' from t.p50 where k='C'$$, 'qc: only orders at QC can be inspected', 'QC stage');
+select t.ok($$insert into qc_inspections(order_id, decision) select v::uuid, 'in_progress' from t.p50 where k='B'$$, 'qc: inspection round started');
+select t.eq($$select round::text || ':' || (inspector = auth.uid())::text from qc_inspections where order_id = (select v::uuid from t.p50 where k='B')$$, '1:true', 'qc: round numbered and inspector stamped by the database');
+select t.eq($$select qc_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'in_progress', 'qc: order shows In Inspection');
+select t.err($$insert into qc_inspections(order_id, decision) select v::uuid, 'in_progress' from t.p50 where k='B'$$, 'qc: only one open inspection', 'already open');
+select t.err($$update qc_inspections set decision = 'passed', checklist = '{"print":"pass","colour":"fail","align":"pass","binding":"pass","cover":"pass","spec":"pass","pack":"pass"}' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: cannot pass with a failed check', 'marked Fail');
+select t.err($$update qc_inspections set decision = 'passed', checklist = '{"print":"pass"}' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: cannot pass with an incomplete checklist', 'complete every');
+select t.err($$update qc_inspections set decision = 'failed' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: fail needs a defect code', 'defect');
+select t.err($$update qc_inspections set decision = 'failed', defect_codes = '{scratch}', return_to = 'printing' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: fail needs a reason', 'reason');
+select t.err($$update qc_inspections set decision = 'failed', defect_codes = '{scratch}', reason = 'back cover scratched' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: fail needs a department to return to', 'department');
+select t.ok($$update qc_inspections set decision = 'failed', defect_codes = '{scratch}', reason = 'back cover scratched', return_to = 'printing', notes = 'see photo' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: round 1 failed with defect, reason, return department');
+select t.eq($$select qc_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'failed', 'qc: order.qc_status = failed');
+select t.err($$update qc_inspections set notes = 'rewritten history' where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: a decided round is immutable', 'immutable');
+select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'printing', 'back cover scratched')$$, 'qc: order returned to printing');
+select t.eq($$select qc_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'failed', 'qc: a Failed round is not downgraded to Rework by the return');
+select t.as('printing');
+select t.ok($$update print_jobs set stage = 'printing', reprints = reprints + 1 where order_id = (select v::uuid from t.p50 where k='B')$$, 'qc: printing reprints after the QC return');
+select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'qc')$$, 'qc: order back in QC');
+select t.as('qc');
+select t.ok($$insert into qc_inspections(order_id, decision, checklist) select v::uuid, 'in_progress', '{}' from t.p50 where k='B'$$, 'qc: round 2 starts');
+select t.eq($$select max(round)::text from qc_inspections where order_id = (select v::uuid from t.p50 where k='B')$$, '2', 'qc: round 2');
+select t.ok($$update qc_inspections set decision = 'passed', checklist = '{"print":"pass","colour":"pass","align":"pass","binding":"pass","cover":"na","spec":"pass","pack":"pass"}', evidence_paths = '{x/qc_evidence/e.jpg-v1}' where order_id = (select v::uuid from t.p50 where k='B') and round = 2$$, 'qc: round 2 passes with a complete checklist');
+select t.eq($$select qc_status::text from orders where id = (select v::uuid from t.p50 where k='B')$$, 'passed', 'qc: order.qc_status = passed');
+select t.as('reception');
+select t.eq($$select count(*)::text from qc_inspections where order_id = (select v::uuid from t.p50 where k='B')$$, '2', 'qc: reception can see both rounds');
+select t.err($$insert into qc_inspections(order_id, decision) select v::uuid, 'passed' from t.p50 where k='B'$$, 'qc: reception cannot inspect', 'row-level security');
+-- rework task for admin (QC cannot return an order to design itself)
+select t.jump((select v::uuid from t.p50 where k='A'), 'qc');
+select t.as('qc');
+select t.ok($$insert into qc_inspections(order_id, decision) select v::uuid, 'in_progress' from t.p50 where k='A'$$, 'qc: order A inspected');
+select t.ok($$update qc_inspections set decision = 'rework', defect_codes = '{colour}', reason = 'banding in spreads', return_to = 'designing', pending_admin = true where order_id = (select v::uuid from t.p50 where k='A')$$, 'qc: rework to design recorded, awaiting admin');
+select t.ok($$insert into rework_tasks(order_id, dept, reason, defect_codes) select v::uuid, 'designing', 'banding in spreads', '{colour}' from t.p50 where k='A'$$, 'qc: rework task filed for admin');
+select t.err($$insert into qc_inspections(order_id, decision) select v::uuid, 'in_progress' from t.p50 where k='A'$$, 'qc: no new round while the admin task is open', 'rework task');
+select t.ok($$update rework_tasks set status = 'done'$$, 'qc: QC cannot close the admin task (no-op)');
+select t.eq($$select status from rework_tasks where order_id = (select v::uuid from t.p50 where k='A')$$, 'open', 'qc: task still open');
+select t.as('admin');
+select t.ok($$update rework_tasks set status = 'done' where order_id = (select v::uuid from t.p50 where k='A')$$, 'qc: admin executes the task');
+select t.eq($$select (done_by = auth.uid() and done_at is not null)::text from rework_tasks where order_id = (select v::uuid from t.p50 where k='A')$$, 'true', 'qc: completion stamped');
+select t.err($$update rework_tasks set reason = 'rewritten'$$, 'qc: task text cannot be edited', 'cannot be edited|already done');
+select t.ok($$update qc_inspections set pending_admin = false where order_id = (select v::uuid from t.p50 where k='A')$$, 'qc: admin clears the pending flag on the decided round');
+
+-- ═════════ delivery ═════════
+select t.as('qc');
+select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'ready_for_delivery')$$, 'delivery: QC passed → Ready for Delivery');
+select t.as('reception');
+select t.ok($$insert into deliveries(order_id, mode, contact, address, status) select v::uuid, 'courier', 'Prod Studio 9000000050', 'Mumbai', 'ready' from t.p50 where k='B'$$, 'delivery: record created');
+select t.err($$update deliveries set status = 'dispatched', courier = 'DTDC', tracking_no = 'D1' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: dues block dispatch', 'payment hold');
+select t.err($$update deliveries set status = 'dispatched', courier = 'DTDC', tracking_no = 'D1', override_reason = 'client promised' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: reception cannot override dues', 'payment hold');
+select t.as('admin');
+select t.err($$update deliveries set status = 'dispatched', override_reason = 'client promised' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: courier needs carrier + tracking', 'tracking number');
+select t.err($$update deliveries set status = 'delivered', received_by = 'Raj', proof_path = 'p' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: cannot deliver before dispatch', 'cannot go from|payment hold');
+select t.ok($$update deliveries set status = 'dispatched', courier = 'DTDC', tracking_no = 'D1', override_reason = 'client promised to pay on receipt' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: admin dispatches with an override reason');
+select t.eq($$select (dispatched_at is not null)::text || ':' || (select delivery_status::text from orders where id = (select v::uuid from t.p50 where k='B')) from deliveries where order_id = (select v::uuid from t.p50 where k='B')$$, 'true:dispatched', 'delivery: dispatch time stamped, order.delivery_status follows');
+select t.eq($$select count(*)::text from audit_log where entity = 'deliveries' and new_data ->> 'override_reason' like 'client promised%'$$, '1', 'delivery: the override is in the audit trail');
+select t.err($$update deliveries set tracking_no = 'D2' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: dispatch details are locked', 'locked once dispatched');
+select t.as('printing');
+select t.err($$update deliveries set status = 'delivered', received_by = ' ', proof_path = 'p' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: receiver name required', 'who received');
+select t.err($$update deliveries set status = 'delivered', received_by = 'Raj' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: proof of delivery required', 'proof of delivery');
+select t.ok($$update deliveries set status = 'delivered', received_by = 'Raj', proof_path = 'IDP/other/POD-sign.jpg-v1', pod_note = 'signed at counter' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: delivered with proof');
+select t.ok($$select advance_order((select v::uuid from t.p50 where k='B'), 'delivered')$$, 'delivery: order moves to Delivered');
+select t.err($$update deliveries set received_by = 'Someone else' where order_id = (select v::uuid from t.p50 where k='B')$$, 'delivery: a completed delivery is final', 'already complete');
+select t.as('colour');
+select t.eq($$select count(*)::text from deliveries$$, '0', 'delivery: colour grader sees no deliveries');
+-- paid order: no override needed
+select t.jump((select v::uuid from t.p50 where k='C'), 'ready_for_delivery');
+select t.as('accounts');
+select t.ok($$insert into payments(order_id, amount, mode) select v::uuid, 5000, 'upi' from t.p50 where k='C'$$, 'delivery: customer pays in full');
+select t.as('reception');
+select t.ok($$insert into deliveries(order_id, mode, status) select v::uuid, 'pickup', 'ready' from t.p50 where k='C'$$, 'delivery: pickup record');
+select t.ok($$update deliveries set status = 'dispatched' where order_id = (select v::uuid from t.p50 where k='C')$$, 'delivery: paid order dispatches without an override');
+select t.as('accounts');
+select t.ok($$update deliveries set status = 'delivered', received_by = 'x', proof_path = 'y' where order_id = (select v::uuid from t.p50 where k='C')$$, 'delivery: accounts update attempt is a no-op');
+select t.eq($$select status::text from deliveries where order_id = (select v::uuid from t.p50 where k='C')$$, 'dispatched', 'delivery: accounts could not complete the delivery');
+
+-- ═════════ file register ═════════
+select t.as('reception');
+select t.ok($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path, state) select v::uuid, 'final_print', 'prodalbum.pdf', 'pdf', 190000000, (select v from t.p50 where k='codeA') || '/final_print/prodalbum.pdf-v1', 'locked' from t.p50 where k='A'$$, 'files: upload accepted (state forced to Draft)');
+select t.eq($$select state::text || ':' || version::text from order_files where file_name = 'prodalbum.pdf'$$, 'draft:1', 'files: a new upload is always a Draft v1');
+select t.err($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'other', 'x.exe', 'exe', 1, 'p/x/y' from t.p50 where k='A'$$, 'files: .exe refused', 'allowed file type');
+select t.err($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'other', 'x.pdf', 'jpg', 1, 'p/x/y2' from t.p50 where k='A'$$, 'files: extension must match the name', 'does not match');
+select t.err($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'other', 'huge.zip', 'zip', 5368709121, 'p/x/y3' from t.p50 where k='A'$$, 'files: 5 GB cap', '5 GB');
+select t.err($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'other', 'dup.pdf', 'pdf', 1, (select v from t.p50 where k='codeA') || '/final_print/prodalbum.pdf-v1' from t.p50 where k='A'$$, 'files: two rows cannot claim one stored object', 'duplicate|unique');
+select t.err($$update order_files set storage_path = 'elsewhere' where file_name = 'prodalbum.pdf'$$, 'files: uploaded bytes are immutable', 'immutable');
+select t.err($$update order_files set archived = true where file_name = 'prodalbum.pdf'$$, 'files: reception cannot archive', 'only an admin');
+select t.as('accounts');
+select t.err($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'other', 'a.pdf', 'pdf', 1, 'acc/other/a.pdf-v1' from t.p50 where k='A'$$, 'files: accounts cannot upload', 'row-level security');
+select t.as('admin');
+select t.err($$select lock_final_print_file((select id from order_files where file_name='prodalbum.pdf'))$$, 'files: no lock without final client approval', 'approval');
+select t.err($$update order_files set state = 'locked' where file_name = 'prodalbum.pdf'$$, 'files: state cannot be forced to Locked', 'lock_final_print_file');
+select t.as('system');
+alter table proofs disable trigger proofs_guard_t;
+insert into proofs(order_id, version, token_hash, expires_at, status) select v::uuid, 1, repeat('5', 64), now() + interval '5 days', 'approved' from t.p50 where k='A';
+alter table proofs enable trigger proofs_guard_t;
+select t.as('admin');
+select t.ok($$select lock_final_print_file((select id from order_files where file_name='prodalbum.pdf'))$$, 'files: admin locks the final print file');
+select t.err($$update order_files set archived = true where file_name = 'prodalbum.pdf'$$, 'files: a locked file cannot be archived', 'locked');
+select t.err($$update order_files set state = 'draft' where file_name = 'prodalbum.pdf'$$, 'files: a locked file cannot be unlocked', 'immutable');
+select t.ok($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'final_print', 'prodalbum.pdf', 'pdf', 191000000, (select v from t.p50 where k='codeA') || '/final_print/prodalbum.pdf-v2' from t.p50 where k='A'$$, 'files: a new version is a separate Draft');
+select t.eq($$select max(version)::text from order_files where file_name = 'prodalbum.pdf'$$, '2', 'files: version 2');
+select t.ok($$update order_files set archived = true where file_name = 'prodalbum.pdf' and version = 2$$, 'files: admin archives an unlocked version');
+select t.err($$update order_files set archived = false where file_name = 'prodalbum.pdf' and version = 2$$, 'files: archive is one-way', 'cannot be restored');
+select t.as('colour');
+select t.ok($$insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select v::uuid, 'graded', 'g2.zip', 'zip', 10, (select v from t.p50 where k='codeA') || '/graded/g2.zip-v1' from t.p50 where k='A'$$, 'files: grader uploads another graded file');
+select t.err($$update order_files set state = 'approved' where file_name = 'g2.zip'$$, 'files: grader cannot approve files', 'only an admin');
+-- storage objects follow the path convention
+select t.ok($$insert into storage.objects(bucket_id, name) values ('order-files', 'IDP00050/graded/a.jpg-v1')$$, 'storage: conventional path accepted');
+select t.err($$insert into storage.objects(bucket_id, name) values ('order-files', 'loose-file.jpg')$$, 'storage: path outside <order>/<category>/ refused', 'row-level security');
+select t.as('system');
+\echo PRODUCTION TESTS PASSED

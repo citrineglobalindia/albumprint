@@ -10,10 +10,12 @@ import { flushAll } from "../lib/persist";
 import { currentActor, logAudit } from "../lib/audit";
 import { useStore, notify } from "../lib/store";
 import { moveStage } from "../lib/workflow";
-import { createProof, latestProof, proofApproved, proofUrl, revokeProof, type Proof } from "../lib/proofs";
+import { createProof, hasLink, latestProof, proofApproved, proofUrl, revokeProof, setCommentState, type Proof } from "../lib/proofs";
+import { backendOn } from "../lib/supabase";
+import { dbLoadLayout, dbSaveLayout, syncProofs } from "../lib/db/proofs";
 import { FILES, addFile, lockFile } from "../lib/files";
 import { CUSTOMERS } from "../lib/data";
-import { addCorrection as addDesignCorrection, correctionsFor, metaFor, save as saveMeta, setCorrectionStatus } from "../lib/design";
+import { addCorrection as addDesignCorrection, correctionsFor, metaFor, persistMeta, save as saveMeta, setCorrectionStatus } from "../lib/design";
 import { ORDERS, STAFF, type Order } from "../lib/data";
 import { fmtDate } from "../lib/format";
 
@@ -87,6 +89,33 @@ function DesignWorkspace({ order }: { order: Order }) {
   docRef.current = doc;
   const dragBase = useRef<Doc | null>(null);
 
+  // Backend: the layout lives in design_docs (shared by designer and admin). Load on open, autosave (debounced), flush on leave.
+  const canSaveLayout = backendOn && (role === "admin" || role === "designer");
+  const layoutReady = useRef(false);
+  const lastSaved = useRef("");
+  useEffect(() => {
+    if (!backendOn) return;
+    let alive = true;
+    const load = (first: boolean) => dbLoadLayout(order.id).then((l) => {
+      if (!alive) return;
+      if (l) { const dirty = JSON.stringify(docRef.current) !== lastSaved.current; if (first || !dirty) { const s = JSON.stringify(l); if (s !== JSON.stringify(docRef.current)) { setDoc(l as Doc); setPast([]); setFuture([]); } lastSaved.current = s; } }
+      else if (first) lastSaved.current = JSON.stringify(docRef.current);
+      layoutReady.current = true;
+    });
+    void load(true);
+    const onFocus = () => { void load(false); };
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; window.removeEventListener("focus", onFocus); if (canSaveLayout && layoutReady.current && JSON.stringify(docRef.current) !== lastSaved.current) void dbSaveLayout(order.id, docRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
+  useEffect(() => {
+    if (!canSaveLayout || !layoutReady.current) return;
+    const s = JSON.stringify(doc); if (s === lastSaved.current) return;
+    const t = setTimeout(() => { void dbSaveLayout(order.id, doc).then((ok) => { if (ok) lastSaved.current = s; }); }, 800);
+    return () => clearTimeout(t);
+  }, [doc, canSaveLayout, order.id]);
+  useEffect(() => { if (!backendOn) return; void syncProofs(); const t = setInterval(() => void syncProofs(), 6000); return () => clearInterval(t); }, []);
+
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(ZFIT);
   const [selOv, setSelOv] = useState<number | null>(null);
@@ -103,7 +132,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [crAssignee, setCrAssignee] = useState(DESIGNERS[0]!);
   const [crErr, setCrErr] = useState<Record<string, string>>({});
   const notes = meta.notes;
-  const setNotes = (n: typeof meta.notes) => { meta.notes = n; notify(); logAudit({ entity: "design", entityId: order.id, action: "notes_changed" }); };
+  const setNotes = (n: typeof meta.notes) => { meta.notes = n; notify(); persistMeta(order.id); logAudit({ entity: "design", entityId: order.id, action: "notes_changed" }); };
   const [noteDraft, setNoteDraft] = useState("");
   const [adding, setAdding] = useState(false);
   const [toast, setToast] = useState<ReactNode>("");
@@ -138,7 +167,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   const corrItems: CorrItem[] = [
     ...correctionsFor(order.id).map((c): CorrItem => ({ key: c.id, source: "Admin", page: c.page, text: c.text, by: c.by, status: c.status, assignee: c.assignee, run: (st) => setCorrectionStatus(c, st) })),
     ...(proof?.comments ?? []).map((c, i): CorrItem => ({ key: `P${proof!.version}-${i + 1}`, source: "Client", page: c.page, text: c.text, by: `Client (v${proof!.version})`, assignee: "Ramesh Kumar", status: c.resolved ? "Resolved" : c.inProgress ? "In Progress" : "Open",
-      run: (st) => { c.resolved = st === "Resolved"; c.inProgress = st === "In Progress"; notify(); logAudit({ entity: "proof", entityId: order.id, action: "correction_" + st.toLowerCase().replace(" ", "_"), detail: `v${proof!.version} page ${c.page}` }); } })),
+      run: (st) => { setCommentState(proof!, c, { resolved: st === "Resolved", inProgress: st === "In Progress" }, "correction_" + st.toLowerCase().replace(" ", "_")); notify(); } })),
   ];
   const openCorr = corrItems.filter((c) => c.status !== "Resolved").length;
   const flash = (m: ReactNode, ms = 2600) => { setToast(m); setTimeout(() => setToast(""), ms); };
@@ -229,7 +258,7 @@ function DesignWorkspace({ order }: { order: Order }) {
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
   };
   const copyLink = async () => {
-    if (!liveProof) return flash("No live proof link - send for client review first");
+    if (!liveProof || !hasLink(liveProof)) return flash(liveProof ? "The link was shown when it was sent - use Resend in the Client proof panel for a new one" : "No live proof link - send for client review first");
     try { await navigator.clipboard.writeText(proofUrl(liveProof)); } catch { /* clipboard may be unavailable */ }
     flash("Proof link copied: " + proofUrl(liveProof)); log("Proof link copied");
   };
@@ -293,7 +322,7 @@ function DesignWorkspace({ order }: { order: Order }) {
     saveMeta(order.id, { submitted: false }, "design_sent_to_client"); flushAll();
     try { await navigator.clipboard.writeText(proofUrl(p)); } catch { /* clipboard may be unavailable */ }
     setSendOpen(false); log(`Proof v${p.version} sent via ${channel}`);
-    flash(<span>Proof v{p.version} sent via {channel} - link copied. <a href={`/proof/${p.token}`} target="_blank" rel="noreferrer" className="font-bold underline">Open client view</a></span>, 8000);
+    flash(<span>Proof v{p.version} sent via {channel} - link copied. <a data-testid="proof-link" href={`/proof/${p.token}`} target="_blank" rel="noreferrer" className="font-bold underline">Open client view</a></span>, 8000);
   };
   const lockForPrint = () => {
     if (!adminOnly("approve for print")) return;

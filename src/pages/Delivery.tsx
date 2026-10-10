@@ -12,6 +12,7 @@ import { useAuth } from "../lib/auth";
 import { ORDERS, stageLabel } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
 import { downloadCsv } from "../lib/csv";
+import { FILES, downloadFile } from "../lib/files";
 import { DRECS, DMODES, ensureDeliveries, drec, saveDelivery, dispatchDelivery, markDelivered, closeWithChecks, reopen, balanceOf, allowDeliveryWithoutPayment, can, fmtDT, type DMode, type DRec, type Out } from "../lib/production";
 
 type Tab = "all" | "ready" | "dispatched" | "delivered" | "closed";
@@ -45,6 +46,7 @@ export default function Delivery() {
   const [closeReason, setCloseReason] = useState("");
   const [reopenReason, setReopenReason] = useState("");
   const podInput = useRef<HTMLInputElement>(null);
+  const podFile = useRef<File | null>(null);
   const sel = useSelection();
   useSlashSearch();
   const run = (r: Out) => { show(r.msg); return r.ok; };
@@ -217,14 +219,14 @@ export default function Delivery() {
                 <Field label="Received by"><input aria-label="Received by" className={inputCls} value={pod.receivedBy} onChange={(e) => setPod({ ...pod, receivedBy: e.target.value })} /></Field>
                 <div className="mb-3 flex items-center gap-2 text-[13px]">
                   <button onClick={() => podInput.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft"><FileCheck2 className="size-4" />Attach signature / photo</button>
-                  <input ref={podInput} data-testid="pod-input" type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setPod({ ...pod, file: f.name }); e.target.value = ""; }} />
+                  <input ref={podInput} data-testid="pod-input" type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { podFile.current = f; setPod({ ...pod, file: f.name }); } e.target.value = ""; }} />
                   <span className="text-sub">{pod.file || "none attached"}</span>
                 </div>
                 <Field label="Note"><input aria-label="POD note" className={inputCls} value={pod.note} onChange={(e) => setPod({ ...pod, note: e.target.value })} /></Field>
-                <button data-testid="mark-delivered" onClick={() => { if (run(markDelivered(cur.orderId, { receivedBy: pod.receivedBy, pod: pod.file, podNote: pod.note }))) setPod({ receivedBy: "", file: "", note: "" }); }} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700"><CheckCircle2 className="size-4" />Mark Delivered</button>
+                <button data-testid="mark-delivered" onClick={() => { if (run(markDelivered(cur.orderId, { receivedBy: pod.receivedBy, pod: pod.file, podNote: pod.note, podFile: podFile.current ?? undefined }))) { podFile.current = null; setPod({ receivedBy: "", file: "", note: "" }); } }} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700"><CheckCircle2 className="size-4" />Mark Delivered</button>
               </div>
             )}
-            {cur.status === "Delivered" && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-[13px] text-emerald-800">Delivered {fmtDT(cur.deliveredAt)} · received by <b>{cur.receivedBy}</b> · proof: {cur.pod}</p>}
+            {cur.status === "Delivered" && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-[13px] text-emerald-800">Delivered {fmtDT(cur.deliveredAt)} · received by <b>{cur.receivedBy}</b> · proof: {cur.pod}{cur.podNote ? ` · ${cur.podNote}` : ""}{(() => { const pf = FILES.find((f) => f.path && f.path === cur.podPath); return pf ? <> · <button type="button" onClick={async () => show((await downloadFile(pf)).msg)} className="font-bold underline">Download proof</button></> : null; })()}</p>}
 
             <h4 className="mb-2 mt-5 flex items-center gap-2 text-sm font-extrabold"><Wallet className="size-4 text-brand" />Closure (§14.2)</h4>
             <div data-testid="closure" className="rounded-xl border border-line p-3 text-[13px]">

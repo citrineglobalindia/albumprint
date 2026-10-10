@@ -8,7 +8,7 @@ import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import { RowMenu } from "../components/RowMenu";
 import { ORDERS, type Tone } from "../lib/data";
-import { FILES, ALLOWED_EXT, MAX_BYTES, addFile, archiveFile, fmtSize, lockFile, type FileCategory, type FileRec, type FileState } from "../lib/files";
+import { FILES, ALLOWED_EXT, MAX_BYTES, addFile, archiveFile, downloadFile, fmtSize, lockFile, previewUrl, type FileCategory, type FileRec, type FileState } from "../lib/files";
 import { proofApproved } from "../lib/proofs";
 import { currentActor, onAudit } from "../lib/audit";
 import { notify, useStore } from "../lib/store";
@@ -30,6 +30,7 @@ export default function FilesPage() {
   const [dialog, confirm] = useConfirm();
   const role = currentActor().role;
   const admin = role === "admin";
+  const canUpload = ["admin", "reception", "colour", "designer", "printing", "qc"].includes(role);   // mirrors the storage/order_files insert policies (accounts: view only)
 
   const [q, setQ] = useState("");
   const [fOrder, setFOrder] = useState<string[]>([]);
@@ -42,6 +43,8 @@ export default function FilesPage() {
   const [pageSize, setPageSize] = useState(15);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<FileRec | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  useEffect(() => { setPreviewSrc(null); if (preview && /^(jpe?g|png)$/.test(preview.ext)) void previewUrl(preview).then(setPreviewSrc); }, [preview]);
 
   const [upOrder, setUpOrder] = useState("");
   const [upCat, setUpCat] = useState<FileCategory>("Source Photos");
@@ -56,7 +59,7 @@ export default function FilesPage() {
     FILES.filter((f) => showArchived || !f.archived).forEach((f) => { const k = `${f.orderId}|${f.category}|${f.name}`; (m.get(k) ?? m.set(k, []).get(k)!).push(f); });
     return [...m.entries()].map(([key, vs]) => { const versions = [...vs].sort((a, b) => b.version - a.version); return { key, latest: versions[0]!, versions }; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [FILES.length, showArchived, FILES.map((f) => f.state + (f.archived ? "a" : "")).join("")]);
+  }, [FILES.length, showArchived, FILES.map((f) => f.state + (f.archived ? "a" : "") + (f.pending ? "p" : "") + f.version).join("")]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -77,9 +80,10 @@ export default function FilesPage() {
 
   /* ---- actions ---- */
   const upload = (files: FileList | File[]) => {
+    if (!canUpload) { show(`Your role (${role}) cannot upload files`); return; }
     if (!upOrder) { show("Choose the order these files belong to first"); return; }
     let ok = 0; const errs: string[] = [];
-    Array.from(files).forEach((f) => { const r = addFile(upOrder, upCat, f.name, f.size); if (r.ok) ok++; else errs.push(`${f.name}: ${r.error}`); });
+    Array.from(files).forEach((f) => { const r = addFile(upOrder, upCat, f.name, f.size, f); if (r.ok) ok++; else errs.push(`${f.name}: ${r.error}`); });
     notify(); bump();
     show(errs.length ? `${ok} uploaded, ${errs.length} rejected. ${errs[0]}` : `${ok} file${ok === 1 ? "" : "s"} uploaded to ${upOrder} (${upCat})`);
     if (inputRef.current) inputRef.current.value = "";
@@ -93,11 +97,12 @@ export default function FilesPage() {
   const onVersionPicked = (file: File | undefined) => {
     const g = verTarget.current; if (verRef.current) verRef.current.value = "";
     if (!file || !g) return;
-    const r = addFile(g.latest.orderId, g.latest.category, g.latest.name, file.size);
+    if (!canUpload) { show(`Your role (${role}) cannot upload files`); return; }
+    const r = addFile(g.latest.orderId, g.latest.category, g.latest.name, file.size, file);
     notify(); bump();
     show(r.ok ? `${g.latest.name} is now v${r.file.version}` : r.error);
   };
-  const download = (f: FileRec) => show(`Download started: ${f.name} v${f.version} (${fmtSize(f.size)}). Demo: no binary is stored`);
+  const download = async (f: FileRec) => { show((await downloadFile(f)).msg); };
   const lock = (f: FileRec) => {
     if (!admin) { show("Only an admin can lock a print file"); return; }
     if (f.category !== "Final Print") { show("Only Final Print files can be locked"); return; }
@@ -141,7 +146,7 @@ export default function FilesPage() {
     return [
       { label: "Preview", icon: Eye, onClick: () => setPreview(f) },
       { label: "Download", icon: Download, onClick: () => download(f) },
-      { label: "New version", icon: FilePlus2, onClick: () => newVersion(g) },
+      ...(canUpload ? [{ label: "New version", icon: FilePlus2, onClick: () => newVersion(g) }] : []),
       ...(admin ? [{ label: "Lock final print", icon: Lock, onClick: () => lock(f) }, { label: "Archive", icon: Archive, danger: true, onClick: () => archive(f) }] : []),
     ];
   };
@@ -152,7 +157,7 @@ export default function FilesPage() {
       <input ref={verRef} type="file" className="hidden" data-testid="version-input" onChange={(e) => onVersionPicked(e.target.files?.[0])} />
       <PageHeader title="Files" subtitle="Global file register with versions, locking and storage usage (SRS §7)" />
 
-      <Panel title="Upload files" subtitle={`Allowed: ${ALLOWED_EXT.join(", ")} · max ${fmtSize(MAX_BYTES)} per file`} className="mb-5">
+      <Panel title="Upload files" subtitle={canUpload ? `Allowed: ${ALLOWED_EXT.join(", ")} · max ${fmtSize(MAX_BYTES)} per file` : `Your role (${role}) can view and download files but not upload them`} className="mb-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_200px_minmax(0,1fr)]">
           <div><span className="mb-1.5 block text-[13px] font-semibold">Order <span className="text-rose-500">*</span></span><Combobox options={ORDERS.map(orderOpt)} value={upOrder} onChange={setUpOrder} placeholder="Select order…" /></div>
           <div><span className="mb-1.5 block text-[13px] font-semibold">Category</span>
@@ -160,7 +165,7 @@ export default function FilesPage() {
           <div data-testid="drop-zone" onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}
             className={cx("grid min-h-[84px] place-items-center rounded-xl border-2 border-dashed px-4 py-3 text-center text-xs text-sub", drag ? "border-brand bg-brand-soft" : "border-line bg-slate-50")}>
             <label className="cursor-pointer"><UploadCloud className="mx-auto mb-1 size-6 text-slate-400" /><b className="text-ink">Drop files here</b> or <span className="font-bold text-brand">browse</span>
-              <input ref={inputRef} type="file" multiple data-testid="file-input" className="hidden" onChange={(e) => e.target.files?.length && upload(e.target.files)} /></label>
+              <input ref={inputRef} type="file" multiple disabled={!canUpload} data-testid="file-input" className="hidden" onChange={(e) => e.target.files?.length && upload(e.target.files)} /></label>
           </div>
         </div>
       </Panel>
@@ -191,7 +196,7 @@ export default function FilesPage() {
                         <Td>{f.category}</Td>
                         <Td>v{f.version}{g.versions.length > 1 && <span className="text-xs text-sub"> ({g.versions.length} versions)</span>}</Td>
                         <Td>{fmtSize(f.size)}</Td>
-                        <Td><Pill tone={STATE_TONE[f.state]} icon={f.state === "Locked" ? Lock : undefined}>{f.state}</Pill></Td>
+                        <Td>{f.pending ? <Pill tone="amber">Uploading…</Pill> : <Pill tone={STATE_TONE[f.state]} icon={f.state === "Locked" ? Lock : undefined}>{f.state}</Pill>}</Td>
                         <Td className="whitespace-nowrap text-xs">{f.by}<span className="block text-sub">{fmtDate(f.at)}</span></Td>
                         <Td><span className="flex items-center gap-1">
                           <button aria-label={`Download ${f.name}`} onClick={() => download(f)} className="grid size-8 place-items-center rounded-lg text-sub hover:bg-brand-soft hover:text-brand"><Download className="size-4" /></button>
@@ -232,7 +237,7 @@ export default function FilesPage() {
       <SlideOver open={!!preview} onClose={() => setPreview(null)} title="Preview" width={460}>
         {preview && (
           <div className="space-y-4 text-sm">
-            <div className="grid h-56 place-items-center rounded-xl border border-dashed border-line bg-slate-50 text-center text-sub"><div><FileText className="mx-auto mb-2 size-10 text-slate-400" /><b className="text-ink">{preview.name}</b><div className="text-xs">Browser preview is available once files are stored in the cloud bucket.</div></div></div>
+            <div className="grid h-56 place-items-center overflow-hidden rounded-xl border border-dashed border-line bg-slate-50 text-center text-sub">{previewSrc ? <img src={previewSrc} alt={preview.name} className="max-h-56 max-w-full object-contain" /> : <div><FileText className="mx-auto mb-2 size-10 text-slate-400" /><b className="text-ink">{preview.name}</b><div className="text-xs">Browser preview is available for stored JPG/PNG files; use Download for everything else.</div></div>}</div>
             <dl className="grid grid-cols-[110px_1fr] gap-y-2"><dt className="text-sub">Order</dt><dd>{preview.orderId} · {custOf(preview.orderId)}</dd><dt className="text-sub">Category</dt><dd>{preview.category}</dd><dt className="text-sub">Version</dt><dd>v{preview.version}</dd><dt className="text-sub">Size</dt><dd>{fmtSize(preview.size)}</dd><dt className="text-sub">State</dt><dd>{preview.state}</dd><dt className="text-sub">Uploaded</dt><dd>{preview.by}, {fmtDate(preview.at)}</dd></dl>
           </div>
         )}

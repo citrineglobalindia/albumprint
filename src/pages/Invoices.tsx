@@ -96,7 +96,9 @@ export default function Invoices() {
     const e: Record<string, string> = {};
     if (!draft.orderId) e.orderId = "Select an order";
     setErrs(e); if (Object.keys(e).length) return;
-    if (run(createInvoice(draft))) { setDraft(null); setTab("all"); setSelNo(INVOICES[0]?.no ?? null); }
+    const done = (x: Out) => { if (run(x)) { setDraft(null); setTab("all"); setSelNo(INVOICES[0]?.no ?? null); } };
+    const r = createInvoice(draft);
+    if (r instanceof Promise) void r.then(done); else done(r);   // backend mode: wait for the server-assigned invoice number
   };
   const T = draft ? calc({ lines: draft.lines, gstPct: draft.gstPct, discountPct: draft.discPct, igst: draft.igst }) : null;
 

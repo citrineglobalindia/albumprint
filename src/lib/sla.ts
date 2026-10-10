@@ -1,6 +1,8 @@
 import { ORDERS, STAGES, stageLabel, type Order, type StageKey } from "./data";
 import { AUDIT } from "./audit";
 import { TODAY } from "./format";
+import { loadSettings } from "./localState";
+import { backendOn } from "./supabase";
 
 // SRS §18.2 — per-stage SLA targets measured in BUSINESS hours (calendar from Settings > Workflow), pause-aware.
 export const SLA_DEFAULTS: Partial<Record<StageKey, number>> = {
@@ -15,7 +17,11 @@ export const DEPARTMENTS = ["Reception", "Colour Grading", "Admin", "Designing",
 export interface BizCfg { start: number; end: number; days: number[]; holidays: string[]; warnPct: number }
 export const BIZ_DEFAULT: BizCfg = { start: 10, end: 19, days: [1, 2, 3, 4, 5, 6], holidays: [], warnPct: 75 };
 
-function settings(): Record<string, unknown> { try { return JSON.parse(localStorage.getItem("albumpro.settings") ?? "{}"); } catch { return {}; } }
+const settings = (): Record<string, unknown> => loadSettings();
+/** Backend mode: per-stage SLA hours from the sla_rules table (filled after sign-in by src/lib/db/admin.ts). Wins over the Settings stage list. */
+const dbRules: Record<string, number> = {};
+export const getSlaRules = (): Readonly<Record<string, number>> => dbRules;
+export function setSlaRules(rules: Record<string, number>) { Object.keys(dbRules).forEach((k) => delete dbRules[k]); Object.assign(dbRules, rules); }
 export function bizConfig(): BizCfg {
   const s = settings();
   const start = Number(s.bh_start), end = Number(s.bh_end), warn = Number(s.sla_warn_pct);
@@ -29,6 +35,7 @@ export function bizConfig(): BizCfg {
 }
 /** SLA hours for a stage: Settings > Workflow stage list (if saved) else SRS defaults. null = stage has no SLA clock. */
 export function stageSlaHours(stage: StageKey): number | null {
+  if (backendOn && stage in SLA_DEFAULTS && (dbRules[stage] ?? 0) >= 1) return dbRules[stage]!;
   const s = settings();
   try {
     const list = JSON.parse(String(s.wf_stages ?? "[]")) as { key: string; enabled: boolean; sla: number }[];

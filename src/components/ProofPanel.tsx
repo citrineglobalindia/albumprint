@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, ExternalLink, Eye, RefreshCw, Ban } from "lucide-react";
 import { Panel, Pill, cx } from "./ui";
 import { useToast } from "./Toast";
 import { useConfirm } from "./ConfirmDialog";
-import { PROOFS, createProof, latestProof, proofUrl, revokeProof, type Proof } from "../lib/proofs";
+import { PROOFS, createProof, hasLink, latestProof, proofUrl, revokeProof, setCommentState, type Proof } from "../lib/proofs";
+import { backendOn } from "../lib/supabase";
+import { syncProofs } from "../lib/db/proofs";
 import { ORDERS } from "../lib/data";
 import { notify, useStore } from "../lib/store";
-import { logAudit } from "../lib/audit";
 import { useAuth } from "../lib/auth";
 import { flushAll } from "../lib/persist";
 import "../lib/design";   // cross-tab sync with the public portal
@@ -22,6 +23,8 @@ export function ProofPanel({ orderId, className }: { orderId: string; className?
   const [toast, show] = useToast();
   const [dialog, confirm] = useConfirm();
   const [openHist, setOpenHist] = useState(false);
+  const [fresh, setFresh] = useState("");   // backend: the new link, shown once (the server keeps only a hash)
+  useEffect(() => { if (!backendOn) return; void syncProofs(); const t = setInterval(() => void syncProofs(), 6000); return () => clearInterval(t); }, []);
   const order = ORDERS.find((o) => o.id === orderId);
   const proof = latestProof(orderId);
   const history = PROOFS.filter((p) => p.orderId === orderId && p !== proof);
@@ -31,11 +34,11 @@ export function ProofPanel({ orderId, className }: { orderId: string; className?
   const resend = () => {
     if (!order) return;
     const days = proof ? Math.max(1, Math.round((new Date(proof.expiresAt).getTime() - new Date(proof.createdAt).getTime()) / 864e5)) : 7;
-    const p = createProof(orderId, order.pages, proof?.sentVia ?? "Link", days); notify(); flushAll(); copy(p);
+    const p = createProof(orderId, order.pages, proof?.sentVia ?? "Link", days); notify(); flushAll(); copy(p); if (backendOn) setFresh(proofUrl(p));
   };
   const toggle = (p: Proof, i: number) => {
-    const c = p.comments[i]!; c.resolved = !c.resolved; if (c.resolved) c.inProgress = false; notify();
-    logAudit({ entity: "proof", entityId: p.orderId, action: c.resolved ? "correction_resolved" : "correction_reopened", detail: `v${p.version} page ${c.page}` });
+    const c = p.comments[i]!; const resolved = !c.resolved;
+    setCommentState(p, c, { resolved, inProgress: false }, resolved ? "correction_resolved" : "correction_reopened"); notify();
   };
   const live = proof && ["sent", "viewed"].includes(proof.status);
 
@@ -54,11 +57,13 @@ export function ProofPanel({ orderId, className }: { orderId: string; className?
             {proof.respondedAt && <div className="col-span-2"><dt className="text-xs text-sub">Client response</dt><dd className="font-semibold">{dt(proof.respondedAt)}{proof.approvedBy ? ` - approved by ${proof.approvedBy}` : ""}</dd></div>}
           </dl>
           <div className="flex flex-wrap gap-2">
-            {live && <button onClick={() => copy(proof)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><Copy className="size-3.5" />Copy link</button>}
-            {live && <a href={`/proof/${proof.token}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><ExternalLink className="size-3.5" />Open client view</a>}
+            {live && hasLink(proof) && <button onClick={() => copy(proof)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><Copy className="size-3.5" />Copy link</button>}
+            {live && hasLink(proof) && <a href={`/proof/${proof.token}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><ExternalLink className="size-3.5" />Open client view</a>}
             {canSend && proof.status !== "approved" && <button onClick={resend} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand px-3 text-xs font-bold text-brand hover:bg-brand-soft"><RefreshCw className="size-3.5" />Resend / new link</button>}
             {live && role === "admin" && <button onClick={() => confirm({ title: "Revoke this link?", message: "The client will no longer be able to open this proof.", confirmLabel: "Revoke", danger: true }, () => { revokeProof(proof); notify(); show("Proof link revoked"); })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50"><Ban className="size-3.5" />Revoke</button>}
           </div>
+          {fresh && live && <p data-testid="proof-link" className="break-all rounded-lg bg-amber-50 p-2 text-xs"><b>New link (shown once):</b> {fresh}</p>}
+          {live && !hasLink(proof) && <p className="text-xs text-sub">For security the server stores only a hash of the link, so it cannot be shown again. Use Resend / new link to issue a fresh one.</p>}
           {proof.comments.length > 0 && (
             <div>
               <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-sub">Client corrections ({proof.comments.filter((c) => !c.resolved).length} open)</h4>

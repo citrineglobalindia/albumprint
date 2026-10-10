@@ -12,6 +12,10 @@ import { fmtDate } from "../lib/format";
 import { logAudit } from "../lib/audit";
 import { loadUsers, saveUsers } from "../lib/users";
 import { usePersistentState } from "../lib/localState";
+import { backendOn, supabase } from "../lib/supabase";
+import { ROLES } from "../lib/auth";
+import { dbInviteUser, dbListInvites, dbListPerms, dbListUsers, dbResendInvite, dbRevokeInvite, dbSavePerms, dbUpdateUser, type DbInvite, type DbUser, type PermCell } from "../lib/db/admin";
+import { LineTabs } from "../components/ui";
 
 type Tab = "users" | "roles" | "permissions";
 const ROLE_TONE: Record<string, Tone> = { "Super Admin": "indigo", Designer: "pink", Printer: "orange", "Colour Grading": "blue", "QC Executive": "amber", Reception: "green", Accounts: "violet" };
@@ -148,7 +152,10 @@ function PermGrid({ value, onChange, locked }: { value: RolePerms; onChange: (v:
   );
 }
 
-export default function UsersRoles() {
+/** Demo mode keeps the browser-stored directory; backend mode manages the real `profiles`, `staff_invites` and `role_permissions` tables. */
+export default function UsersRoles() { return backendOn ? <UsersRolesDb /> : <UsersRolesDemo />; }
+
+function UsersRolesDemo() {
   const [tab, setTab] = useState<Tab>("users");
   const [users, setUsers] = useState<Staff[]>(loadUsers);
   useEffect(() => { saveUsers(users); }, [users]);
@@ -728,6 +735,259 @@ export default function UsersRoles() {
         <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-extrabold">Permission matrix</h3><span className="text-xs text-sub">{countModules(rp)} of {MODULES.length} modules granted</span></div>
         {rSlide?.old === "Super Admin" && <p className="mb-2 text-xs text-sub">Super Admin permissions are fixed by the system.</p>}
         <PermGrid value={rp} onChange={setRp} locked={rSlide?.old === "Super Admin"} />
+      </SlideOver>
+    </div>
+  );
+}
+
+
+// ───────────────────────── backend mode ─────────────────────────
+const DB_ROLES = ["admin", "reception", "colour", "designer", "printing", "qc", "accounts"] as const;
+const DB_DEPTS = ["Head Office", "Reception", "Colour Grading", "Designing", "Printing", "Quality Control", "Accounts", "Delivery"];
+const ROLE_DEFAULT_DEPT: Record<string, string> = { admin: "Head Office", reception: "Reception", colour: "Colour Grading", designer: "Designing", printing: "Printing", qc: "Quality Control", accounts: "Accounts" };
+const roleLabel = (r: string) => (r in ROLES ? ROLES[r as keyof typeof ROLES].label : r);
+const MODULE_LABEL: Record<string, string> = {
+  customer: "Customers", order: "Orders", print_spec: "Printing requirement", grading: "Colour grading work", grading_approve: "Approve colour grading", design: "Album design work", design_approve: "Approve design",
+  client_proof: "Send client proof", client_correction: "Client corrections", release_print: "Release to printing", printing: "Printing production", qc: "QC inspection", delivery: "Delivery",
+  payments: "Payments", invoices: "Invoices / refunds", reports: "Reports", users: "User / role admin", pii: "See unmasked phone / email",
+};
+const LEVELS: [string, string][] = [["none", "No access"], ["view", "View"], ["limited", "Limited"], ["update", "Update"], ["work", "Work"], ["create_edit", "Create / edit"], ["approve", "Approve"], ["full", "Full"]];
+const LEVEL_TONE: Record<string, Tone> = { none: "slate", view: "blue", limited: "amber", update: "teal", work: "green", create_edit: "violet", approve: "pink", full: "indigo" };
+const INVITE_TONE: Record<string, Tone> = { pending: "amber", accepted: "green", revoked: "slate" };
+const ROLE_BLURB: Record<string, string> = {
+  admin: "Every module, approvals, users, settings and masters.", reception: "Customers and orders, intake, limited payments.", colour: "Colour grading work on assigned orders.",
+  designer: "Album design and client corrections.", printing: "Printing production and dispatch updates.", qc: "QC inspection, defects and pass / fail.", accounts: "Payments, invoices, refunds and finance reports.",
+};
+type DbTab = "users" | "invites" | "roles" | "permissions";
+const DB_EMPTY = { name: "", email: "", mobile: "", role: "reception", dept: "Reception" };
+
+function UsersRolesDb() {
+  const [tab, setTab] = useState<DbTab>("users");
+  const [users, setUsers] = useState<DbUser[]>([]);
+  const [invites, setInvites] = useState<DbInvite[]>([]);
+  const [perms, setPerms] = useState<PermCell[]>([]);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [loaded, setLoaded] = useState(false);
+  const [me, setMe] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [fRole, setFRole] = useState("All roles");
+  const [fStatus, setFStatus] = useState("All statuses");
+  const [slide, setSlide] = useState<null | { mode: "add" } | { mode: "edit"; id: string }>(null);
+  const [f, setF] = useState({ ...DB_EMPTY, active: true });
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [toast, show] = useToast();
+  const [dialog, confirm] = useConfirm();
+  const [params, setParams] = useSearchParams();
+
+  const refresh = async () => { const [u, i, p] = await Promise.all([dbListUsers(), dbListInvites(), dbListPerms()]); setUsers(u); setInvites(i); setPerms(p); setLoaded(true); };
+  useEffect(() => { void refresh(); void supabase?.auth.getUser().then(({ data }) => setMe(data.user?.id ?? null)); }, []);
+  useEffect(() => { if (params.get("new") === "1") { openAdd(); const n = new URLSearchParams(params); n.delete("new"); setParams(n, { replace: true }); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [params]);
+
+  const activeAdmins = users.filter((u) => u.role === "admin" && u.active).length;
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return users.filter((u) => (fRole === "All roles" || roleLabel(u.role) === fRole) && (fStatus === "All statuses" || (fStatus === "Active") === u.active) && (!t || u.name.toLowerCase().includes(t) || u.email.toLowerCase().includes(t) || u.mobile.includes(t)));
+  }, [users, q, fRole, fStatus]);
+  const pending = invites.filter((i) => i.status === "pending");
+
+  const openAdd = () => { setTouched(false); setF({ ...DB_EMPTY, active: true }); setSlide({ mode: "add" }); };
+  const openEdit = (u: DbUser) => { setTouched(false); setF({ name: u.name, email: u.email, mobile: u.mobile, role: u.role, dept: u.dept, active: u.active }); setSlide({ mode: "edit", id: u.id }); };
+
+  const email = f.email.trim().toLowerCase();
+  const errs = {
+    name: f.name.trim().length < 2 ? "Full name is required" : "",
+    email: !/^\S+@\S+\.\S+$/.test(email) ? "Enter a valid work email" : users.some((u) => u.email.toLowerCase() === email && (slide?.mode !== "edit" || u.id !== slide.id)) ? "That email already belongs to a user" : "",
+  };
+  const editing = slide?.mode === "edit" ? users.find((u) => u.id === slide.id) : undefined;
+
+  /** Optimistic: update the row now, write in the background, put the old row back if the database refuses. */
+  const patchUser = async (u: DbUser, patch: Partial<Pick<DbUser, "name" | "mobile" | "role" | "dept" | "active">>, done: string) => {
+    setUsers((l) => l.map((x) => (x.id === u.id ? { ...x, ...patch } : x)));
+    const err = await dbUpdateUser(u.id, patch);
+    if (err) { setUsers((l) => l.map((x) => (x.id === u.id ? u : x))); show(`Could not update ${u.name}: ${err}`); return false; }
+    show(done); return true;
+  };
+  const saveUser = async () => {
+    setTouched(true);
+    if (!slide) return;
+    if (slide.mode === "add") {
+      if (errs.name || errs.email) return;
+      setBusy(true);
+      const err = await dbInviteUser({ email, name: f.name.trim(), role: f.role, dept: f.dept, mobile: f.mobile.trim() });
+      setBusy(false);
+      if (err) { show(`Could not invite: ${err}`); return; }
+      setSlide(null); await refresh(); setTab("invites"); show(`Invite saved for ${email}. They can now create their account at the sign-in page`);
+    } else if (editing) {
+      if (errs.name) return;
+      const patch = { name: f.name.trim(), mobile: f.mobile.trim(), role: f.role, dept: f.dept, active: f.active };
+      setSlide(null);
+      await patchUser(editing, patch, `${patch.name} updated`);
+    }
+  };
+  const toggleActive = (u: DbUser) => {
+    if (u.id === me && u.active) { show("You cannot deactivate your own account"); return; }
+    if (u.active && u.role === "admin" && activeAdmins <= 1) { show("At least one active admin must remain"); return; }
+    const next = !u.active;
+    confirm({ title: next ? "Activate user" : "Deactivate user", message: next ? `Let ${u.name} sign in again?` : `${u.name} will be blocked from the app on their next sign-in or page load.`, confirmLabel: next ? "Activate" : "Deactivate", danger: !next },
+      () => { void patchUser(u, { active: next }, `${u.name} ${next ? "activated" : "deactivated"}`); });
+  };
+  const signupLink = () => `${location.origin}/login`;
+  const resend = async (i: DbInvite) => {
+    const err = await dbResendInvite(i.email, i.resends);
+    if (err) { show(`Could not resend: ${err}`); return; }
+    try { await navigator.clipboard.writeText(signupLink()); } catch { /* clipboard unavailable */ }
+    await refresh(); show(`Invite refreshed for ${i.email}. E-mail delivery is not connected: send them the sign-in page link (copied)`);
+  };
+  const revoke = (i: DbInvite) => confirm({ title: "Revoke invite", message: `${i.email} will no longer be able to create an account with this invite.`, confirmLabel: "Revoke", danger: true }, () => {
+    setInvites((l) => l.map((x) => (x.email === i.email ? { ...x, status: "revoked" } : x)));
+    void dbRevokeInvite(i.email).then((err) => { if (err) { setInvites((l) => l.map((x) => (x.email === i.email ? i : x))); show(`Could not revoke: ${err}`); } else show(`Invite for ${i.email} revoked`); });
+  });
+  const reinvite = async (i: DbInvite) => { const err = await dbInviteUser({ email: i.email, name: i.name, role: i.role, dept: i.dept, mobile: i.mobile }); if (err) show(`Could not re-invite: ${err}`); else { await refresh(); show(`Invite re-issued for ${i.email}`); } };
+
+  // ---- permission matrix ----
+  const modules = useMemo(() => [...new Set(perms.map((p) => p.module))], [perms]);
+  const levelOf = (role: string, mod: string) => draft[`${role}|${mod}`] ?? perms.find((p) => p.role === role && p.module === mod)?.level ?? "none";
+  const changes: PermCell[] = Object.entries(draft).map(([k, level]) => { const [role, module] = k.split("|") as [string, string]; return { role, module, level }; })
+    .filter((c) => c.level !== (perms.find((p) => p.role === c.role && p.module === c.module)?.level ?? "none"));
+  const setCell = (role: string, mod: string, level: string) => setDraft((d) => ({ ...d, [`${role}|${mod}`]: level }));
+  const savePerms = () => {
+    if (!changes.length) { show("No permission changes to save"); return; }
+    confirm({ title: "Save permissions", message: `Apply ${changes.length} permission change${changes.length === 1 ? "" : "s"}? They take effect immediately for the affected roles and are recorded in the audit log.`, confirmLabel: "Confirm & save" }, () => {
+      const before = perms;
+      setPerms((l) => { const m = new Map(l.map((p) => [`${p.role}|${p.module}`, p])); changes.forEach((c) => m.set(`${c.role}|${c.module}`, c)); return [...m.values()]; });
+      setDraft({});
+      void dbSavePerms(changes).then((err) => { if (err) { setPerms(before); show(`Permissions not saved: ${err}`); } else show(`Role permissions saved (${changes.length} change${changes.length === 1 ? "" : "s"})`); });
+    });
+  };
+
+  const roleCount = (r: string) => users.filter((u) => u.role === r && u.active).length;
+  const accessCount = (r: string) => perms.filter((p) => p.role === r && p.level !== "none").length;
+
+  return (
+    <div className="min-w-0">
+      {toast}{dialog}
+      <PageHeader title="Users & Roles" subtitle="Manage staff accounts, invitations, roles and permissions">
+        <PrimaryButton icon={UserPlus} onClick={openAdd}>Add User</PrimaryButton>
+      </PageHeader>
+      <LineTabs className="mb-5" value={tab} onChange={setTab} tabs={[{ key: "users", label: "Users", count: users.length }, { key: "invites", label: "Invites", count: pending.length }, { key: "roles", label: "Roles" }, { key: "permissions", label: "Permissions" }]} />
+
+      {tab === "users" && (
+        <>
+          <KpiRow items={[
+            { label: "Total Users", value: users.length, icon: Users, tone: "indigo" },
+            { label: "Active Users", value: users.filter((u) => u.active).length, icon: UserCheck, tone: "green" },
+            { label: "Inactive Users", value: users.filter((u) => !u.active).length, icon: UserX, tone: "pink" },
+            { label: "Pending Invites", value: pending.length, icon: Mail, tone: "violet" },
+          ]} />
+          <Panel>
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <SearchInput className="w-72" value={q} onChange={setQ} placeholder="Search by name, email, mobile..." />
+              <select aria-label="Filter by role" className="h-10 rounded-lg border border-line bg-white px-3 text-sm" value={fRole} onChange={(e) => setFRole(e.target.value)}>{["All roles", ...DB_ROLES.map(roleLabel)].map((r) => <option key={r}>{r}</option>)}</select>
+              <select aria-label="Filter by status" className="h-10 rounded-lg border border-line bg-white px-3 text-sm" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>{["All statuses", "Active", "Inactive"].map((r) => <option key={r}>{r}</option>)}</select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className={tableCls} data-testid="users-table">
+                <thead><tr><Th>User</Th><Th>Email / Mobile</Th><Th>Role</Th><Th>Department</Th><Th>Status</Th><Th>Joined</Th><Th>Actions</Th></tr></thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id} className={trCls}>
+                      <Td><span className="flex items-center gap-2"><Avatar name={u.name} /><b>{u.name}</b>{u.id === me && <Pill tone="indigo">You</Pill>}</span></Td>
+                      <Td>{u.email}<span className="block text-xs text-sub">{u.mobile || "—"}</span></Td>
+                      <Td><Pill tone={u.role === "admin" ? "indigo" : "slate"}>{roleLabel(u.role)}</Pill></Td>
+                      <Td>{u.dept || "—"}</Td>
+                      <Td><Pill tone={u.active ? "green" : "red"} dot>{u.active ? "Active" : "Inactive"}</Pill></Td>
+                      <Td>{fmtDate(u.created)}</Td>
+                      <Td><span className="flex gap-2">
+                        <button aria-label={`Edit ${u.name}`} onClick={() => openEdit(u)} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">Edit</button>
+                        <button aria-label={`${u.active ? "Deactivate" : "Activate"} ${u.name}`} onClick={() => toggleActive(u)} className={cx("h-8 rounded-lg border px-3 text-xs font-bold", u.active ? "border-rose-200 text-rose-600 hover:bg-rose-50" : "border-line hover:bg-brand-soft")}>{u.active ? "Deactivate" : "Activate"}</button>
+                      </span></Td>
+                    </tr>
+                  ))}
+                  {loaded && filtered.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-sub">No users match.</td></tr>}
+                  {!loaded && <tr><td colSpan={7} className="py-8 text-center text-sub">Loading…</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </>
+      )}
+
+      {tab === "invites" && (
+        <Panel title="Invitations" subtitle="An invited email becomes a staff account with the chosen role when that person creates their account (or is added in Supabase Auth). E-mail delivery is not connected: share the sign-in page link yourself.">
+          <div className="overflow-x-auto">
+            <table className={tableCls} data-testid="invites-table">
+              <thead><tr><Th>Email</Th><Th>Name</Th><Th>Role</Th><Th>Department</Th><Th>Status</Th><Th>Invited</Th><Th>Actions</Th></tr></thead>
+              <tbody>
+                {invites.map((i) => (
+                  <tr key={i.email} className={trCls}>
+                    <Td className="font-semibold">{i.email}</Td><Td>{i.name || "—"}</Td><Td>{roleLabel(i.role)}</Td><Td>{i.dept || "—"}</Td>
+                    <Td><Pill tone={INVITE_TONE[i.status]} dot>{i.status[0]!.toUpperCase() + i.status.slice(1)}</Pill></Td>
+                    <Td>{fmtDate(i.lastSent)}{i.resends > 0 && <span className="block text-xs text-sub">resent {i.resends}x</span>}</Td>
+                    <Td><span className="flex gap-2">
+                      {i.status === "pending" && <button aria-label={`Resend invite ${i.email}`} onClick={() => void resend(i)} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">Resend</button>}
+                      {i.status === "pending" && <button aria-label={`Revoke invite ${i.email}`} onClick={() => revoke(i)} className="h-8 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50">Revoke</button>}
+                      {i.status === "revoked" && <button aria-label={`Re-invite ${i.email}`} onClick={() => void reinvite(i)} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">Re-invite</button>}
+                    </span></Td>
+                  </tr>
+                ))}
+                {loaded && invites.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-sub">No invitations yet. Use Add User to invite a staff member.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {tab === "roles" && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {DB_ROLES.map((r) => (
+            <Panel key={r}>
+              <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-extrabold">{roleLabel(r)}</h3><p className="mt-1 text-xs text-sub">{ROLE_BLURB[r]}</p></div><Pill tone={r === "admin" ? "indigo" : "slate"}>System role</Pill></div>
+              <p className="mt-4 text-sm"><b>{roleCount(r)}</b> active user{roleCount(r) === 1 ? "" : "s"} · <b>{accessCount(r)}</b> of {modules.length} modules</p>
+              <button onClick={() => { setTab("permissions"); }} className="mt-3 text-xs font-bold text-brand">Edit permissions</button>
+            </Panel>
+          ))}
+        </div>
+      )}
+
+      {tab === "permissions" && (
+        <Panel title="Role permission matrix" subtitle="Changes apply to the database rules immediately and are written to the audit log. The Admin role always keeps full user administration."
+          action={<span className="flex gap-2">
+            <button onClick={() => setDraft({})} disabled={!changes.length} className="h-9 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft disabled:opacity-40">Discard</button>
+            <button onClick={savePerms} className="h-9 rounded-lg bg-brand px-4 text-xs font-bold text-white">Save permissions{changes.length ? ` (${changes.length})` : ""}</button></span>}>
+          <div className="overflow-x-auto rounded-xl border border-line">
+            <table className="w-full text-[13px]" aria-label="Permission matrix editor" data-testid="perm-matrix">
+              <thead><tr className="bg-slate-50"><Th>Module</Th>{DB_ROLES.map((r) => <Th key={r}>{roleLabel(r)}</Th>)}</tr></thead>
+              <tbody>
+                {modules.map((m) => (
+                  <tr key={m} className={trCls}>
+                    <Td className="font-semibold">{MODULE_LABEL[m] ?? m}</Td>
+                    {DB_ROLES.map((r) => {
+                      const lv = levelOf(r, m), locked = r === "admin" && m === "users", dirty = draft[`${r}|${m}`] !== undefined && changes.some((c) => c.role === r && c.module === m);
+                      return <Td key={r}><select aria-label={`${MODULE_LABEL[m] ?? m} for ${roleLabel(r)}`} disabled={locked} value={lv} onChange={(e) => setCell(r, m, e.target.value)}
+                        className={cx("h-8 w-full min-w-[104px] rounded-md border bg-white px-1.5 text-xs font-semibold", dirty ? "border-amber-400 bg-amber-50" : "border-line", TONE[LEVEL_TONE[lv] ?? "slate"].text)}>
+                        {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Td>;
+                    })}
+                  </tr>
+                ))}
+                {loaded && modules.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-sub">No permissions found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      <SlideOver open={!!slide} onClose={() => setSlide(null)} title={slide?.mode === "edit" ? "Edit user" : "Add user"} footer={<>
+        <button onClick={() => setSlide(null)} className="h-11 px-5 text-sm font-bold">Cancel</button>
+        <PrimaryButton icon={slide?.mode === "edit" ? Check : Mail} onClick={() => void saveUser()}>{busy ? "Saving…" : slide?.mode === "edit" ? "Save changes" : "Send invite"}</PrimaryButton>
+      </>}>
+        {slide?.mode === "add" && <p className="mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs text-ink">This records an invitation. The person then creates their account with this email on the sign-in page (or you add them in Supabase Auth) and receives the role below automatically.</p>}
+        <Field label="Full name" required><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />{touched && errs.name && <span className={ERR}>{errs.name}</span>}</Field>
+        <Field label="Work email" required><input className={inputCls} type="email" readOnly={slide?.mode === "edit"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />{touched && slide?.mode === "add" && errs.email && <span className={ERR}>{errs.email}</span>}</Field>
+        <Field label="Mobile"><input className={inputCls} value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value })} /></Field>
+        <Field label="Role" required><select className={inputCls} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, dept: ROLE_DEFAULT_DEPT[e.target.value] ?? f.dept })}>{DB_ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}</select></Field>
+        <Field label="Department"><select className={inputCls} value={f.dept} onChange={(e) => setF({ ...f, dept: e.target.value })}>{[...new Set([...DB_DEPTS, f.dept].filter(Boolean))].map((d) => <option key={d}>{d}</option>)}</select></Field>
+        {slide?.mode === "edit" && <div className="flex items-center justify-between py-1.5"><span className="text-sm font-semibold">Account active</span><Toggle on={f.active} onChange={(x) => setF({ ...f, active: x })} label="Account active" /></div>}
       </SlideOver>
     </div>
   );

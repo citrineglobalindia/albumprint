@@ -6,6 +6,8 @@ import { TODAY } from "./format";
 import { GST_RATE } from "./pricing";
 import { can, discountLimit, no, ok, denied, fmtDT, type Out } from "./production";
 import type { RoleKey } from "./auth";
+import { backendOn, writeThrough } from "./db/core";
+import { dbReceivePayment, dbRefund, dbCreateInvoice, dbSendInvoice, dbMarkOverdue, dbApproveDiscount } from "./db/finance";
 
 export { fmtDT };
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -18,13 +20,13 @@ const roleOf = () => { const r = actor().role; return r === "system" ? null : (r
 /* ───────────── payments (§15) ───────────── */
 export const MODES = ["UPI", "Cash", "Bank Transfer", "Cheque"] as const;
 export type Mode = (typeof MODES)[number];
-export interface Payment { id: string; orderId: string; kind: "payment" | "refund"; date: string; mode: Mode; ref: string; amount: number; receipt: string; note?: string; by: string; byRole: string; creditNote?: string }
+export interface Payment { uid?: string; id: string; orderId: string; kind: "payment" | "refund"; date: string; mode: Mode; ref: string; amount: number; receipt: string; note?: string; by: string; byRole: string; creditNote?: string }
 export const PAYMENTS: Payment[] = persistArray<Payment>("payments", []);
 
 /* ───────────── invoices ───────────── */
 export interface Line { desc: string; qty: number; price: number }
 export interface Invoice {
-  no: string; kind: "invoice" | "credit_note"; orderId: string; customer: string; date: string; due: string; lines: Line[]; gstPct: number; igst: boolean; discountPct: number;
+  uid?: string; no: string; kind: "invoice" | "credit_note"; orderId: string; customer: string; date: string; due: string; lines: Line[]; gstPct: number; igst: boolean; discountPct: number;
   status: "Draft" | "Sent" | "Overdue"; approval: "none" | "pending" | "approved"; approvedBy?: string; refNo?: string; amount?: number; notes?: string; sentAt?: string;
 }
 export const INVOICES: Invoice[] = persistArray<Invoice>("invoices", []);
@@ -77,7 +79,9 @@ export function sweepOverdue() {
   let n = 0;
   INVOICES.forEach((i) => {
     if (i.kind === "invoice" && i.status === "Sent" && i.due < TODAY_STR && invPaid(i) < invTotal(i)) {
+      if (backendOn && !can(roleOf(), "finance")) return;   // only finance roles may persist the status; others see it derived from the due date
       i.status = "Overdue"; n++;
+      if (backendOn && i.uid) { const inv = i; writeThrough("Marking invoice overdue", () => dbMarkOverdue(inv.uid!) as never, () => { inv.status = "Sent"; notify(); }); }
       logAudit({ entity: "invoice", entityId: i.no, action: "mark_overdue", detail: `due ${i.due}` });
     }
   });
@@ -85,6 +89,7 @@ export function sweepOverdue() {
 }
 
 export function ensureFinance() {
+  if (backendOn) { sweepOverdue(); return; }   // the database is the source of truth: no demo seed
   let changed = false;
   if (PAYMENTS.length === 0) {
     ORDERS.filter((o) => o.paid > 0).slice().reverse().forEach((o, k) => {
@@ -105,7 +110,7 @@ export function ensureFinance() {
 }
 
 /* ───────────── actions ───────────── */
-export function recordPayment(orderId: string, d: { amount: number; mode: Mode; ref: string; date: string; note?: string }): Out {
+export function recordPayment(orderId: string, d: { amount: number; mode: Mode; ref: string; date: string; note?: string }): Out | Promise<Out> {
   const role = roleOf();
   if (!can(role, "receive")) return denied(role, "receive");
   const o = ord(orderId); if (!o) return no("Order not found");
@@ -117,21 +122,41 @@ export function recordPayment(orderId: string, d: { amount: number; mode: Mode; 
   if (d.amount > bal && !can(role, "finance")) return no(`Amount exceeds the balance of ₹${Math.max(0, bal).toLocaleString("en-IN")} — reception can only receive up to the balance`);
   if (d.mode !== "Cash" && !d.ref.trim()) return no("A reference (UTR / cheque no.) is required for non-cash payments");
   const before = o.pay;
+  if (backendOn) {   // receipt number and order totals come from the database
+    if (!o.uid) return no("This order has not been saved yet");
+    return dbReceivePayment(o.uid, d).then((r) => {
+      if ("error" in r) return no(r.error);
+      PAYMENTS.unshift({ uid: r.uid, id: r.uid, orderId, kind: "payment", date: d.date, mode: d.mode, ref: d.ref.trim(), amount: d.amount, receipt: r.receipt, note: d.note, by: actor().name, byRole: String(actor().role) });
+      logAudit({ entity: "payment", entityId: orderId, action: "receive", detail: `₹${d.amount} via ${d.mode} · ${r.receipt}`, from: before, to: o.pay }); notify();
+      return ok(`Received ₹${d.amount.toLocaleString("en-IN")} — receipt ${r.receipt}${o.paid > o.total ? ` (₹${(o.paid - o.total).toLocaleString("en-IN")} held as credit)` : ""}`);
+    });
+  }
   o.paid += d.amount; syncPay(o);
   const p: Payment = { id: `P${Date.now().toString(36)}`, orderId, kind: "payment", date: d.date, mode: d.mode, ref: d.ref.trim(), amount: d.amount, receipt: nextReceipt(), note: d.note, by: actor().name, byRole: String(actor().role) };
   PAYMENTS.unshift(p);
   logAudit({ entity: "payment", entityId: orderId, action: "receive", detail: `₹${d.amount} via ${d.mode} · ${p.receipt}`, from: before, to: o.pay }); notify();
   return ok(`Received ₹${d.amount.toLocaleString("en-IN")} — receipt ${p.receipt}${o.paid > o.total ? ` (₹${(o.paid - o.total).toLocaleString("en-IN")} held as credit)` : ""}`);
 }
-export function refundPayment(orderId: string, d: { amount: number; mode: Mode; reason: string; date: string }): Out {
+export function refundPayment(orderId: string, d: { amount: number; mode: Mode; reason: string; date: string }): Out | Promise<Out> {
   const role = roleOf();
   if (!can(role, "finance")) return no(`Your role (${role ?? "guest"}) cannot issue refunds — only Accounts and Admin can`);
   const o = ord(orderId); if (!o) return no("Order not found");
   if (o.closed) return no(`${o.id} is closed and read-only — reopen it first`);
   if (!(d.amount > 0) || !Number.isInteger(d.amount)) return no("Enter a whole-rupee refund amount");
-  if (d.amount > o.paid) return no(`Refund cannot exceed the amount paid (₹${o.paid.toLocaleString("en-IN")})`);
+  if (!backendOn && d.amount > o.paid) return no(`Refund cannot exceed the amount paid (₹${o.paid.toLocaleString("en-IN")})`);
   if (!d.reason.trim()) return no("A refund reason is required");
   const before = o.pay;
+  if (backendOn) {   // credit note + refund are created atomically by the database (refund cap enforced there)
+    if (!o.uid) return no("This order has not been saved yet");
+    return dbRefund(o.uid, d).then((r) => {
+      if ("error" in r) return no(r.error);
+      const cn: Invoice = { uid: r.creditUid, no: r.creditNote, kind: "credit_note", orderId, customer: o.customer, date: d.date, due: d.date, lines: [{ desc: `Refund: ${d.reason.trim()}`, qty: 1, price: Math.round(d.amount / (1 + GST_RATE)) }], gstPct: 18, igst: false, discountPct: 0, status: "Sent", approval: "none", refNo: r.refNo, amount: d.amount, notes: `Refund of ₹${d.amount}` };
+      INVOICES.unshift(cn);
+      PAYMENTS.unshift({ uid: r.paymentUid, id: r.paymentUid, orderId, kind: "refund", date: d.date, mode: d.mode, ref: "", amount: d.amount, receipt: r.receipt, note: d.reason.trim(), by: actor().name, byRole: String(actor().role), creditNote: cn.no });
+      logAudit({ entity: "payment", entityId: orderId, action: "refund", detail: `₹${d.amount} · ${cn.no}`, reason: d.reason.trim(), from: before, to: o.pay }); notify();
+      return ok(`Refunded ₹${d.amount.toLocaleString("en-IN")} — credit note ${cn.no}`);
+    });
+  }
   o.paid -= d.amount; syncPay(o);
   const inv = INVOICES.filter((i) => i.orderId === orderId && i.kind === "invoice").sort((a, b) => b.date.localeCompare(a.date))[0];
   const cn: Invoice = { no: nextCreditNo(), kind: "credit_note", orderId, customer: o.customer, date: d.date, due: d.date, lines: [{ desc: `Refund: ${d.reason.trim()}`, qty: 1, price: Math.round(d.amount / (1 + GST_RATE)) }], gstPct: 18, igst: false, discountPct: 0, status: "Sent", approval: "none", refNo: inv?.no, amount: d.amount, notes: `Refund of ₹${d.amount}` };
@@ -147,7 +172,7 @@ export interface Draft { orderId: string; terms: number; discPct: number; gstPct
 export function draftFor(o: Order): Draft {
   return { orderId: o.id, terms: 15, discPct: 0, gstPct: 18, igst: false, lines: [{ desc: `${o.event} album ${o.size} (${o.pages} pages)`, qty: 1, price: Math.round(o.total / (1 + GST_RATE)) }] };
 }
-export function createInvoice(d: Draft): Out {
+export function createInvoice(d: Draft): Out | Promise<Out> {
   const role = roleOf();
   if (!can(role, "finance")) return denied(role, "finance");
   const o = ord(d.orderId); if (!o) return no("Order not found");
@@ -156,6 +181,16 @@ export function createInvoice(d: Draft): Out {
   if (!(d.discPct >= 0 && d.discPct <= 100)) return no("Discount must be between 0 and 100%");
   const needs = d.discPct > discountLimit();
   const due = iso(new Date(TODAY.getTime() + d.terms * 864e5));
+  if (backendOn) {   // the invoice number and totals come from the database
+    if (!o.uid) return no("This order has not been saved yet");
+    return dbCreateInvoice(o.uid, { due, discPct: d.discPct, gstPct: d.gstPct, igst: d.igst, notes: d.notes, lines: d.lines }).then((r) => {
+      if ("error" in r) return no(r.error);
+      const inv: Invoice = { uid: r.uid, no: r.no, kind: "invoice", orderId: o.id, customer: o.customer, date: TODAY_STR, due, lines: d.lines, gstPct: d.gstPct, igst: d.igst, discountPct: d.discPct, status: "Draft", approval: needs ? "pending" : "none", notes: d.notes };
+      INVOICES.unshift(inv);
+      logAudit({ entity: "invoice", entityId: inv.no, action: "create", detail: `${o.id} ₹${invTotal(inv)}${needs ? ` · discount ${d.discPct}% needs admin approval` : ""}` }); notify();
+      return ok(needs ? `${inv.no} created — discount ${d.discPct}% needs admin approval before sending` : `${inv.no} created as draft`);
+    });
+  }
   const inv: Invoice = { no: nextInvoiceNo(), kind: "invoice", orderId: o.id, customer: o.customer, date: TODAY_STR, due, lines: d.lines, gstPct: d.gstPct, igst: d.igst, discountPct: d.discPct, status: "Draft", approval: needs ? "pending" : "none", notes: d.notes };
   INVOICES.unshift(inv);
   logAudit({ entity: "invoice", entityId: inv.no, action: "create", detail: `${o.id} ₹${invTotal(inv)}${needs ? ` · discount ${d.discPct}% needs admin approval` : ""}` }); notify();
@@ -166,6 +201,7 @@ export function approveDiscount(no_: string): Out {
   const i = INVOICES.find((x) => x.no === no_); if (!i) return no("Invoice not found");
   if (i.approval !== "pending") return no("No approval pending on this invoice");
   i.approval = "approved"; i.approvedBy = actor().name;
+  if (backendOn && i.uid) { const inv = i; writeThrough("Approving discount", () => dbApproveDiscount(inv.uid!) as never, () => { inv.approval = "pending"; inv.approvedBy = undefined; notify(); }); }
   logAudit({ entity: "invoice", entityId: i.no, action: "discount_approved", detail: `${i.discountPct}%`, override: true }); notify(); return ok(`Discount approved on ${i.no}`);
 }
 export function sendInvoice(no_: string): Out {
@@ -175,5 +211,6 @@ export function sendInvoice(no_: string): Out {
   if (i.status !== "Draft") return no("Already sent");
   if (i.approval === "pending") return no(`Discount ${i.discountPct}% is above the ${discountLimit()}% limit — needs admin approval before sending`);
   i.status = "Sent"; i.sentAt = new Date().toISOString();
+  if (backendOn && i.uid) { const inv = i; writeThrough("Sending invoice", () => dbSendInvoice(inv.uid!) as never, () => { inv.status = "Draft"; inv.sentAt = undefined; notify(); }); }
   logAudit({ entity: "invoice", entityId: i.no, action: "send", detail: `${i.customer} ₹${invTotal(i)}` }); notify(); sweepOverdue(); return ok(`${i.no} sent to ${i.customer}`);
 }

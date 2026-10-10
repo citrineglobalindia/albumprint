@@ -120,7 +120,8 @@ export default function Payments() {
     if (Object.keys(e).length) return;
     const amount = Number(f.amount);
     const r = mode === "pay" ? recordPayment(f.orderId, { amount, mode: f.mode, ref: f.ref, date: f.date, note: f.note }) : refundPayment(f.orderId, { amount, mode: f.mode, reason: f.note, date: f.date });
-    if (run(r)) { setSelId(f.orderId); setMode(null); }
+    const done = (x: Out) => { if (run(x)) { setSelId(f.orderId); setMode(null); } };
+    if (r instanceof Promise) void r.then(done); else done(r);   // backend mode: wait for the server-assigned receipt number
   };
   const downloadReceipt = (id: string) => {
     const tx = lastPay(id); if (!tx) { show("No receipt yet — no payment recorded"); return; }

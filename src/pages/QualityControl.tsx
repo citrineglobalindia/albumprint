@@ -182,7 +182,7 @@ export default function QualityControl() {
               <div className="flex flex-wrap items-center gap-2 text-[13px]">
                 <b>Evidence</b>
                 {canAct && <button onClick={() => evInput.current?.click()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft"><UploadCloud className="size-4" />Add evidence</button>}
-                <input ref={evInput} data-testid="evidence-input" type="file" multiple accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={(e) => { Array.from(e.target.files ?? []).forEach((f) => { const r = addEvidence(cur.id, f.name, f.size); if (!r.ok) show(r.msg); else show(`Evidence ${f.name} recorded`); }); e.target.value = ""; }} />
+                <input ref={evInput} data-testid="evidence-input" type="file" multiple accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={(e) => { Array.from(e.target.files ?? []).forEach((f) => { const r = addEvidence(cur.id, f.name, f.size, f); if (!r.ok) show(r.msg); else show(`Evidence ${f.name} recorded`); }); e.target.value = ""; }} />
                 {insp.evidence.map((n) => <Pill key={n} tone="slate">{n}</Pill>)}
               </div>
 

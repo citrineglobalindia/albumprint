@@ -10,6 +10,9 @@ import { AUDIT } from "../lib/audit";
 import { flushAll, resetDemoData } from "../lib/persist";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useRef } from "react";
+import { backendOn } from "../lib/supabase";
+import { loadSettings, saveSettings } from "../lib/localState";
+import { getSlaRules } from "../lib/sla";
 
 type Val = string | boolean;
 type Fld =
@@ -125,14 +128,19 @@ const LOG: [string, string, string, string][] = [
   ["01 Oct 2026, 03:12 PM", "Admin", "User created", "Neha Reddy (Colour Grading)"],
 ];
 
-const STORE = "albumpro.settings";
 const ERR = "mt-1 block text-xs font-semibold text-rose-600";
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const load = (): Record<string, Val> => {
   try {
-    const raw = localStorage.getItem(STORE);
-    if (raw) { const m = { ...INIT, ...JSON.parse(raw) } as Record<string, Val>; if (/^\d+$/.test(String(m.timeout))) m.timeout = `${m.timeout} minutes`; return m; }
+    const raw = loadSettings();
+    if (Object.keys(raw).length) {
+      const m = { ...INIT, ...raw } as Record<string, Val>;
+      if (/^\d+$/.test(String(m.timeout))) m.timeout = `${m.timeout} minutes`;
+      if (backendOn) { const rules = getSlaRules(); m.wf_stages = JSON.stringify(parse<StageCfg[]>(m.wf_stages, DEFAULT_STAGES).map((x) => ({ ...x, sla: rules[x.key] ?? x.sla }))); }   // sla_rules table is the source of truth
+      return m;
+    }
   } catch { /* ignore */ }
+  if (backendOn) { const rules = getSlaRules(); return { ...INIT, wf_stages: JSON.stringify(DEFAULT_STAGES.map((x) => ({ ...x, sla: rules[x.key] ?? x.sla }))) }; }
   return INIT;
 };
 type Errs = Record<string, string>;
@@ -274,14 +282,14 @@ function SecurityExtras({ v, show }: { v: Record<string, Val>; show: (m: string)
       <ul className="mt-2 grid gap-x-4 sm:grid-cols-2 text-xs" data-testid="pw-rules">{rules.map((r) => <li key={r.l} className={cx("flex items-center gap-1.5", r.ok ? "text-emerald-600" : "text-sub")}>{r.ok ? <Check className="size-3.5" /> : <X className="size-3.5" />}{r.l}</li>)}</ul>
       <p className="mt-2 text-xs text-sub">Passwords expire {Number(v.pw_exp) ? `every ${v.pw_exp} days` : "never"}; accounts lock after {String(v.max_fail)} failed attempts; sessions end after {String(v.timeout)} of inactivity.</p>
     </div>
-    <div className="rounded-2xl border border-line p-5">
+    {!backendOn && <div className="rounded-2xl border border-line p-5">
       <div className="mb-3 flex items-center justify-between"><div><h3 className="text-base font-extrabold">Active sessions</h3><p className="text-xs text-sub">Devices currently signed in to your account.</p></div>
         {sessions.length > 1 && <button onClick={() => { setSessions((l) => l.filter((x) => x.current)); show("Signed out of all other sessions"); }} className="h-9 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50">Revoke all others</button>}</div>
       <ul className="space-y-2" data-testid="settings-sessions">{sessions.map((x) => (
         <li key={x.id} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5 text-[13px]"><MonitorSmartphone className="size-5 text-sub" /><span className="flex-1"><b>{x.device}</b>{x.current && <Pill tone="green" className="ml-2">This device</Pill>}<span className="block text-xs text-sub">{x.where} · {x.when}</span></span>
           {!x.current && <button onClick={() => { setSessions((l) => l.filter((y) => y.id !== x.id)); show(`Session on ${x.device} revoked`); }} className="h-8 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50">Revoke</button>}</li>
       ))}</ul>
-    </div>
+    </div>}
   </>);
 }
 
@@ -308,18 +316,20 @@ export default function Settings() {
   }, [dirty]);
 
   const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); if (errs[k]) setErrs((e) => { const c = { ...e }; delete c[k]; return c; }); };
-  const matches = useMemo(() => SECTIONS.filter((x) => !q.trim() || matchSection(x, q.trim().toLowerCase())), [q]);
+  const matches = useMemo(() => SECTIONS.filter((x) => !(backendOn && (x.key === "data" || x.key === "audit")) && (!q.trim() || matchSection(x, q.trim().toLowerCase()))), [q]);
   useEffect(() => { if (matches.length && !matches.some((x) => x.key === sec)) setSec(matches[0]!.key); }, [matches, sec]);
   const s = SECTIONS.find((x) => x.key === sec)!;
   const str = (k: string) => String(v[k] ?? "");
 
-  const saveAll = () => {
+  const saveAll = async () => {
     const e = validate(v);
     setErrs(e);
     const bad = Object.keys(e);
     if (bad.length) { setSec(KEY_SEC[bad[0]!] ?? sec); show(`Fix ${bad.length} invalid field${bad.length > 1 ? "s" : ""} before saving`); return; }
     const n = dirtySecs.size;
-    try { localStorage.setItem(STORE, JSON.stringify(v)); } catch { show("Saved for this session only (browser storage unavailable)"); setSaved(v); return; }
+    const err = await saveSettings(v);
+    if (err === "storage") { show("Saved for this session only (browser storage unavailable)"); setSaved(v); return; }
+    if (err) { show(`Could not save settings: ${err}`); return; }     // backend refused: keep the edits on screen, nothing was changed
     setSaved(v);
     show(n ? `Saved changes in ${n} section${n > 1 ? "s" : ""}` : "Settings saved");
   };
@@ -397,6 +407,7 @@ export default function Settings() {
 
         <Panel title={s.title} subtitle={s.desc} bodyClassName="space-y-4">
           {sec === "general" && <General v={v} set={set} errs={errs} show={show} />}
+          {backendOn && <p className="text-xs text-sub" data-testid="shared-note">Saved to the shared database: every staff member sees these values.{(sec === "email" || sec === "whatsapp") && " The SMTP password and WhatsApp access token are never stored here; keep them in your provider or server configuration."}</p>}
           {sec === "workflow" && <StageEditor value={str("wf_stages")} onChange={(x) => set("wf_stages", x)} error={errs.wf_stages} />}
           {sec === "workflow" && <BusinessHours v={v} set={set} errs={errs} />}
           {sec === "data" && <DataStorage show={show} />}

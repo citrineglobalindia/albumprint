@@ -7,6 +7,7 @@ import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
 import { AUDIT, onAudit, type AuditEntry } from "../lib/audit";
 import { ROLES } from "../lib/auth";
+import { refreshAudit } from "../lib/db/audit";
 
 // SRS §20: append-only audit trail. This screen is read-only by design: no edit or delete controls exist.
 const fmtAt = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -17,6 +18,7 @@ const uniq = (f: (a: AuditEntry) => string) => [...new Set(AUDIT.map(f).filter(B
 export default function AuditLog() {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   useEffect(() => onAudit(bump), []);
+  useEffect(() => { refreshAudit(0); const t = setInterval(() => refreshAudit(0), 15000); return () => clearInterval(t); }, []);   // backend: the server trail (no-op in demo mode)
   const [toast, show] = useToast();
   const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
   const [q, setQ] = useState("");

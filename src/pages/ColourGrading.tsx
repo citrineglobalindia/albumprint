@@ -104,7 +104,7 @@ export default function ColourGrading() {
     if (!cur || !guard("grading")) return;
     const bad: string[] = []; let n = 0;
     Array.from(fl).forEach((file) => {
-      const r = uploadGraded(cur.orderId, file.name, file.size);
+      const r = uploadGraded(cur.orderId, file.name, file.size, file);
       if (r.ok) n++; else bad.push(r.msg);
     });
     setRejected(bad);
@@ -120,7 +120,8 @@ export default function ColourGrading() {
     if (Object.keys(e).length) return;
     if (run(createGradingJob(f.order, { colorist: f.colorist, priority: f.priority, due: f.due, instructions: f.notes.trim() }))) { setActiveId(f.order); setTab("queue"); setPage(1); setCreating(false); setF(EMPTY); }
   };
-  const available = ORDERS.filter((o) => o.stage === "files_received" && o.workflow !== "Printing" && !o.hold && !GJOBS.some((j) => j.orderId === o.id));
+  // orders at Files Received, plus (backend) orders another route already moved to Colour Grading that still have no grader
+  const available = ORDERS.filter((o) => o.workflow !== "Printing" && !o.hold && ((o.stage === "files_received" && !GJOBS.some((j) => j.orderId === o.id)) || (o.stage === "colour_grading" && GJOBS.some((j) => j.orderId === o.id && j.colorist === "Unassigned"))));
 
   const o = cur ? ordOf(cur.orderId) : null;
   const closed = !!o?.closed;

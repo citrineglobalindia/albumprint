@@ -4,6 +4,8 @@ import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, LinkIcon, Mes
 import { Thumb, cx } from "../components/ui";
 import { ORDERS } from "../lib/data";
 import { approveProof, markViewed, proofByToken, requestCorrections, type ProofComment } from "../lib/proofs";
+import { backendOn } from "../lib/supabase";
+import { portalGet, portalRespond, type PortalView, type PortalError } from "../lib/db/proofs";
 import { moveStage } from "../lib/workflow";
 import { flushAll } from "../lib/persist";
 import { fmtDate } from "../lib/format";
@@ -53,8 +55,20 @@ function Notice({ icon, title, children }: { icon: React.ReactNode; title: strin
 export default function ProofPortal() {
   const { token = "" } = useParams();
   const [, bump] = useReducer((x: number) => x + 1, 0);
-  const proof = proofByToken(token);
+  // Demo mode reads the shared browser store; with the backend on there is no login and everything goes through the public proof_get / proof_respond functions.
+  const proof = backendOn ? undefined : proofByToken(token);
   const order = proof ? ORDERS.find((o) => o.id === proof.orderId) : undefined;
+  const [remote, setRemote] = useState<{ view?: PortalView; error?: PortalError; loading: boolean }>({ loading: backendOn });
+  useEffect(() => {
+    if (!backendOn) return;
+    let alive = true;
+    void portalGet(token).then((r) => { if (alive) setRemote("view" in r ? { view: r.view, loading: false } : { error: r.error, loading: false }); }, () => { if (alive) setRemote({ error: "network", loading: false }); });
+    return () => { alive = false; };
+  }, [token]);
+  const view: PortalView | undefined = backendOn ? remote.view : proof && order
+    ? { status: proof.status, version: proof.version, expiresAt: proof.expiresAt, respondedAt: proof.respondedAt, approvedBy: proof.approvedBy, comments: proof.comments, pages: proof.pages, orderCode: order.id, event: order.event, customer: order.customer, size: order.size }
+    : undefined;
+  const failure: PortalError | undefined = backendOn ? remote.error : undefined;
   const draftKey = `albumpro.draft.${token}`;
   const [draft, setDraft] = useState<ProofComment[]>(() => { try { return JSON.parse(localStorage.getItem(draftKey) ?? "[]"); } catch { return []; } });
   const [spread, setSpread] = useState(0);
@@ -66,11 +80,12 @@ export default function ProofPortal() {
   const [reviewed, setReviewed] = useState(false);
   const [err, setErr] = useState("");
 
-  const live = !!proof && ["sent", "viewed"].includes(proof.status);
+  const [busy, setBusy] = useState(false);
+  const live = !!view && ["sent", "viewed"].includes(view.status);
   useEffect(() => { if (proof && proof.status === "sent") { markViewed(proof); flushAll(); bump(); } }, [proof]);
   useEffect(() => { try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* ignore */ } }, [draft, draftKey]);
 
-  const pages = proof?.pages ?? 0;
+  const pages = view?.pages ?? 0;
   const spreadCount = Math.ceil(pages / 2) + 1;
   const pageNo = spread === 0 ? 1 : Math.min(pages, spread * 2);
   const pageLabel = spread === 0 ? "Cover (page 1)" : `Page ${pageNo}`;
@@ -84,16 +99,20 @@ export default function ProofPortal() {
   }, [go]);
   const thumbs = useMemo(() => Array.from({ length: spreadCount }, (_, i) => i), [spreadCount]);
 
-  if (!proof || !order) return <Notice icon={<LinkIcon className="size-6" />} title="This link isn't valid">We couldn't find an album proof for this link. Please ask the studio to send you a new link.</Notice>;
-  if (proof.status === "revoked") return <Notice icon={<X className="size-6" />} title="This link is no longer active">The studio has replaced or withdrawn this proof link. Please ask the studio for a new link.</Notice>;
-  if (proof.status === "expired") return <Notice icon={<Clock className="size-6" />} title="This link has expired">For your security, proof links expire. Please ask the studio for a new link.</Notice>;
-  if (proof.status === "approved" || proof.status === "corrections") {
-    const ok = proof.status === "approved";
+  if (remote.loading) return <Notice icon={<Clock className="size-6" />} title="Opening your album proof">One moment please...</Notice>;
+  if (failure === "revoked") return <Notice icon={<X className="size-6" />} title="This link is no longer active">The studio has replaced or withdrawn this proof link. Please ask the studio for a new link.</Notice>;
+  if (failure === "expired") return <Notice icon={<Clock className="size-6" />} title="This link has expired">For your security, proof links expire. Please ask the studio for a new link.</Notice>;
+  if (failure === "network") return <Notice icon={<LinkIcon className="size-6" />} title="We couldn't load your proof">Please check your connection and reload this page.</Notice>;
+  if (!view) return <Notice icon={<LinkIcon className="size-6" />} title="This link isn't valid">We couldn't find an album proof for this link. Please ask the studio to send you a new link.</Notice>;
+  if (view.status === "revoked") return <Notice icon={<X className="size-6" />} title="This link is no longer active">The studio has replaced or withdrawn this proof link. Please ask the studio for a new link.</Notice>;
+  if (view.status === "expired") return <Notice icon={<Clock className="size-6" />} title="This link has expired">For your security, proof links expire. Please ask the studio for a new link.</Notice>;
+  if (view.status === "approved" || view.status === "corrections") {
+    const ok = view.status === "approved";
     return (
       <Notice icon={ok ? <CheckCircle2 className="size-6" /> : <PenLine className="size-6" />} title={ok ? "Thank you - album approved!" : "Thank you - corrections sent"}>
-        <p>{ok ? `${order.customer}'s ${order.event} album (${order.id}) has been approved${proof.approvedBy ? ` by ${proof.approvedBy}` : ""}. The studio will now prepare it for printing.` : `We've received ${proof.comments.length} correction${proof.comments.length === 1 ? "" : "s"} on ${order.id}. The studio will update the design and send you a new link to review.`}</p>
-        {!ok && <ul className="mt-4 space-y-2 text-left">{proof.comments.map((c, i) => <li key={i} className="rounded-xl border border-line bg-white p-3 text-[13px]"><b className="text-brand">Page {c.page}</b><p className="text-ink">{c.text}</p></li>)}</ul>}
-        <p className="mt-4 text-xs">Responded {fmtDate(proof.respondedAt ?? "")}. This proof can no longer be changed.</p>
+        <p>{ok ? `${view.customer}'s ${view.event} album (${view.orderCode}) has been approved${view.approvedBy ? ` by ${view.approvedBy}` : ""}. The studio will now prepare it for printing.` : `We've received ${view.comments.length} correction${view.comments.length === 1 ? "" : "s"} on ${view.orderCode}. The studio will update the design and send you a new link to review.`}</p>
+        {!ok && <ul className="mt-4 space-y-2 text-left">{view.comments.map((c, i) => <li key={i} className="rounded-xl border border-line bg-white p-3 text-[13px]"><b className="text-brand">Page {c.page}</b><p className="text-ink">{c.text}</p></li>)}</ul>}
+        <p className="mt-4 text-xs">Responded {fmtDate(view.respondedAt ?? "")}. This proof can no longer be changed.</p>
       </Notice>
     );
   }
@@ -106,13 +125,32 @@ export default function ProofPortal() {
     else setDraft((d) => [...d, { page: pageNo, text: t, at: new Date().toISOString() }]);
     setText(""); setErr(""); setAdding(false); setEditIdx(null);
   };
+  const afterRemote = (r: { ok: true } | { error: PortalError }, done: () => void) => {
+    setBusy(false);
+    if ("error" in r) {
+      if (["revoked", "expired", "answered", "invalid"].includes(r.error)) { setDlg(null); void portalGet(token).then((g) => setRemote("view" in g ? { view: g.view, loading: false } : { error: g.error, loading: false })); return; }
+      return setErr(r.error === "network" ? "We couldn't reach the studio. Please try again." : r.error);
+    }
+    done();
+  };
   const approve = () => {
     if (!name.trim()) return setErr("Please type your full name.");
     if (!reviewed) return setErr("Please confirm you have reviewed all pages.");
+    if (backendOn) { setBusy(true); void portalRespond(token, "approve", [], name.trim()).then((r) => afterRemote(r, () => { setDlg(null); setRemote({ loading: false, view: { ...view, status: "approved", approvedBy: name.trim(), respondedAt: new Date().toISOString() } }); })); return; }
+    if (!proof) return;
     approveProof(proof, name.trim()); flushAll(); setDlg(null); bump();
   };
   const sendCorrections = () => {
     if (!draft.length) return;
+    if (backendOn) {
+      setBusy(true);
+      void portalRespond(token, "corrections_requested", draft, "Client").then((r) => afterRemote(r, () => {
+        try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        setDlg(null); setRemote({ loading: false, view: { ...view, status: "corrections", comments: draft.map((c) => ({ ...c })), respondedAt: new Date().toISOString() } });
+      }));
+      return;
+    }
+    if (!proof) return;
     requestCorrections(proof, draft.map((c) => ({ ...c })));
     moveStage(proof.orderId, "designing", { reason: "Client corrections" });
     try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
@@ -124,10 +162,10 @@ export default function ProofPortal() {
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-5 sm:pb-10">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h1 className="text-xl font-extrabold sm:text-2xl">{order.event} Album - {order.customer}</h1>
-            <p className="text-[13px] text-sub">Order {order.id} - {order.size} - {pages} pages - Version {proof.version}</p>
+            <h1 className="text-xl font-extrabold sm:text-2xl">{view.event} Album - {view.customer}</h1>
+            <p className="text-[13px] text-sub">Order {view.orderCode} - {view.size} - {pages} pages - Version {view.version}</p>
           </div>
-          <p className="text-xs text-sub">Link valid until {fmtDate(proof.expiresAt)}</p>
+          <p className="text-xs text-sub">Link valid until {fmtDate(view.expiresAt)}</p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -136,7 +174,7 @@ export default function ProofPortal() {
               <div data-testid="spread" className="relative flex aspect-[2/1] w-full max-w-[760px] overflow-hidden rounded shadow-2xl">
                 <div className="relative flex-1 border-r border-black/10">
                   {art(spread)}
-                  {spread === 0 && <div className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-serif italic text-white drop-shadow sm:bottom-6"><div className="text-lg sm:text-2xl">Our {order.event} Story</div><div className="mt-1 text-[8px] not-italic tracking-[0.25em] sm:text-[10px]">{order.customer.toUpperCase()}</div></div>}
+                  {spread === 0 && <div className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-serif italic text-white drop-shadow sm:bottom-6"><div className="text-lg sm:text-2xl">Our {view.event} Story</div><div className="mt-1 text-[8px] not-italic tracking-[0.25em] sm:text-[10px]">{view.customer.toUpperCase()}</div></div>}
                 </div>
                 <div className="relative flex-1">{art(spread + 3, true)}</div>
                 {here.map(({ c, i }, k) => (
@@ -206,13 +244,13 @@ export default function ProofPortal() {
                 <label className="mt-4 block text-[13px] font-semibold">Your full name<input aria-label="Your full name" value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} className="mt-1.5 h-11 w-full rounded-lg border border-line px-3 text-sm font-normal outline-none focus:border-brand" /></label>
                 <label className="mt-3 flex items-start gap-2 text-[13px]"><input type="checkbox" checked={reviewed} onChange={(e) => { setReviewed(e.target.checked); setErr(""); }} className="mt-0.5 size-4" />I have reviewed all pages</label>
                 {err && <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">{err}</p>}
-                <div className="mt-5 flex justify-end gap-3"><button onClick={() => setDlg(null)} className="h-11 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button><button onClick={approve} className="h-11 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white">Confirm approval</button></div>
+                <div className="mt-5 flex justify-end gap-3"><button onClick={() => setDlg(null)} className="h-11 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button><button onClick={approve} disabled={busy} className="h-11 rounded-lg bg-emerald-600 px-5 disabled:opacity-60 text-sm font-bold text-white">Confirm approval</button></div>
               </>
             ) : (
               <>
                 <h3 className="text-lg font-extrabold">Send {draft.length} correction{draft.length === 1 ? "" : "s"}?</h3>
                 <p className="mt-1 text-sm text-sub">The studio will update the album and send you a new link. You can't change this response afterwards.</p>
-                <div className="mt-5 flex justify-end gap-3"><button onClick={() => setDlg(null)} className="h-11 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Keep editing</button><button onClick={sendCorrections} className="h-11 rounded-lg bg-brand px-5 text-sm font-bold text-white">Send corrections</button></div>
+                <div className="mt-5 flex justify-end gap-3"><button onClick={() => setDlg(null)} className="h-11 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Keep editing</button><button onClick={sendCorrections} disabled={busy} className="h-11 rounded-lg bg-brand px-5 disabled:opacity-60 text-sm font-bold text-white">Send corrections</button></div>
               </>
             )}
           </div>
