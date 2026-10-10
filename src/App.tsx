@@ -19,6 +19,10 @@ import Login from "./pages/Login";
 import RoleHome from "./pages/RoleHome";
 import OrderDetail from "./pages/OrderDetail";
 import Notifications from "./pages/Notifications";
+import ControlCenter from "./pages/ControlCenter";
+import AuditLog from "./pages/AuditLog";
+import FilesPage from "./pages/FilesPage";
+import ProofPortal from "./pages/ProofPortal";
 import { NewOrderProvider } from "./components/NewOrderWizard";
 import { AuthProvider, RequireAuth, useAuth } from "./lib/auth";
 
@@ -33,10 +37,14 @@ export default function App() {
     <NewOrderProvider>
     <Routes>
       <Route path="login" element={<Login />} />
+      <Route path="proof/:token" element={<ProofPortal />} />
       <Route element={<RequireAuth><Shell /></RequireAuth>}>
         <Route index element={<Home />} />
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="control" element={<ControlCenter />} />
+        <Route path="audit" element={<AuditLog />} />
+        <Route path="files" element={<FilesPage />} />
         <Route path="orders" element={<Orders />} />
         <Route path="customers" element={<Customers />} />
         <Route path="pipeline" element={<Pipeline />} />

@@ -5,8 +5,8 @@ import { Navigate, useLocation } from "react-router-dom";
 export type RoleKey = "admin" | "reception" | "colour" | "designer" | "printing" | "qc" | "accounts";
 
 export const ROLES: Record<RoleKey, { label: string; user: string; email: string; dept: string; nav: string[] }> = {
-  admin: { label: "Admin", user: "Admin", email: "admin@albumpro.com", dept: "Head Office", nav: ["/", "/orders", "/customers", "/pipeline", "/colour-grading", "/designing", "/printing", "/qc", "/delivery", "/payments", "/invoices", "/reports", "/masters", "/users", "/settings", "/notifications"] },
-  reception: { label: "Reception", user: "Priya N", email: "priya@albumpro.com", dept: "Reception", nav: ["/", "/orders", "/customers", "/delivery", "/payments", "/notifications"] },
+  admin: { label: "Admin", user: "Admin", email: "admin@albumpro.com", dept: "Head Office", nav: ["/", "/orders", "/customers", "/pipeline", "/colour-grading", "/designing", "/printing", "/qc", "/delivery", "/payments", "/invoices", "/reports", "/masters", "/users", "/settings", "/notifications", "/control", "/audit", "/files"] },
+  reception: { label: "Reception", user: "Priya N", email: "priya@albumpro.com", dept: "Reception", nav: ["/", "/orders", "/customers", "/delivery", "/payments", "/notifications", "/files"] },
   colour: { label: "Colour Grading", user: "Karthik V", email: "karthik@albumpro.com", dept: "Colour Grading", nav: ["/", "/colour-grading"] },
   designer: { label: "Designing", user: "Ramesh Kumar", email: "ramesh@albumpro.com", dept: "Designing", nav: ["/", "/designing"] },
   printing: { label: "Printing", user: "Manjunath P", email: "manjunath@albumpro.com", dept: "Printing", nav: ["/", "/printing"] },
