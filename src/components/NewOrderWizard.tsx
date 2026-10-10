@@ -8,6 +8,8 @@ import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION,
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
+import { backendOn } from "../lib/supabase";
+import { dbCreateCustomer, dbCreateOrder } from "../lib/db/orders";
 
 // SRS §4.3 (order fields), §5 (workflow routing), §6.1 (album spec), §3.2 (pricing).
 interface Draft {
@@ -62,8 +64,33 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   };
   const next = () => validate(step) && setStep(step + 1);
 
-  const create = () => {
+  const [saving, setSaving] = useState(false);
+  const create = async () => {
     if (![0, 1, 2, 3].every(validate)) { setStep(0); return; }
+
+    if (backendOn) {                                  // database mode: the server assigns the order number; nothing is shown until it is saved
+      setSaving(true);
+      try {
+        let customerUid = cust?.uid;
+        if (d.newCustomer) {
+          const c = await dbCreateCustomer({ studio: d.newCustomer.studio, mobile: d.newCustomer.mobile });
+          if (!c) { setSaving(false); return; }
+          customerUid = c.uid;
+        }
+        if (!customerUid) { setSaving(false); show("Choose a customer"); return; }
+        const sp = d.spec;
+        const order = await dbCreateOrder({
+          customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: d.eventName, eventType: d.event, bride: d.bride, groom: d.groom, eventDate: d.eventDate || undefined,
+          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions,
+          spec: { albumType: sp.albumType, albumSize: d.size, orientation: d.orientation, pages: d.sheets, copies: sp.copies, paperType: sp.paper, paperGsm: Number(d.gsm) || undefined, coverType: sp.cover, lamination: sp.lamination, binding: d.binding, boxType: sp.box, finishes: sp.finishes, namePrinting: d.nameText },
+        });
+        setSaving(false);
+        if (!order) return;                           // the error was already shown by the data layer
+        show(`Order ${order.id} created`); onClose(); nav(`/orders/${order.id}`);
+      } catch (e) { setSaving(false); show(String((e as Error).message ?? e)); }
+      return;
+    }
+
     const n = Math.max(...ORDERS.map((o) => Number(o.id.replace("IDP", "")))) + 1;
     if (d.newCustomer) {
       const c: Customer = { id: `IDC${String(1249 + CUSTOMERS.length).padStart(6, "0")}`, name: d.newCustomer.studio, studio: d.newCustomer.studio, mobile: d.newCustomer.mobile, email: "", city: "", state: "", type: "New", status: "Active", activeOrders: 1, lifetime: 0, lastOrder: d.orderDate, since: d.orderDate, dues: 0, tags: [] };
@@ -187,7 +214,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
           <span className="text-sm text-sub">Total <b className="ml-1 text-lg text-ink">{inr(p.total)}</b></span>
           {step < STEPS.length - 1
             ? <button onClick={next} className="inline-flex h-10 items-center gap-1 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Next<ChevronRight className="size-4" /></button>
-            : <button onClick={create} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"><Check className="size-4" />Create Order</button>}
+            : <button onClick={create} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"><Check className="size-4" />{saving ? "Saving…" : "Create Order"}</button>}
         </footer>
         {toast}
       </div>

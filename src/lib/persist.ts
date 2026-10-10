@@ -1,5 +1,6 @@
 // Keeps the in-memory demo data across page reloads (localStorage). When the real backend is wired in,
 // this module is the single seam to replace: each registered collection becomes an API-backed store.
+import { backendOn } from "./supabase";
 const PREFIX = "albumpro.v1.";
 const registry: { key: string; arr: unknown[]; last: string }[] = [];
 
@@ -12,6 +13,8 @@ function write(e: { key: string; arr: unknown[]; last: string }) {
 
 /** Replace the array's contents with the saved copy (if any) and autosave it from now on. */
 export function persistArray<T>(key: string, arr: T[], opts: { cap?: number } = {}): T[] {
+  // With the backend on, the database is the source of truth: start empty (no demo seed) and never write to localStorage.
+  if (backendOn) { arr.splice(0, arr.length); return arr; }
   const saved = read(key);
   if (saved) arr.splice(0, arr.length, ...(saved as T[]));
   const e = { key, arr: arr as unknown[], last: saved ? JSON.stringify(saved) : "" };

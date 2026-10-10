@@ -52,7 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!uid) { if (alive) { setRole(null); setName(""); setEmail(""); mirror(null); setLoading(false); } return; }
       const { data } = await sb.from("profiles").select("full_name,email,role,active,must_change_password").eq("id", uid).maybeSingle();
       if (!alive) return;
-      if (data && data.active && data.role in ROLES) { setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name); }
+      if (data && data.active && data.role in ROLES) {
+        setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name);
+        if (!data.must_change_password) { const { hydrateAll } = await import("./db"); await hydrateAll(); }   // load customers, orders… for this user's role
+      }
       else { setRole(null); mirror(null); }                       // signed in but not an invited/active staff member → no access
       setLoading(false);
     };
@@ -85,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error: e2 } = await supabase.rpc("complete_password_change");
     if (e2) return { ok: false, error: e2.message };
     setMustChange(false);
+    const { hydrateAll } = await import("./db"); await hydrateAll();
     return { ok: true };
   };
   const logout = () => { mirror(null); setRole(null); if (supabase) void supabase.auth.signOut(); };

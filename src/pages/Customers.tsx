@@ -9,6 +9,8 @@ import {
 } from "../components/ui";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
 import { useNewOrder } from "../components/NewOrderWizard";
+import { backendOn } from "../lib/supabase";
+import { dbCreateCustomer, dbUpdateCustomer } from "../lib/db/orders";
 import { CUSTOMERS, ORDERS, stageLabel, stageTone, type Customer } from "../lib/data";
 import { inr, fmtDate, TODAY } from "../lib/format";
 import { useStore, notify, useSlashFocus, packRange, unpackRange } from "../lib/store";
@@ -80,7 +82,7 @@ export default function Customers() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [activeId, setActiveId] = useState<string | null>(CUSTOMERS[0]!.id);
+  const [activeId, setActiveId] = useState<string | null>(CUSTOMERS[0]?.id ?? null);
   const [dtab, setDtab] = useState<"history" | "notes" | "follow">("history");
   const [draft, setDraft] = useState("");
   const [fdraft, setFdraft] = useState("");
@@ -108,7 +110,7 @@ export default function Customers() {
     setF((x) => ({ ...x, gstin: g, ...(st && autoState ? { state: st } : {}) }));
   };
 
-  const save = (thenOrder = false) => {
+  const save = async (thenOrder = false) => {
     const e: Record<string, string> = {};
     if (f.studio.trim().length < 2) e.studio = "Enter 2–150 characters";
     if (!/^\+?[0-9 ]{10,14}$/.test(f.mobile.trim())) e.mobile = "Enter a valid 10-digit mobile number";
@@ -121,7 +123,15 @@ export default function Customers() {
     const patch = { name: f.name.trim() || f.studio.trim(), studio: f.studio.trim(), mobile: fmtMobile(f.mobile), email: f.email.trim(), city: f.city.trim(), state: f.state.trim(), gstin: f.gstin.toUpperCase() || undefined, address: f.address.trim() || undefined, pin: f.pin || undefined, whatsapp: f.whatsapp || undefined, notes: f.notes || undefined, tags: f.tags };
     if (editId) {
       Object.assign(CUSTOMERS.find((x) => x.id === editId)!, patch); notify();
+      if (backendOn) void dbUpdateCustomer(editId, { studio: patch.studio, contact: patch.name, mobile: patch.mobile, email: patch.email, city: patch.city, state: patch.state, gstin: patch.gstin, address: patch.address, pin: patch.pin, whatsapp: patch.whatsapp, notes: patch.notes });
       show(`${patch.studio} updated`); closeForm(); return;
+    }
+    if (backendOn) {                                  // database mode: the server assigns the customer code
+      const created = await dbCreateCustomer({ studio: patch.studio, contact: patch.name === patch.studio ? undefined : patch.name, mobile: patch.mobile, whatsapp: patch.whatsapp, email: patch.email, address: patch.address, city: patch.city, state: patch.state, pin: patch.pin, gstin: patch.gstin, notes: patch.notes });
+      if (!created) return;
+      created.tags = f.tags; setActiveId(created.id); setPage(1); setTab("all"); closeForm(); show(`Customer ${created.studio} added`);
+      if (thenOrder) newOrder.open({ customerId: created.id });
+      return;
     }
     const nextNum = Math.max(...CUSTOMERS.map((c) => Number(c.id.replace("IDC", "")))) + 1;
     const c: Customer = { id: `IDC${String(nextNum).padStart(6, "0")}`, type: "New", status: "Active", activeOrders: 0, lifetime: 0, lastOrder: "2026-10-03", since: "2026-10-03", dues: 0, ...patch };

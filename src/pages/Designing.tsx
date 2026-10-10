@@ -14,7 +14,7 @@ import { createProof, latestProof, proofApproved, proofUrl, revokeProof, type Pr
 import { FILES, addFile, lockFile } from "../lib/files";
 import { CUSTOMERS } from "../lib/data";
 import { addCorrection as addDesignCorrection, correctionsFor, metaFor, save as saveMeta, setCorrectionStatus } from "../lib/design";
-import { ORDERS, STAFF } from "../lib/data";
+import { ORDERS, STAFF, type Order } from "../lib/data";
 import { fmtDate } from "../lib/format";
 
 type DStatus = "Not Started" | "In Designing" | "Pending Admin Review" | "Ready to Send" | "With Client" | "Corrections Requested" | "Client Approved" | "Locked for Print" | "In Production";
@@ -58,12 +58,22 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const typing = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("input,textarea,select,[contenteditable=true]");
 const nowLabel = () => "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
+/** Picks the order to work on (URL param, else the first design order in the design stages) and shows an empty state if none exists. */
 export default function Designing() {
   const { orderId } = useParams();
   useStore();
+  const order = ORDERS.find((o) => o.id === orderId)
+    ?? ORDERS.find((o) => o.workflow === "Design + Printing" && ["designing", "client_review", "admin_approval"].includes(o.stage))
+    ?? ORDERS.find((o) => o.workflow === "Design + Printing")
+    ?? ORDERS[0];
+  if (!order) return <><PageHeader title="Album Designing" subtitle="Create beautiful stories with professional album designs" /><div className="rounded-2xl border border-dashed border-line bg-white p-10 text-center text-sm text-sub">No orders yet. Create an order and send it through colour grading — it will appear here for design.</div></>;
+  return <DesignWorkspace key={order.id} order={order} />;
+}
+
+function DesignWorkspace({ order }: { order: Order }) {
+  useStore();
   const { role } = useAuth();
   const isAdmin = role === "admin";
-  const order = ORDERS.find((o) => o.id === (orderId ?? "IDP00072")) ?? ORDERS.find((o) => o.id === "IDP00072")!;
   const meta = metaFor(order.id);
   const proof = latestProof(order.id);
   const clientApproved = proofApproved(order.id);

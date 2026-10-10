@@ -4,6 +4,7 @@ import { hasPrintReadyFile } from "./files";
 import { proofApproved } from "./proofs";
 import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
+import { dbAdvance, dbSetHold, dbSetSla } from "./db/workflowDb";
 
 // Client-side mirror of the database's advance_order() (supabase/migrations/0002_rules.sql).
 // When the backend is connected, moveStage() becomes a thin call to that function; callers don't change.
@@ -63,11 +64,12 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
     if (o.stage === "files_received" && to === "printing" && flowOf(o) === "Printing" && !hasPrintReadyFile(o.id)) return fail("Upload a print-ready file (category Final Print) before printing");               // ALB-FR-0077
     if (to === "ready_for_delivery" && !qcPassed(o)) return fail("QC must pass before Ready for Delivery");                                                                                              // ALB-FR-0496
   }
-  const from = o.stage;
+  const from = o.stage; const prev = { progress: o.progress, qc: o.qc };
   o.stage = to; o.progress = progressFor(to);
   if (from === "qc" && to === "printing") o.qc = "rework";
   if (to === "qc") o.qc = "pending";
   notify();
+  dbAdvance(o.uid, to, reason || undefined, !!opts.override, () => { o.stage = from; o.progress = prev.progress; o.qc = prev.qc; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: overridden ? "stage_override" : "stage_change", from: stageLabel(from), to: stageLabel(to), reason: reason || undefined, override: overridden || undefined });
   return { ok: true, order: o };
 }
@@ -76,7 +78,9 @@ export function setHold(orderId: string, hold: boolean, reason = ""): Result {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return fail("Order not found");
   if (o.closed) return fail("Closed orders are read-only");
   if (hold && !reason.trim()) return fail("A reason is required to put an order on hold");
+  const prevHold = o.hold;
   o.hold = hold ? "On Hold" : undefined; notify();
+  dbSetHold(o.uid, hold, reason, () => { o.hold = prevHold; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: hold ? "hold" : "resume", reason: reason || undefined }); return { ok: true, order: o };
 }
 
@@ -84,7 +88,8 @@ export function cancelOrder(orderId: string, reason: string): Result {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return fail("Order not found");
   if (currentActor().role !== "admin") return fail("Only an admin can cancel an order");
   if (!reason.trim()) return fail("Cancellation reason is required");                                    // ALB-FR-0498: history is preserved, nothing is deleted
-  o.hold = "Cancelled"; o.cancelReason = reason.trim(); notify();
+  const prevHold = o.hold; o.hold = "Cancelled"; o.cancelReason = reason.trim(); notify();
+  dbAdvance(o.uid, "cancelled", reason.trim(), false, () => { o.hold = prevHold; o.cancelReason = undefined; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: "cancel", reason: reason.trim() }); return { ok: true, order: o };
 }
 
@@ -95,23 +100,29 @@ export function closeOrder(orderId: string, opts: { override?: boolean; reason?:
   if (o.stage !== "delivered") return fail("Only delivered orders can be closed");
   if (o.paid < o.total && !(opts.override && opts.reason?.trim())) return fail(`${o.total - o.paid} is still outstanding — collect payment or close with an override reason`);
   o.closed = true; o.closedAt = new Date().toISOString(); notify();
+  dbAdvance(o.uid, "closed", opts.reason, false, () => { o.closed = false; o.closedAt = undefined; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: "close", reason: opts.reason, override: o.paid < o.total || undefined }); return { ok: true, order: o };
 }
 export function reopenOrder(orderId: string, reason: string): Result {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return fail("Order not found");
   if (currentActor().role !== "admin") return fail("Only an admin can reopen an order");
   if (!reason.trim()) return fail("A reason is required to reopen an order");
-  o.closed = false; o.closedAt = undefined; notify();
+  const prevAt = o.closedAt; o.closed = false; o.closedAt = undefined; notify();
+  dbAdvance(o.uid, "delivered", reason.trim(), false, () => { o.closed = true; o.closedAt = prevAt; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: "reopen", reason: reason.trim() }); return { ok: true, order: o };
 }
 
 export function pauseSla(orderId: string, reason: string): Result {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return fail("Order not found");
   if (!reason.trim()) return fail("A reason is required to pause the SLA clock");                          // ALB-FR-0006
+  const prev = { at: o.slaPausedAt, r: o.slaPauseReason };
   o.slaPausedAt = new Date().toISOString(); o.slaPauseReason = reason.trim(); notify();
+  dbSetSla(o.uid, o.slaPausedAt, o.slaPauseReason, () => { o.slaPausedAt = prev.at; o.slaPauseReason = prev.r; notify(); });
   logAudit({ entity: "order", entityId: o.id, action: "sla_pause", reason: reason.trim() }); return { ok: true, order: o };
 }
 export function resumeSla(orderId: string): Result {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return fail("Order not found");
-  o.slaPausedAt = undefined; o.slaPauseReason = undefined; notify(); logAudit({ entity: "order", entityId: o.id, action: "sla_resume" }); return { ok: true, order: o };
+  const prev = { at: o.slaPausedAt, r: o.slaPauseReason };
+  o.slaPausedAt = undefined; o.slaPauseReason = undefined; notify();
+  dbSetSla(o.uid, null, null, () => { o.slaPausedAt = prev.at; o.slaPauseReason = prev.r; notify(); }); logAudit({ entity: "order", entityId: o.id, action: "sla_resume" }); return { ok: true, order: o };
 }

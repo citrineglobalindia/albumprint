@@ -50,6 +50,7 @@ export const ALBUM_SIZES = ["12x36", "12x30", "14x40", "10x30", "12x18", "8x12"]
 export const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent", "VIP"];
 
 export interface Customer {
+  uid?: string;   // database id (uuid) when the backend is on
   id: string; name: string; studio: string; mobile: string; email: string; city: string; state: string;
   type: "VIP" | "Regular" | "New"; status: "Active" | "Inactive"; activeOrders: number; lifetime: number;
   lastOrder: string; since: string; dues: number; tags: string[];
@@ -76,6 +77,7 @@ export const CUSTOMERS: Customer[] = customerSeed.map(([name, studio, city, emai
 }));
 
 export interface Order {
+  uid?: string;   // database id (uuid) when the backend is on
   qc?: "pending" | "in_progress" | "passed" | "rework" | "failed"; closed?: boolean; closedAt?: string; cancelReason?: string; slaPausedAt?: string; slaPauseReason?: string;
   id: string; customer: string; mobile: string; event: string; workflow: WorkflowType; size: string; pages: number;
   stage: StageKey; priority: Priority; pendingAt: string; assignee: string; due: string; pay: PayStatus;

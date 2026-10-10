@@ -11,6 +11,8 @@ import { useAuth, ROLES } from "../lib/auth";
 import { notifStore, useNotifs } from "../lib/notifStore";
 import { useNewOrder } from "./NewOrderWizard";
 import A11yLayer from "./A11yLayer";
+import { useToast } from "./Toast";
+import { onDbError } from "../lib/db/core";
 
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -290,6 +292,8 @@ export default function Shell() {
   const nav = useNavigate();
   const loc = useLocation();
   const newOrder = useNewOrder();
+  const [dbToast, showDbToast] = useToast();
+  useEffect(() => onDbError(showDbToast), [showDbToast]);   // background database errors become visible messages
   const pending = useRef<number | undefined>(undefined);
   const gMode = useRef(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]);
@@ -326,6 +330,7 @@ export default function Shell() {
       </div>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <A11yLayer />
+      {dbToast}
     </div>
   );
 }
