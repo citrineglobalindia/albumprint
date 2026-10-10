@@ -225,10 +225,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await expect.poll(() => db(code, `select status || ':' || rounds from tasks where order_id = $O and kind = 'grading'`)).toBe("submitted:1");
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("admin_approval");
   expect(db(code, `select state from order_files where order_id = $O and category = 'graded'`)).toBe("submitted");
-  expect(() => db(code, `update tasks set status = 'approved' where order_id = $O and kind = 'grading'`)).not.toThrow();    // the system role may; a grader may not (see 50_production.sql)
-
   const admin = await as(browser, "admin");
-  sql(`update tasks set status = 'submitted' where order_id = (select id from orders where code = '${code}') and kind = 'grading'`);
   await admin.goto("/colour-grading");
   await admin.getByRole("button", { name: `Reject ${code}` }).click();
   await admin.getByLabel("Rejection reason").fill("Skin tones too warm");
@@ -236,6 +233,25 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await expect.poll(() => db(code, `select status || ':' || revision_note from tasks where order_id = $O and kind = 'grading'`)).toBe("revision:Skin tones too warm");
   await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("colour_grading");
   await expect.poll(() => db(code, `select state from order_files where order_id = $O and category = 'graded'`)).toBe("rejected");
+
+  // the grader acknowledges, uploads a new version (v2, v1 stays) and resubmits; the admin approves → Designing
+  await colour.goto("/colour-grading");
+  await colour.getByTestId(`job-${code}`).click();
+  await colour.getByRole("button", { name: "Acknowledge Revision" }).click();
+  await expect.poll(() => db(code, `select status || ':' || revision_ack from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress:true");
+  const bytes2 = randomBytes(1200);
+  await colour.getByTestId("file-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes2 });
+  await expect.poll(() => db(code, `select string_agg(version::text, ',' order by version) from order_files where order_id = $O and category = 'graded'`)).toBe("1,2");
+  expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v1")).equals(bytes)).toBe(true);
+  expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v2")).equals(bytes2)).toBe(true);
+  await colour.getByRole("button", { name: /Resubmit to Admin/ }).click();
+  await expect.poll(() => db(code, `select status || ':' || rounds from tasks where order_id = $O and kind = 'grading'`)).toBe("submitted:2");
+  await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("admin_approval");
+  await admin.goto("/colour-grading");
+  await admin.getByRole("button", { name: `Approve ${code}` }).click();
+  await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("approved");
+  await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("designing");
+  await expect.poll(() => db(code, `select string_agg(state::text, ',' order by version) from order_files where order_id = $O and category = 'graded'`)).toBe("rejected,approved");
 });
 
 test("printing: an open exception blocks the next stage until resolved; a vendor job is stored; the database mirrors it", async ({ browser }) => {
