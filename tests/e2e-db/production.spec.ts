@@ -209,6 +209,83 @@ test("a locked print file is immutable: cannot be archived, replaced or deleted 
   await expect.poll(() => sql(`select string_agg(version || ':' || state, ',' order by version) from order_files where ${where}`)).toBe("1:locked,2:draft");
 });
 
+test("grading: grader uploads real bytes and submits, only an admin approves; graded files follow the job", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const code = fixtureOrder({ type: "design_printing", stage: "colour_grading" });
+  const colour = await as(browser, "colour");
+  await colour.goto("/colour-grading");
+  await colour.getByTestId(`job-${code}`).getByRole("button", { name: "Start" }).click();
+  await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress");
+  const bytes = randomBytes(2500);
+  await colour.getByTestId("file-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes });
+  await expect(colour.getByTestId("file-list")).toContainText("graded batch.zip");
+  await expect.poll(() => db(code, `select count(*) from order_files where order_id = $O and category = 'graded'`)).toBe("1");
+  expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v1")).equals(bytes)).toBe(true);
+  await colour.getByRole("button", { name: /Submit to Admin/ }).click();
+  await expect.poll(() => db(code, `select status || ':' || rounds from tasks where order_id = $O and kind = 'grading'`)).toBe("submitted:1");
+  await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("admin_approval");
+  expect(db(code, `select state from order_files where order_id = $O and category = 'graded'`)).toBe("submitted");
+  expect(() => db(code, `update tasks set status = 'approved' where order_id = $O and kind = 'grading'`)).not.toThrow();    // the system role may; a grader may not (see 50_production.sql)
+
+  const admin = await as(browser, "admin");
+  sql(`update tasks set status = 'submitted' where order_id = (select id from orders where code = '${code}') and kind = 'grading'`);
+  await admin.goto("/colour-grading");
+  await admin.getByRole("button", { name: `Reject ${code}` }).click();
+  await admin.getByLabel("Rejection reason").fill("Skin tones too warm");
+  await admin.getByRole("button", { name: "Send back" }).click();
+  await expect.poll(() => db(code, `select status || ':' || revision_note from tasks where order_id = $O and kind = 'grading'`)).toBe("revision:Skin tones too warm");
+  await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("colour_grading");
+  await expect.poll(() => db(code, `select state from order_files where order_id = $O and category = 'graded'`)).toBe("rejected");
+});
+
+test("printing: an open exception blocks the next stage until resolved; a vendor job is stored; the database mirrors it", async ({ browser }) => {
+  const code = fixtureOrder({ stage: "printing" });
+  const printing = await as(browser, "printing");
+  await printing.goto("/printing");
+  await printing.getByTestId(`pjob-${code}`).click();
+  await printing.getByLabel("Exception type").selectOption("Machine fault");
+  await printing.getByLabel("Exception note").fill("Plotter jam");
+  await printing.getByRole("button", { name: /Raise|Log|Start/ }).last().click();
+  await expect.poll(() => db(code, `select kind || '|' || note || '|' || resolved from print_exceptions where order_id = $O`)).toBe("machine_fault|Plotter jam|f");
+  await printing.getByTestId("advance").click();
+  await expect(printing.getByText(/Resolve the open exception first/).first()).toBeVisible();
+  expect(db(code, `select stage from print_jobs where order_id = $O`)).toBe("waiting");
+  await printing.getByTestId("exceptions").getByRole("button", { name: "Resolve" }).click();
+  await expect.poll(() => db(code, `select resolved from print_exceptions where order_id = $O`)).toBe("t");
+
+  await printing.getByLabel("Vendor name").fill("Lab One");
+  await printing.getByLabel("Vendor status").selectOption("Sent");
+  await printing.getByLabel("Vendor expected back").fill("2030-01-15");
+  await printing.getByLabel("Vendor sent date").fill("2030-01-10");
+  await printing.getByLabel("Vendor tracking").fill("V-77");
+  await printing.getByLabel("Vendor cost").fill("1800");
+  await printing.getByRole("button", { name: "Save vendor job" }).click();
+  await expect.poll(() => db(code, `select vendor_name || '|' || status || '|' || tracking || '|' || cost from print_vendor_jobs where order_id = $O`)).toBe("Lab One|sent|V-77|1800.00");
+  expect(db(code, `select outsourced_to from print_jobs where order_id = $O`)).toBe("Lab One");
+  for (const label of ["File Prep", "Printing", "Finishing"]) { await printing.getByTestId("advance").click(); if (label === "Finishing") break; }
+  await expect(printing.getByText(/Vendor job is not back yet/).first()).toBeVisible();     // refused by the client rule and again by the database
+  await expect.poll(() => db(code, `select stage from print_jobs where order_id = $O`)).toBe("printing");
+  sql(`update print_vendor_jobs set status = 'received' where order_id = (select id from orders where code = '${code}')`);
+});
+
+test("release to printing: an admin releases an order at Final Approval with its print job", async ({ browser }) => {
+  const code = fixtureOrder({ type: "design_printing", stage: "final_approval" });
+  sql(`alter table proofs disable trigger proofs_guard_t`);
+  sql(`insert into proofs(order_id, version, token_hash, expires_at, status) select id, 1, '${createHash("sha256").update(tag()).digest("hex")}', now() + interval '5 days', 'approved' from orders where code = '${code}'`);
+  sql(`alter table proofs enable trigger proofs_guard_t`);
+  const admin = await as(browser, "admin");
+  await admin.goto("/printing");
+  await admin.getByRole("button", { name: "Release to Printing" }).click();
+  await admin.getByRole("button", { name: /Search order or customer/ }).click();
+  await admin.getByPlaceholder("Type to search…").fill(code);
+  await admin.getByRole("button", { name: new RegExp(code) }).first().click();
+  await admin.getByRole("button", { name: "Release", exact: true }).last().click();
+  await expect.poll(() => db(code, `select stage from orders where id = $O`)).toBe("printing");
+  await expect.poll(() => db(code, `select stage || '|' || paper_type || '|' || sheets || '|' || copies from print_jobs where order_id = $O`)).toMatch(/^waiting\|.+\|40\|1$/);
+  await admin.reload();
+  await expect(admin.getByTestId(`pjob-${code}`)).toBeVisible();
+});
+
 test("role gating: view-only roles see why, and the database holds the line", async ({ browser }) => {
   const code = fixtureOrder({ stage: "printing" });
   sql(`insert into print_jobs(order_id, paper_type, sheets, copies) select id, 'Matte', 40, 1 from orders where code = '${code}'`);
