@@ -24,20 +24,16 @@ test("admin costs two albums from the catalog, finalizes the total and generates
   await expect(costing).toBeVisible();
   await expect(costing.getByTestId("alloc-1")).toHaveText("0 / 30 sheets assigned");
 
-  // album 1: the sheet count is already 30; give the front cover and the inside pages a sheet type each
+  // album 1 (30 sheets): the admin clicks a category, drills to the item, and the priced table is right there
   const a1 = costing.getByRole("region", { name: /Costing for Asha & Ravi Wedding Album/ });
   await expect(a1.locator(".leaf")).toHaveCount(30);                                   // the visual shows one leaf per sheet (unassigned ones are grey)
-  await a1.getByRole("region", { name: "Front cover" }).getByRole("button", { name: "Choose sheet type" }).click();
-  let pick = page.getByRole("dialog", { name: "Choose product" });
-  await pick.getByRole("button", { name: "Not in the catalog? Enter a custom item" }).click();
-  await pick.getByLabel("Custom item name").fill("COVER-PIXEL BUDGET COVER-PL 06");
-  await pick.getByLabel("Custom item price").fill("900");
-  await pick.getByRole("button", { name: "Next" }).click();
-  await pick.getByLabel("Quantity").fill("1");
-  await pick.getByRole("button", { name: "Add Item" }).click();
-  await a1.getByRole("region", { name: "Inside pages" }).getByRole("button", { name: "Choose sheet type" }).click();
-  pick = page.getByRole("dialog", { name: "Choose product" });
-  await pick.getByRole("button", { name: /^NT$/ }).click();                           // starts inside PAPER: NT → 125 GSM → GLOSSY
+  await a1.getByLabel("Item Name").fill("COVER-PIXEL BUDGET COVER-PL 06");             // not in the demo catalog: a custom item
+  await a1.getByLabel("Custom Qty").fill("1");
+  await a1.getByLabel("Custom Selling Price").fill("900");
+  await a1.getByRole("button", { name: "Add Item" }).click();
+  await a1.getByLabel("Category").selectOption("PAPER");
+  const pick = page.getByRole("dialog", { name: "Choose product" });
+  await pick.getByRole("button", { name: /^NT$/ }).click();                           // PAPER → NT → 125 GSM → GLOSSY
   await pick.getByRole("button", { name: /^125 GSM/ }).click();
   await pick.getByRole("button", { name: /^GLOSSY/ }).click();
   await expect(pick.getByText("Item Selected: PAPER-NT-125 GSM-GLOSSY")).toBeVisible();
@@ -45,12 +41,11 @@ test("admin costs two albums from the catalog, finalizes the total and generates
   await pick.getByRole("button", { name: "Add Item" }).click();
   await expect(costing.getByTestId("alloc-1")).toHaveText("30 / 30 sheets assigned");
   await expect(a1.getByText("Every sheet is assigned")).toBeVisible();
-  await expect(costing.getByText("₹2,175").first()).toBeVisible();                    // 29 × 75 on the paper line
+  await expect(a1.getByRole("cell", { name: "₹2,175" }).first()).toBeVisible();        // 29 × 75 in the table's Total column
 
-  // album 2: 10 of its 20 sheets get a type, so finalizing will warn
+  // album 2 (20 sheets): only 10 get a type, so finalizing will warn
   const a2 = costing.getByRole("region", { name: /Costing for Engagement Album/ });
-  await a2.getByRole("region", { name: "Inside pages" }).getByRole("button", { name: "Choose sheet type" }).click();
-  pick = page.getByRole("dialog", { name: "Choose product" });
+  await a2.getByLabel("Category").selectOption("PAPER");
   await pick.getByRole("button", { name: /^TRANSPARENT/ }).click();
   await pick.getByLabel("Quantity").fill("10");
   await pick.getByRole("button", { name: "Add Item" }).click();

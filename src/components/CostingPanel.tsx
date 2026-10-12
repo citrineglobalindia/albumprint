@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight, Plus, Trash2, X } from "lucide-react";
-import AlbumPlanner, { startPathFor } from "./AlbumPlanner";
+import AlbumItems from "./AlbumPlanner";
 import { Panel, Pill, cx, inputCls } from "./ui";
-import { CATALOG, type CatalogItem } from "../lib/catalog";
+import { CATALOG, catalogCategories, type CatalogItem } from "../lib/catalog";
 import { albumName } from "../lib/pricing";
 import { allocated, costTotals, costingOf, countsSheetsFor, finalizeCosting, generateInvoices, isAdmin, newLineId, reopenCosting, saveCosting, setAlbumSheets } from "../lib/costing";
 import type { Costing, CostLine, Order } from "../lib/data";
@@ -91,8 +91,7 @@ export default function CostingPanel({ o, show, fail }: { o: Order; show: (m: st
   const saved = costingOf(o);
   const [c, setC] = useState<Costing>(saved);
   const [dirty, setDirty] = useState(false);
-  const [pick, setPick] = useState<{ pos: number; section?: string; replaceId?: string } | null>(null);
-  const [extra, setExtra] = useState<Record<number, string[]>>({});
+  const [pick, setPick] = useState<{ pos: number; category: string } | null>(null);
   const [mode, setMode] = useState<"all" | "each">("all");
   const [busy, setBusy] = useState(false);
   const [warn, setWarn] = useState(false);
@@ -138,39 +137,11 @@ export default function CostingPanel({ o, show, fail }: { o: Order; show: (m: st
                   <span className={cx("rounded-full px-2.5 py-0.5 text-[11px] font-bold", ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")} data-testid={`alloc-${pos}`}>{have} / {a.sheets} sheets assigned</span>
                   <span className="ml-auto text-sm font-bold">{inr(t.albumSub.get(pos) ?? 0)}</span>
                 </div>
-                <AlbumPlanner pos={pos} totalSheets={a.sheets} lines={lines} editable={editable} admin={admin}
+                <AlbumItems pos={pos} totalSheets={a.sheets} lines={lines} categories={catalogCategories()} editable={editable} admin={admin}
                   onSheets={(n) => void run(() => setAlbumSheets(o.id, pos, n))}
-                  onChange={(id, p) => setLine(id, p)} onRemove={(id) => upd({ lines: c.lines.filter((x) => x.id !== id) })}
-                  onPick={(section, replaceId) => setPick({ pos, section, replaceId })}
-                  extraSections={extra[pos] ?? []} onAddSection={(name) => setExtra((x) => ({ ...x, [pos]: [...(x[pos] ?? []), name] }))} />
-                <h4 className="mb-1 mt-5 text-xs font-extrabold uppercase tracking-wide text-sub">Other items (box, bag, USB…)</h4>
-                <div className="overflow-x-auto rounded-xl border border-line">
-                  <table className="w-full min-w-[760px] text-[13px]">
-                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-sub"><tr>
-                      <th className="px-3 py-2 text-left">Item</th><th className="px-2 py-2 text-left">Qty</th><th className="px-2 py-2 text-left">Remarks</th><th className="px-2 py-2 text-left">Dimension</th>
-                      <th className="px-2 py-2 text-left">Selling price</th>{admin && <th className="px-2 py-2 text-left">Purchase price</th>}<th className="px-3 py-2 text-right">Total</th><th /></tr></thead>
-                    <tbody>
-                      {others.map((l) => (
-                        <tr key={l.id} className="border-t border-line">
-                          <td className="px-3 py-1.5"><input aria-label="Item name" className={cx(cell, "w-full min-w-48")} value={l.name} disabled={!editable} onChange={(e) => setLine(l.id, { name: e.target.value })} />
-                            {l.countsSheets && <label className="mt-1 flex items-center gap-1.5 text-[11px] text-sub"><input type="checkbox" disabled={!editable} checked={l.countsSheets} onChange={(e) => setLine(l.id, { countsSheets: e.target.checked })} />counts toward the album&apos;s sheets</label>}</td>
-                          <td className="px-2 py-1.5"><input type="number" min={1} aria-label={`Quantity of ${l.name || "item"}`} className={cx(cell, "w-20")} value={l.qty} disabled={!editable} onChange={(e) => setLine(l.id, { qty: Number(e.target.value) })} /></td>
-                          <td className="px-2 py-1.5"><input aria-label="Remarks" className={cx(cell, "w-32")} value={l.remarks ?? ""} disabled={!editable} onChange={(e) => setLine(l.id, { remarks: e.target.value })} /></td>
-                          <td className="px-2 py-1.5"><input aria-label="Dimension" className={cx(cell, "w-28")} value={l.dimension ?? ""} disabled={!editable} onChange={(e) => setLine(l.id, { dimension: e.target.value })} /></td>
-                          <td className="px-2 py-1.5"><input type="number" min={0} aria-label={`Selling price of ${l.name || "item"}`} className={cx(cell, "w-24")} value={l.sell} disabled={!editable} onChange={(e) => setLine(l.id, { sell: Number(e.target.value) })} /></td>
-                          {admin && <td className="px-2 py-1.5"><input type="number" min={0} aria-label={`Purchase price of ${l.name || "item"}`} className={cx(cell, "w-24")} value={l.cost ?? ""} disabled={!editable} onChange={(e) => setLine(l.id, { cost: e.target.value === "" ? undefined : Number(e.target.value) })} /></td>}
-                          <td className="px-3 py-1.5 text-right font-bold">{inr(l.qty * l.sell)}</td>
-                          <td className="px-2 py-1.5">{editable && <button aria-label={`Remove ${l.name || "item"}`} onClick={() => upd({ lines: c.lines.filter((x) => x.id !== l.id) })} className="text-sub hover:text-rose-600"><Trash2 className="size-4" /></button>}</td>
-                        </tr>
-                      ))}
-                      {!others.length && <tr><td colSpan={admin ? 8 : 7} className="px-3 py-4 text-center text-xs text-sub">{editable ? "None. Add a box, bag, USB or anything else that is not a sheet." : "None."}</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-                {editable && <div className="mt-2 flex gap-2">
-                  <button onClick={() => setPick({ pos })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-bold text-white hover:bg-brand-dark"><Plus className="size-4" />Add from catalog</button>
-                  <button onClick={() => addLine(pos, {})} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[13px] font-bold hover:bg-brand-soft">Add custom item</button>
-                </div>}
+                  onCategory={(category) => setPick({ pos, category })}
+                  onAddCustom={(name, qty, sell, cost) => addLine(pos, { name, qty, sell, cost, countsSheets: countsSheetsFor(name) })}
+                  onChange={(id, p) => setLine(id, p)} onRemove={(id) => upd({ lines: c.lines.filter((x) => x.id !== id) })} />
               </section>
             );
           })}
@@ -212,14 +183,10 @@ export default function CostingPanel({ o, show, fail }: { o: Order; show: (m: st
         </div>
       )}
       {pick !== null && (() => {
-        const isSheet = !!pick.section, albumSheets = albums[pick.pos - 1]?.sheets ?? 0, left = Math.max(1, albumSheets - allocated(c, pick.pos));
-        const prev = pick.replaceId ? c.lines.find((l) => l.id === pick.replaceId) : undefined;
-        return <CatalogPicker onClose={() => setPick(null)} startPath={pick.section ? startPathFor(pick.section) : []} qtyLabel={isSheet ? "Sheets" : "Qty"} withRemarks={!isSheet}
-          defaultQty={prev ? prev.qty : isSheet ? (pick.section === "Inside pages" ? left : 1) : 1}
+        const albumSheets = albums[pick.pos - 1]?.sheets ?? 0, left = Math.max(1, albumSheets - allocated(c, pick.pos));
+        return <CatalogPicker onClose={() => setPick(null)} startPath={[pick.category]} defaultQty={pick.category.toUpperCase() === "PAPER" ? left : 1}
           onAdd={(item, qty, remarks) => {
-            const itemId = item.id.startsWith("custom:") ? undefined : item.id;
-            const base = { itemId, name: item.name, unit: item.unit, qty, sell: item.sell, cost: item.cost, ...(isSheet ? { section: pick.section, countsSheets: true } : { remarks: remarks || undefined, countsSheets: countsSheetsFor(item.name) }) };
-            if (pick.replaceId) setLine(pick.replaceId, base); else addLine(pick.pos, base);
+            addLine(pick.pos, { itemId: item.id.startsWith("custom:") ? undefined : item.id, name: item.name, unit: item.unit, qty, remarks: remarks || undefined, sell: item.sell, cost: item.cost, countsSheets: countsSheetsFor(item.name) });
             setPick(null);
           }} />;
       })()}

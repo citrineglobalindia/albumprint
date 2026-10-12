@@ -49,33 +49,45 @@ export function AlbumVisual({ total, parts }: { total: number; parts: { label: s
 
 const stepBtn = "grid size-8 place-items-center rounded-lg border border-line bg-white text-sub hover:bg-brand-soft disabled:opacity-40";
 const numCls = "h-8 w-16 rounded-lg border border-line bg-white px-2 text-center text-[13px] font-bold outline-none focus:border-brand disabled:bg-slate-50";
+const cell = "h-9 rounded-lg border border-line bg-white px-2 text-[13px] outline-none focus:border-brand disabled:bg-slate-50";
+const COVER_RE = /^(MINI BOOK )?COVER\b/i;
 
-export interface PlannerProps {
-  pos: number; totalSheets: number; lines: CostLine[]; editable: boolean; admin: boolean;
+export interface ItemsProps {
+  pos: number; totalSheets: number; lines: CostLine[]; categories: string[]; editable: boolean; admin: boolean;
   onSheets: (n: number) => void;
+  onCategory: (category: string) => void;
+  onAddCustom: (name: string, qty: number, sell: number, cost?: number) => void;
   onChange: (id: string, patch: Partial<CostLine>) => void; onRemove: (id: string) => void;
-  onPick: (section: string, replaceId?: string) => void;
-  extraSections: string[]; onAddSection: (name: string) => void;
 }
 
-/** Enter the album's sheet count, then give each part (front cover, inside pages, back cover…) a sheet type and a count: the amount follows. */
-export default function AlbumPlanner(p: PlannerProps) {
-  const [newSection, setNewSection] = useState("");
-  const [adding, setAdding] = useState(false);
+/** An album's costing: the sheet stack on the left; on the right the admin clicks a category, picks the item, and the priced items table is right there. */
+export default function AlbumItems(p: ItemsProps) {
   const [sheetsText, setSheetsText] = useState<string | null>(null);
-  const sheetLines = p.lines.filter((l) => l.section);
-  const custom = [...new Set([...p.extraSections, ...sheetLines.map((l) => l.section!).filter((s) => !DEFAULT_SECTIONS.includes(s))])];
-  const order = [FRONT, INSIDE, ...custom, BACK];
-  const parts = order.map((label) => ({ label, color: colorOf(label, custom.indexOf(label)), count: sheetLines.filter((l) => l.section === label).reduce((a, l) => a + l.qty, 0), cover: label === FRONT || label === BACK }));
-  const assigned = parts.reduce((a, x) => a + x.count, 0), remaining = p.totalSheets - assigned;
+  const [cust, setCust] = useState({ name: "", qty: "1", sell: "", cost: "" });
+  const [msg, setMsg] = useState("");
+  const sheetLines = p.lines.filter((l) => l.countsSheets);
+  const covers = sheetLines.filter((l) => COVER_RE.test(l.name.trim()));
+  const parts = [
+    { label: FRONT, color: colorOf(FRONT, 0), count: covers[0]?.qty ?? 0, cover: true },
+    { label: INSIDE, color: colorOf(INSIDE, 0), count: sheetLines.filter((l) => !COVER_RE.test(l.name.trim())).reduce((a, l) => a + l.qty, 0) },
+    { label: BACK, color: colorOf(BACK, 0), count: covers.slice(1).reduce((a, l) => a + l.qty, 0), cover: true },
+  ];
   const commitSheets = (v: number) => { setSheetsText(null); if (Number.isFinite(v) && v !== p.totalSheets) p.onSheets(Math.round(v)); };
+  const total = p.lines.reduce((a, l) => a + l.qty * l.sell, 0);
+  const addCustom = () => {
+    const qty = Number(cust.qty), sell = Number(cust.sell);
+    if (cust.name.trim().length < 2) { setMsg("Enter the item name"); return; }
+    if (!(qty > 0) || cust.sell === "" || !(sell >= 0)) { setMsg("Enter a quantity above 0 and a selling price"); return; }
+    p.onAddCustom(cust.name.trim(), qty, sell, cust.cost === "" ? undefined : Number(cust.cost));
+    setCust({ name: "", qty: "1", sell: "", cost: "" }); setMsg("");
+  };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,320px)_1fr]" data-testid={`planner-${p.pos}`}>
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]" data-testid={`planner-${p.pos}`}>
       <div>
         <div className="mb-3 flex items-center gap-2">
           <Layers className="size-4 text-brand" aria-hidden />
-          <span className="text-xs font-bold text-sub">Total sheets in this album</span>
+          <span className="text-xs font-bold text-sub">Total sheets</span>
           <div className="ml-auto flex items-center gap-1">
             <button className={stepBtn} aria-label="Fewer sheets" disabled={!p.editable || p.totalSheets <= 1} onClick={() => commitSheets(p.totalSheets - 1)}><Minus className="size-4" /></button>
             <input aria-label="Total sheets" type="number" min={1} className={numCls} disabled={!p.editable} value={sheetsText ?? p.totalSheets} onChange={(e) => setSheetsText(e.target.value)} onBlur={() => sheetsText !== null && commitSheets(Number(sheetsText))} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
@@ -83,42 +95,54 @@ export default function AlbumPlanner(p: PlannerProps) {
           </div>
         </div>
         <AlbumVisual total={p.totalSheets} parts={parts} />
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-sub">{parts.map((x) => <span key={x.label} className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-sm" style={{ background: x.color }} />{x.label} {x.count}</span>)}</div>
       </div>
 
-      <div className="space-y-3">
-        {order.map((label) => {
-          const rows = sheetLines.filter((l) => l.section === label), color = colorOf(label, custom.indexOf(label)), count = rows.reduce((a, l) => a + l.qty, 0), amount = rows.reduce((a, l) => a + l.qty * l.sell, 0);
-          return (
-            <section key={label} aria-label={label} className="rounded-xl border border-line p-3" style={{ borderLeft: `4px solid ${color}` }}>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <h4 className="text-[13px] font-extrabold">{label}</h4>
-                <span className="text-xs text-sub">{count} sheet{count === 1 ? "" : "s"}</span>
-                {label === INSIDE && p.editable && remaining > 0 && rows.length > 0 && <button onClick={() => p.onChange(rows[rows.length - 1]!.id, { qty: rows[rows.length - 1]!.qty + remaining })} className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100">Assign remaining {remaining}</button>}
-                <span className="ml-auto text-[13px] font-bold">{inr(amount)}</span>
+      <div className="min-w-0">
+        {p.editable && (
+          <>
+            <label className="mb-3 block max-w-xs text-xs font-bold">Category
+              <select aria-label="Category" className={cx(cell, "mt-1 w-full")} value="" onChange={(e) => e.target.value && p.onCategory(e.target.value)}>
+                <option value="">Select category…</option>{p.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <div className="mb-3 rounded-xl border border-line bg-slate-50 p-3">
+              <div className="mb-1 text-[13px] font-extrabold text-brand">Add custom item</div>
+              <div className="grid items-end gap-2 sm:grid-cols-[1fr_80px_110px_110px_auto]">
+                <label className="text-[11px] font-bold">Item Name<input aria-label="Item Name" className={cx(cell, "mt-1 w-full")} value={cust.name} onChange={(e) => setCust({ ...cust, name: e.target.value })} placeholder="Enter item name manually" /></label>
+                <label className="text-[11px] font-bold">Qty<input type="number" min={1} aria-label="Custom Qty" className={cx(cell, "mt-1 w-full")} value={cust.qty} onChange={(e) => setCust({ ...cust, qty: e.target.value })} /></label>
+                <label className="text-[11px] font-bold">Selling Price<input type="number" min={0} aria-label="Custom Selling Price" className={cx(cell, "mt-1 w-full")} value={cust.sell} onChange={(e) => setCust({ ...cust, sell: e.target.value })} /></label>
+                <label className="text-[11px] font-bold">Purchase Price<input type="number" min={0} aria-label="Custom Purchase Price" className={cx(cell, "mt-1 w-full")} value={cust.cost} onChange={(e) => setCust({ ...cust, cost: e.target.value })} /></label>
+                <button onClick={addCustom} className="h-9 rounded-lg bg-brand px-4 text-[13px] font-bold text-white hover:bg-brand-dark">Add Item</button>
               </div>
-              {rows.map((l) => (
-                <div key={l.id} className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5">
-                  <button type="button" disabled={!p.editable} onClick={() => p.onPick(label, l.id)} className="min-w-40 flex-1 truncate rounded-lg border border-line bg-white px-2.5 py-1.5 text-left text-[13px] font-semibold hover:bg-brand-soft disabled:bg-white" aria-label={`Sheet type of ${l.name}`}>{l.name || "Choose sheet type"}</button>
-                  <div className="flex items-center gap-1">
-                    <button className={stepBtn} aria-label={`Fewer ${l.name} sheets`} disabled={!p.editable || l.qty <= 1} onClick={() => p.onChange(l.id, { qty: l.qty - 1 })}><Minus className="size-4" /></button>
-                    <input type="number" min={1} aria-label={`Sheets of ${l.name}`} className={numCls} disabled={!p.editable} value={l.qty} onChange={(e) => p.onChange(l.id, { qty: Number(e.target.value) })} />
-                    <button className={stepBtn} aria-label={`More ${l.name} sheets`} disabled={!p.editable} onClick={() => p.onChange(l.id, { qty: l.qty + 1 })}><Plus className="size-4" /></button>
-                  </div>
-                  <label className="flex items-center gap-1 text-[11px] text-sub">₹/sheet<input type="number" min={0} aria-label={`Rate of ${l.name}`} className={cx(numCls, "w-20")} disabled={!p.editable} value={l.sell} onChange={(e) => p.onChange(l.id, { sell: Number(e.target.value) })} /></label>
-                  {p.admin && <label className="flex items-center gap-1 text-[11px] text-sub">cost<input type="number" min={0} aria-label={`Purchase price of ${l.name}`} className={cx(numCls, "w-20")} disabled={!p.editable} value={l.cost ?? ""} onChange={(e) => p.onChange(l.id, { cost: e.target.value === "" ? undefined : Number(e.target.value) })} /></label>}
-                  <b className="ml-auto w-24 text-right text-[13px]">{inr(l.qty * l.sell)}</b>
-                  {p.editable && <button aria-label={`Remove ${l.name}`} onClick={() => p.onRemove(l.id)} className="text-sub hover:text-rose-600"><Trash2 className="size-4" /></button>}
-                </div>
+              {msg && <p role="alert" className="mt-1 text-xs font-semibold text-rose-600">{msg}</p>}
+            </div>
+          </>
+        )}
+        <div className="overflow-x-auto rounded-xl border border-line">
+          <table className="w-full min-w-[600px] text-[13px]">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-sub"><tr>
+              <th className="px-3 py-2 text-left">Item name</th><th className="px-2 py-2 text-left">Qty</th><th className="px-2 py-2 text-left">Remarks</th><th className="px-2 py-2 text-left">Dimension</th>
+              <th className="px-2 py-2 text-left">Selling price</th>{p.admin && <th className="px-2 py-2 text-left">Purchase price</th>}<th className="px-3 py-2 text-right">Total</th><th /></tr></thead>
+            <tbody>
+              {p.lines.map((l) => (
+                <tr key={l.id} className="border-t border-line">
+                  <td className="px-3 py-1.5"><input aria-label="Item name" className={cx(cell, "w-full min-w-40")} value={l.name} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { name: e.target.value })} />
+                    <label className="mt-1 flex items-center gap-1.5 text-[11px] text-sub"><input type="checkbox" disabled={!p.editable} checked={l.countsSheets} onChange={(e) => p.onChange(l.id, { countsSheets: e.target.checked })} />counts toward the album&apos;s sheets</label></td>
+                  <td className="px-2 py-1.5"><input type="number" min={1} aria-label={`Quantity of ${l.name || "item"}`} className={cx(cell, "w-16")} value={l.qty} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { qty: Number(e.target.value) })} /></td>
+                  <td className="px-2 py-1.5"><input aria-label="Remarks" className={cx(cell, "w-24")} value={l.remarks ?? ""} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { remarks: e.target.value })} /></td>
+                  <td className="px-2 py-1.5"><input aria-label="Dimension" className={cx(cell, "w-24")} value={l.dimension ?? ""} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { dimension: e.target.value })} /></td>
+                  <td className="px-2 py-1.5"><input type="number" min={0} aria-label={`Selling price of ${l.name || "item"}`} className={cx(cell, "w-20")} value={l.sell} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { sell: Number(e.target.value) })} /></td>
+                  {p.admin && <td className="px-2 py-1.5"><input type="number" min={0} aria-label={`Purchase price of ${l.name || "item"}`} className={cx(cell, "w-20")} value={l.cost ?? ""} disabled={!p.editable} onChange={(e) => p.onChange(l.id, { cost: e.target.value === "" ? undefined : Number(e.target.value) })} /></td>}
+                  <td className="px-3 py-1.5 text-right font-bold">{inr(l.qty * l.sell)}</td>
+                  <td className="px-2 py-1.5">{p.editable && <button aria-label={`Remove ${l.name || "item"}`} onClick={() => p.onRemove(l.id)} className="grid size-8 place-items-center rounded-lg bg-rose-500 text-white hover:bg-rose-600"><Trash2 className="size-4" /></button>}</td>
+                </tr>
               ))}
-              {p.editable && <button onClick={() => p.onPick(label)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-xs font-bold hover:bg-brand-soft" style={{ borderColor: color, color }}><Plus className="size-3.5" />{rows.length ? "Add another sheet type" : "Choose sheet type"}</button>}
-              {!p.editable && !rows.length && <p className="text-xs text-sub">Not assigned.</p>}
-            </section>
-          );
-        })}
-        {p.editable && (adding ? (
-          <div className="flex gap-2"><input aria-label="New section name" autoFocus className="h-9 flex-1 rounded-lg border border-line px-3 text-[13px]" placeholder="e.g. Insert pages" value={newSection} onChange={(e) => setNewSection(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newSection.trim()) { p.onAddSection(newSection.trim()); setNewSection(""); setAdding(false); } }} />
-            <button onClick={() => { if (newSection.trim()) { p.onAddSection(newSection.trim()); setNewSection(""); setAdding(false); } }} className="h-9 rounded-lg bg-brand px-3 text-xs font-bold text-white">Add section</button></div>
-        ) : <button onClick={() => setAdding(true)} className="text-xs font-bold text-brand hover:underline">+ Add another section (insert pages, mini book…)</button>)}
+              {!p.lines.length && <tr><td colSpan={p.admin ? 8 : 7} className="px-3 py-6 text-center text-sm text-sub">{p.editable ? "No items yet. Select a category above, pick the item and quantity, and it is priced here." : "No items."}</td></tr>}
+            </tbody>
+            <tfoot><tr className="border-t border-line bg-slate-50"><td colSpan={p.admin ? 6 : 5} className="px-3 py-2 text-right text-xs font-bold text-sub">Album total (before design, discount and GST)</td><td className="px-3 py-2 text-right font-extrabold">{inr(total)}</td><td /></tr></tfoot>
+          </table>
+        </div>
       </div>
     </div>
   );
