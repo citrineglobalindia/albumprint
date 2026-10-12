@@ -9,7 +9,7 @@ import { ORDERS, STAGES, stageLabel, stageTone, type Order, type StageKey } from
 import { fmtDate, inr } from "../lib/format";
 import CostingPanel from "../components/CostingPanel";
 import { AUDIT, type AuditEntry } from "../lib/audit";
-import { FILES, addFile, lockFile, archiveFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
+import { FILES, addFile, lockFile, archiveFile, downloadFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
 import { proofApproved } from "../lib/proofs";
 import { cancelOrder, closeOrder, moveStage, nextStages, reopenOrder, setHold, type Result } from "../lib/workflow";
 import { editOrder } from "../lib/orderEdit";
@@ -211,7 +211,7 @@ export default function OrderDetail() {
                   <div className="min-w-0 flex-1 leading-tight"><div className="truncate text-[13px] font-bold">{f.name}</div><div className="text-[11px] text-sub">{f.category} · v{f.version} · {fmtSize(f.size)}</div><div className="text-[11px] text-sub">{f.by} · {when(f.at)}{f.archived ? " · archived" : ""}</div></div>
                   <Pill tone={FILE_TONE[f.state]} icon={f.state === "Locked" ? Lock : undefined}>{f.state}</Pill>
                   <span className="flex items-center">
-                    <button type="button" aria-label={`Download ${f.name}`} onClick={() => show(`${f.name}: only the register entry is stored in this demo; file bytes arrive with the storage backend`)} className="grid size-9 place-items-center rounded-lg text-sub hover:bg-slate-100 hover:text-ink"><Download className="size-4" aria-hidden /></button>
+                    <button type="button" aria-label={`Download ${f.name}`} onClick={async () => { const r = await downloadFile(f); r.ok ? show(r.msg) : fail(r.msg); }} className="grid size-9 place-items-center rounded-lg text-sub hover:bg-slate-100 hover:text-ink"><Download className="size-4" aria-hidden /></button>
                     {f.state !== "Locked" && !f.archived && <button type="button" aria-label={`Lock ${f.name}`} onClick={() => { lockFile(f.id); show(`${f.name} locked`); }} className="grid size-9 place-items-center rounded-lg text-sub hover:bg-slate-100 hover:text-ink"><Lock className="size-4" aria-hidden /></button>}
                     {!f.archived && <button type="button" aria-label={`Archive ${f.name}`} onClick={() => { archiveFile(f.id) ? show(`${f.name} archived`) : fail("Locked files cannot be archived"); }} className="grid size-9 place-items-center rounded-lg text-sub hover:bg-slate-100 hover:text-ink"><Archive className="size-4" aria-hidden /></button>}
                   </span>
