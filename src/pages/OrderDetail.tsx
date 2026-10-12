@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls, cx } from "../components/ui";
@@ -8,6 +8,7 @@ import { useReason } from "../components/ReasonDialog";
 import { ORDERS, STAGES, stageLabel, stageTone, type Order, type StageKey } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
 import CostingPanel from "../components/CostingPanel";
+import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
 import { FILES, addFile, lockFile, archiveFile, downloadFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
 import { proofApproved } from "../lib/proofs";
@@ -35,6 +36,7 @@ export default function OrderDetail() {
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const base = ORDERS.find((o) => o.id === id);
+  useEffect(() => { if (backendOn && id && base?.uid) void import("../lib/db/orders").then((m) => m.loadOrderDetail(id)); }, [id, base?.uid]);   // albums, items and costing load when the order opens
   const [convert, setConvert] = useState(false);
   const [reason, setReason] = useState("");
   const [cat, setCat] = useState<FileCategory>("Source Photos");

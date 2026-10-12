@@ -2,7 +2,7 @@ import { AUDIT, notifyAudit, type AuditEntry } from "../audit";
 import { ORDERS, stageLabel } from "../data";
 import type { RoleKey } from "../auth";
 import { stageFromDb } from "./orders";
-import { backendOn, sb, q, registerHydrator } from "./core";
+import { backendOn, sb, q, registerHydrator, sharedStaff } from "./core";
 
 // In backend mode the database's audit_log is the audit trail. Triggers write row-level history with the real actor;
 // events with no table behind them go through the log_event() RPC. AUDIT (what the UI reads) is hydrated from audit_log (admin only via RLS).
@@ -37,7 +37,7 @@ async function hydrate() {
   const { data: sess } = await client.auth.getSession(); if (!sess.session) return;
   const [rows, people, trans] = await Promise.all([
     q<Row[]>("Loading audit log", client.from("audit_log").select("id,at,actor,actor_role,entity,entity_id,action,old_data,new_data,reason").order("id", { ascending: false }).limit(2000) as never),
-    q<Row[]>("Loading staff names", client.from("profiles").select("id,full_name") as never),
+    sharedStaff(),
     q<Row[]>("Loading transitions", client.from("stage_transitions").select("order_type,from_stage,to_stage") as never),
   ]);
   const names = new Map((people ?? []).map((p) => [p.id as string, String(p.full_name)]));

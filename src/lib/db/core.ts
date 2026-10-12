@@ -24,8 +24,25 @@ export async function q<T>(what: string, p: PromiseLike<{ data: T | null; error:
 /** Hydrators fill the shared in-memory arrays from the database after sign-in. Domain modules register themselves. */
 const hydrators: { name: string; fn: () => Promise<void> }[] = [];
 export const registerHydrator = (name: string, fn: () => Promise<void>) => { hydrators.push({ name, fn }); };
-export async function hydrateAll() {
-  for (const h of hydrators) { try { await h.fn(); } catch (e) { reportDbError(`Loading ${h.name}`, e); } }
+
+/** The staff list is needed by several hydrators: fetch it once per load, not once each. */
+let staffOnce: Promise<Row[] | null> | null = null;
+type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+export const sharedStaff = (): Promise<Row[] | null> => (staffOnce ??= q<Row[]>("Loading staff", sb().from("profiles").select("id,full_name,role") as never));
+
+/** Customers and orders load first (the others map ids to order codes); everything else loads in parallel. Concurrent calls share one load. */
+const FIRST = "customers and orders";
+let inflight: Promise<void> | null = null;
+export function hydrateAll(): Promise<void> {
+  if (inflight) return inflight;
+  staffOnce = null;
+  const run = async (h: { name: string; fn: () => Promise<void> }) => { try { await h.fn(); } catch (e) { reportDbError(`Loading ${h.name}`, e); } };
+  inflight = (async () => {
+    const first = hydrators.find((h) => h.name === FIRST);
+    if (first) await run(first);
+    await Promise.all(hydrators.filter((h) => h !== first).map(run));
+  })().finally(() => { inflight = null; });
+  return inflight;
 }
 
 /** Run a database write in the background after an optimistic local change; `revert` undoes the local change on failure. */

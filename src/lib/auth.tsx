@@ -51,6 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return;
     const sb = supabase;
     let alive = true;
+    void import("./db");                                          // fetch the data layer while the session is checked, not after
+    let pending: { uid: string | null; p: Promise<void> } | null = null;
+    const loadOnce = (uid: string | null) => {                     // getSession and the auth listener both fire at start-up: load once
+      if (pending && pending.uid === uid) return pending.p;
+      const p = load(uid).finally(() => { if (pending?.p === p) pending = null; });
+      pending = { uid, p }; return p;
+    };
     const load = async (uid: string | null) => {
       if (!uid) { if (alive) { setRole(null); setName(""); setEmail(""); mirror(null); setLoading(false); } return; }
       // two-step login: with a verified authenticator factor, a password-only session must enter the code before anything loads
@@ -61,17 +68,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (alive && factor) { setMfaFactor(factor.id); setRole(null); mirror(null); setLoading(false); return; }
       }
       if (alive) setMfaFactor(null);
+      // the profile and the data load together (row-level security returns nothing to someone who is not active staff)
+      const hydrating = import("./db").then(({ hydrateAll }) => hydrateAll());
+      hydrating.catch(() => undefined);
       const { data } = await sb.from("profiles").select("full_name,email,role,active,must_change_password").eq("id", uid).maybeSingle();
       if (!alive) return;
       if (data && data.active && data.role in ROLES) {
         setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name);
-        if (!data.must_change_password) { const { hydrateAll } = await import("./db"); await hydrateAll(); }   // load customers, orders… for this user's role
+        await hydrating;                                           // customers, orders… for this user's role
       }
       else { setRole(null); mirror(null); }                       // signed in but not an invited/active staff member → no access
       setLoading(false);
     };
-    sb.auth.getSession().then(({ data }) => load(data.session?.user.id ?? null));
-    const { data: sub } = sb.auth.onAuthStateChange((_e, session) => { setTimeout(() => load(session?.user.id ?? null), 0); });
+    sb.auth.getSession().then(({ data }) => loadOnce(data.session?.user.id ?? null));
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") return;                    // an hourly token refresh must not reload everything
+      setTimeout(() => loadOnce(session?.user.id ?? null), 0);
+    });
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 

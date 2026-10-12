@@ -2,7 +2,7 @@ import { ORDERS, type PayStatus } from "../data";
 import { notify } from "../store";
 import { discountLimit } from "../production";
 import { PAYMENTS, INVOICES, type Payment, type Invoice, type Mode } from "../finance";
-import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
+import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "./core";
 
 // Payments, invoices (+lines) and credit notes. The database is the source of truth: receipt / invoice / credit-note numbers are
 // assigned by triggers, order.paid / pay_status are recomputed by the payments trigger, and the discount-approval gate, refund cap and
@@ -24,7 +24,7 @@ async function hydrate() {
   const [pays, invs, profs] = await Promise.all([
     q<Row[]>("Loading payments", c.from("payments").select("*").order("created_at", { ascending: false }) as never),
     q<Row[]>("Loading invoices", c.from("invoices").select("*, invoice_lines(*)").order("created_at", { ascending: false }) as never),
-    q<Row[]>("Loading staff", c.from("profiles").select("id,full_name,role") as never),
+    sharedStaff(),
   ]);
   const staff = new Map((profs ?? []).map((p) => [p.id as string, p]));
   const codeOf = new Map(ORDERS.filter((o) => o.uid).map((o) => [o.uid!, o]));

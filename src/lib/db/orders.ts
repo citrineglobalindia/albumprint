@@ -1,7 +1,7 @@
 import type { AlbumSpec } from "../pricing";
 import { ORDERS, CUSTOMERS, type CostLine, type OrderItem, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
 import { notify, progressFor } from "../store";
-import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
+import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "./core";
 
 // ───────── mappings: database rows ⇄ the shapes the UI uses ─────────
 const PRI: Record<string, Priority> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent", vip: "VIP" };
@@ -64,6 +64,16 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
   return o;
 }
 
+const DETAIL = "*, order_specs(album_size,pages), order_albums(*), order_items(*), album_lines(*, album_line_costs(cost_price)), order_costing(*)";
+/** The order list loads light; albums, items and costing (heavier) are fetched when one order is opened. */
+export async function loadOrderDetail(code: string): Promise<void> {
+  const o = ORDERS.find((x) => x.id === code); if (!o?.uid) return;
+  const { data, error } = await sb().from("orders").select(DETAIL).eq("id", o.uid).maybeSingle();
+  if (error || !data) { if (error) reportDbError("Loading order", error); return; }
+  const fresh = orderFromRow(data, new Map(), new Map());
+  o.albums = fresh.albums; o.items = fresh.items; o.costing = fresh.costing; o.couple = fresh.couple ?? o.couple; o.workGroup = fresh.workGroup ?? o.workGroup;
+  notify();
+}
 export const orderUid = (code: string) => ORDERS.find((o) => o.id === code)?.uid;
 export const customerUid = (code: string) => CUSTOMERS.find((c) => c.id === code)?.uid;
 
@@ -72,8 +82,8 @@ async function hydrate() {
   const client = sb();
   const [custRows, ordRows, staffRows] = await Promise.all([
     q<Row[]>("Loading customers", client.rpc("list_customers") as never),
-    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*), order_items(*), album_lines(*, album_line_costs(cost_price)), order_costing(*)").order("created_at", { ascending: false }) as never),
-    q<Row[]>("Loading staff", client.from("profiles").select("id,full_name") as never),
+    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages)").order("created_at", { ascending: false }) as never),
+    sharedStaff(),
   ]);
   const customers = (custRows ?? []).map(customerFromRow);
   const staff = new Map((staffRows ?? []).map((p) => [p.id as string, String(p.full_name).split(" ")[0]!]));

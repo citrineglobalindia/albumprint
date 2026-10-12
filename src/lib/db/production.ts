@@ -3,7 +3,7 @@ import { notify } from "../store";
 import { currentActor } from "../audit";
 import { GJOBS, PJOBS, INSPECTIONS, RTASKS, DRECS, COLORISTS, OPERATORS, PSTAGES, PAPERS, DMODES, can, blankMarks,
   type GJob, type GStatus, type GEvent, type PJob, type PStage, type PExc, type ExcKind, type Vendor, type Inspection, type ReworkTask, type ReturnDept, type DRec, type DMode } from "../production";
-import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
+import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "./core";
 
 // Colour grading, printing, QC and delivery ⇄ tasks, print_*, qc_inspections, rework_tasks, deliveries, production_events.
 // The UI changes the shared arrays first (optimistic) and calls the db* functions here; writes run one after another so they reach
@@ -73,7 +73,7 @@ const tried = new Set<string>();
 async function hydrate() {
   const c = sb(); tried.clear();
   const [prof, tasks, pj, plog, pexc, pven, qci, rw, dl, ev] = await Promise.all([
-    q<Row[]>("Loading staff", c.from("profiles").select("id,full_name,role") as never),
+    sharedStaff(),
     q<Row[]>("Loading grading jobs", c.from("tasks").select("*").eq("kind", "grading") as never),
     q<Row[]>("Loading print jobs", c.from("print_jobs").select("*") as never),
     q<Row[]>("Loading print history", c.from("print_stage_log").select("*").order("at", { ascending: true }) as never),
