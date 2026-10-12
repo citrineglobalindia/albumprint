@@ -137,7 +137,7 @@ export default function CostingPanel({ o, show, fail }: { o: Order; show: (m: st
                   <span className={cx("rounded-full px-2.5 py-0.5 text-[11px] font-bold", ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")} data-testid={`alloc-${pos}`}>{have} / {a.sheets} sheets assigned</span>
                   <span className="ml-auto text-sm font-bold">{inr(t.albumSub.get(pos) ?? 0)}</span>
                 </div>
-                <AlbumItems pos={pos} totalSheets={a.sheets} lines={lines} categories={catalogCategories()} editable={editable} admin={admin}
+                <AlbumItems pos={pos} title={names[i]} totalSheets={a.sheets} lines={lines} categories={catalogCategories()} editable={editable} admin={admin}
                   onSheets={(n) => void run(() => setAlbumSheets(o.id, pos, n))}
                   onCategory={(category) => setPick({ pos, category })}
                   onAddCustom={(name, qty, sell, cost) => addLine(pos, { name, qty, sell, cost, countsSheets: countsSheetsFor(name) })}

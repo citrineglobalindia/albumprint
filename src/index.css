@@ -76,3 +76,6 @@ main section, main .min-w-0 { min-width: 0; }
 .album-stack { perspective: 700px; }
 .album-stack-inner { transform: rotateX(8deg) rotateY(-22deg); transform-style: preserve-3d; transition: transform 0.4s ease; }
 .album-stack:hover .album-stack-inner { transform: rotateX(4deg) rotateY(-10deg); }
+
+@keyframes cover-pop { from { transform: translateY(8px) scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+.cover-pop { animation: cover-pop .45s cubic-bezier(.2,.8,.2,1) both; }

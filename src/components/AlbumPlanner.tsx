@@ -12,30 +12,64 @@ const UNASSIGNED = "#cbd5e1";
 /** Where the catalog picker starts for each kind of section. */
 export const startPathFor = (section: string) => (section === FRONT || section === BACK ? ["COVER"] : section === INSIDE ? ["PAPER"] : []);
 
-/** The album as a stack of sheets: one leaf per sheet, coloured by section, animating as the plan changes. */
-export function AlbumVisual({ total, parts }: { total: number; parts: { label: string; color: string; count: number; cover?: boolean }[] }) {
+/** Rough look of a cover / paper from its catalog name, so the preview follows what was picked. */
+const TONES: [RegExp, [string, string]][] = [
+  [/white|ivory|cream/i, ["#f8fafc", "#cbd5e1"]], [/red|maroon/i, ["#b91c1c", "#7f1d1d"]], [/blue|navy/i, ["#1d4ed8", "#1e3a8a"]],
+  [/green/i, ["#15803d", "#14532d"]], [/brown|leather|tan|wood/i, ["#92400e", "#5b2a0a"]], [/silver|grey|gray|metal/i, ["#94a3b8", "#475569"]],
+  [/gold|golden/i, ["#d4a017", "#8a6508"]], [/black|dark/i, ["#1f2937", "#030712"]],
+];
+const toneOf = (name?: string): [string, string] => (name && TONES.find(([re]) => re.test(name))?.[1]) || ["#334155", "#0f172a"];
+
+export interface Part { label: string; color: string; count: number; cover?: boolean; item?: string; amount?: number }
+
+/** Live preview: the closed cover, the open inside spread and the sheet strip — all following the items picked. */
+export function AlbumVisual({ total, parts, title }: { total: number; parts: Part[]; title?: string }) {
   const assigned = parts.reduce((a, p) => a + p.count, 0);
-  const shown = Math.min(Math.max(total, assigned), 80), per = Math.max(total, assigned) / shown;       // up to 80 leaves; each stands for several sheets on big albums
-  const leaves = useMemo(() => {
-    const seq: { color: string; cover: boolean; label: string }[] = [];
-    const expand = (p: (typeof parts)[number]) => Array.from({ length: Math.round(p.count / per) }, () => ({ color: p.color, cover: !!p.cover, label: p.label }));
-    const front = parts.filter((p) => p.cover && p.label === FRONT), back = parts.filter((p) => p.cover && p.label === BACK), mid = parts.filter((p) => !p.cover);
-    front.forEach((p) => seq.push(...expand(p)));
-    mid.forEach((p) => seq.push(...expand(p)));
-    const gap = Math.max(0, Math.round((total - assigned) / per));
-    for (let i = 0; i < gap; i++) seq.push({ color: UNASSIGNED, cover: false, label: "Not assigned yet" });
-    back.forEach((p) => seq.push(...expand(p)));
-    return seq;
-  }, [parts, total, assigned, per]);
+  const front = parts.find((p) => p.label === FRONT), inside = parts.find((p) => p.label === INSIDE);
+  const [c1, c2] = toneOf(front?.item), light = /white|ivory|cream|silver|gold/i.test(front?.item ?? "");
+  const [p1, p2] = toneOf(inside?.item);
+  const edges = Math.max(2, Math.min(14, Math.round((inside?.count ?? 0) / Math.max(total, 1) * 14) || 2));
   const over = assigned > total;
+  const leaves = useMemo(() => {
+    const seq: { color: string; label: string }[] = [];
+    [FRONT, INSIDE].forEach((k) => { const q = parts.find((x) => x.label === k); if (q) for (let i = 0; i < q.count; i++) seq.push({ color: q.color, label: q.label }); });
+    for (let i = 0; i < Math.max(0, total - assigned); i++) seq.push({ color: UNASSIGNED, label: "Not assigned yet" });
+    const b = parts.find((x) => x.label === BACK); if (b) for (let i = 0; i < b.count; i++) seq.push({ color: b.color, label: b.label });
+    return seq.slice(0, 120);
+  }, [parts, total, assigned]);
+  const layout = /mini|single|full/i.test(inside?.item ?? "") ? 1 : /transparent|clear/i.test(inside?.item ?? "") ? 4 : 3;
   return (
     <div data-testid="album-visual">
-      <div className="album-stack mb-3 grid place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-brand-soft px-4 pb-4 pt-6" aria-hidden>
-        <div className="album-stack-inner flex items-end gap-[2px]" style={{ height: 150 }}>
-          {leaves.map((l, i) => (
-            <span key={`${i}-${l.color}`} title={l.label} className="leaf rounded-[2px] shadow-sm" style={{ width: l.cover ? 10 : 5, height: l.cover ? 140 : l.color === UNASSIGNED ? 104 : 120, background: l.color === UNASSIGNED ? `repeating-linear-gradient(135deg, ${UNASSIGNED}, ${UNASSIGNED} 3px, #e2e8f0 3px, #e2e8f0 6px)` : l.color, animationDelay: `${Math.min(i, 60) * 9}ms` }} />
-          ))}
+      <div className="mb-3 grid gap-3 rounded-2xl bg-gradient-to-br from-slate-50 to-brand-soft p-3 grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]" aria-hidden>
+        <div>
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-sub">Cover</div>
+          <div key={`cv-${front?.item ?? "none"}`} className="cover-pop relative mx-auto aspect-[4/3] w-full max-w-full overflow-hidden rounded-r-md rounded-l-sm shadow-lg" style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
+            <span className="absolute inset-y-0 left-0 w-[9%]" style={{ background: "linear-gradient(90deg, rgba(0,0,0,.35), rgba(255,255,255,.12))" }} />
+            <div className="absolute inset-0 grid place-items-center px-4 text-center">
+              {front && front.count > 0
+                ? <span className="text-[13px] font-semibold leading-tight tracking-wide" style={{ color: light ? "#334155" : "#f5d98b", fontFamily: "Georgia, serif" }}>{title || "Our Album"}</span>
+                : <span className="text-[11px] font-semibold text-white/60">No cover chosen</span>}
+            </div>
+          </div>
+          <div className="mt-1.5 truncate text-center text-[11px] font-semibold text-ink" title={front?.item}>{front?.item ? shortName(front.item) : "—"}</div>
         </div>
+        <div>
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-sub">Inside pages</div>
+          <div key={`in-${inside?.item ?? "none"}-${layout}`} className="cover-pop relative mx-auto flex aspect-[2/1.2] w-full max-w-full items-stretch rounded-md shadow-lg" style={{ background: `linear-gradient(90deg, ${p2}, ${p1})`, padding: "6px 6px 6px 6px" }}>
+            {[0, 1].map((side) => (
+              <div key={side} className="relative flex-1 rounded-sm bg-white p-1.5" style={{ boxShadow: side ? "inset 8px 0 8px -8px rgba(0,0,0,.25)" : "inset -8px 0 8px -8px rgba(0,0,0,.25)", marginRight: side ? 0 : 1 }}>
+                <div className={cx("grid h-full gap-1", layout === 1 ? "grid-cols-1" : "grid-cols-2")}>
+                  {Array.from({ length: layout === 1 ? 1 : side ? layout : 2 }, (_, k) => <span key={k} className="rounded-[2px]" style={{ background: ["#fbcfe8", "#fde68a", "#bae6fd", "#bbf7d0"][(k + side * 2) % 4], opacity: inside && inside.count > 0 ? 1 : 0.35 }} />)}
+                </div>
+              </div>
+            ))}
+            <span className="absolute -bottom-1 left-2 right-2 flex flex-col" style={{ gap: 1 }}>{Array.from({ length: edges }, (_, k) => <i key={k} className="block h-[1.5px] rounded-full bg-slate-300" />)}</span>
+          </div>
+          <div className="mt-3 truncate text-center text-[11px] font-semibold text-ink" title={inside?.item}>{inside?.item ? shortName(inside.item) : "—"}{inside && inside.count > 0 ? ` · ${inside.count} sheets` : ""}</div>
+        </div>
+      </div>
+      <div className="mb-2 flex h-8 items-end justify-center gap-[2px] overflow-hidden" aria-hidden>
+        {leaves.map((l, i) => <span key={`${i}-${l.color}`} title={l.label} className="leaf rounded-[2px]" style={{ width: 4, height: l.color === UNASSIGNED ? 20 : 30, background: l.color === UNASSIGNED ? "repeating-linear-gradient(135deg,#cbd5e1,#cbd5e1 2px,#e2e8f0 2px,#e2e8f0 4px)" : l.color, animationDelay: `${Math.min(i, 60) * 9}ms` }} />)}
       </div>
       <div className="flex h-3 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${assigned} of ${total} sheets assigned`}>
         {parts.filter((p) => p.count > 0).map((p) => <span key={p.label} className="transition-[width] duration-500 ease-out" style={{ width: `${(p.count / Math.max(total, assigned, 1)) * 100}%`, background: p.color }} title={`${p.label}: ${p.count}`} />)}
@@ -47,13 +81,15 @@ export function AlbumVisual({ total, parts }: { total: number; parts: { label: s
   );
 }
 
+const shortName = (n: string) => n.split("-").slice(1).join(" · ") || n;
+
 const stepBtn = "grid size-8 place-items-center rounded-lg border border-line bg-white text-sub hover:bg-brand-soft disabled:opacity-40";
 const numCls = "h-8 w-16 rounded-lg border border-line bg-white px-2 text-center text-[13px] font-bold outline-none focus:border-brand disabled:bg-slate-50";
 const cell = "h-9 rounded-lg border border-line bg-white px-2 text-[13px] outline-none focus:border-brand disabled:bg-slate-50";
 const COVER_RE = /^(MINI BOOK )?COVER\b/i;
 
 export interface ItemsProps {
-  pos: number; totalSheets: number; lines: CostLine[]; categories: string[]; editable: boolean; admin: boolean;
+  pos: number; title?: string; totalSheets: number; lines: CostLine[]; categories: string[]; editable: boolean; admin: boolean;
   onSheets: (n: number) => void;
   onCategory: (category: string) => void;
   onAddCustom: (name: string, qty: number, sell: number, cost?: number) => void;
@@ -67,10 +103,12 @@ export default function AlbumItems(p: ItemsProps) {
   const [msg, setMsg] = useState("");
   const sheetLines = p.lines.filter((l) => l.countsSheets);
   const covers = sheetLines.filter((l) => COVER_RE.test(l.name.trim()));
-  const parts = [
-    { label: FRONT, color: colorOf(FRONT, 0), count: covers[0]?.qty ?? 0, cover: true },
-    { label: INSIDE, color: colorOf(INSIDE, 0), count: sheetLines.filter((l) => !COVER_RE.test(l.name.trim())).reduce((a, l) => a + l.qty, 0) },
-    { label: BACK, color: colorOf(BACK, 0), count: covers.slice(1).reduce((a, l) => a + l.qty, 0), cover: true },
+  const sum = (ls: CostLine[]) => ls.reduce((a, l) => a + l.qty * l.sell, 0);
+  const insideLines = sheetLines.filter((l) => !COVER_RE.test(l.name.trim())), backLines = covers.slice(1);
+  const parts: Part[] = [
+    { label: FRONT, color: colorOf(FRONT, 0), count: covers[0]?.qty ?? 0, cover: true, item: covers[0]?.name, amount: sum(covers.slice(0, 1)) },
+    { label: INSIDE, color: colorOf(INSIDE, 0), count: insideLines.reduce((a, l) => a + l.qty, 0), item: insideLines[0]?.name, amount: sum(insideLines) },
+    { label: BACK, color: colorOf(BACK, 0), count: backLines.reduce((a, l) => a + l.qty, 0), cover: true, item: backLines[0]?.name, amount: sum(backLines) },
   ];
   const commitSheets = (v: number) => { setSheetsText(null); if (Number.isFinite(v) && v !== p.totalSheets) p.onSheets(Math.round(v)); };
   const total = p.lines.reduce((a, l) => a + l.qty * l.sell, 0);
@@ -83,7 +121,7 @@ export default function AlbumItems(p: ItemsProps) {
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]" data-testid={`planner-${p.pos}`}>
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]" data-testid={`planner-${p.pos}`}>
       <div>
         <div className="mb-3 flex items-center gap-2">
           <Layers className="size-4 text-brand" aria-hidden />
@@ -94,8 +132,20 @@ export default function AlbumItems(p: ItemsProps) {
             <button className={stepBtn} aria-label="More sheets" disabled={!p.editable} onClick={() => commitSheets(p.totalSheets + 1)}><Plus className="size-4" /></button>
           </div>
         </div>
-        <AlbumVisual total={p.totalSheets} parts={parts} />
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-sub">{parts.map((x) => <span key={x.label} className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-sm" style={{ background: x.color }} />{x.label} {x.count}</span>)}</div>
+        <AlbumVisual total={p.totalSheets} parts={parts} title={p.title} />
+        <div className="mt-3 rounded-2xl border border-line bg-white p-3" data-testid={`selections-${p.pos}`}>
+          <div className="mb-1 text-xs font-extrabold">Your selections</div>
+          {parts.map((x) => (
+            <div key={x.label} className="flex items-center gap-2 border-t border-line py-1.5 first:border-t-0 text-[12px]">
+              <i className="size-2.5 shrink-0 rounded-sm" style={{ background: x.color }} />
+              <div className="min-w-0 flex-1"><div className="font-bold">{x.label} <span className="font-normal text-sub">{x.count} sheet{x.count === 1 ? "" : "s"}</span></div>
+                <div className="truncate text-sub" title={x.item}>{x.item ?? "Not chosen yet"}</div></div>
+              <span className="font-bold">{inr(x.amount ?? 0)}</span>
+              {p.editable && <button className="text-[11px] font-bold text-brand hover:underline" onClick={() => p.onCategory(x.label === INSIDE ? "PAPER" : "COVER")}>{x.item ? "Change" : "Choose"}</button>}
+            </div>
+          ))}
+          <div className="mt-1 flex items-center justify-between border-t border-line pt-2 text-[13px]"><span className="font-bold text-brand">Album total</span><span className="text-base font-extrabold text-brand">{inr(total)}</span></div>
+        </div>
       </div>
 
       <div className="min-w-0">
