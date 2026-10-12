@@ -40,34 +40,7 @@ export function AlbumVisual({ total, parts, title }: { total: number; parts: Par
   const layout = /mini|single|full/i.test(inside?.item ?? "") ? 1 : /transparent|clear/i.test(inside?.item ?? "") ? 4 : 3;
   return (
     <div data-testid="album-visual">
-      <div className="mb-3 grid gap-3 rounded-2xl bg-gradient-to-br from-slate-50 to-brand-soft p-3 grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]" aria-hidden>
-        <div>
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-sub">Cover</div>
-          <div key={`cv-${front?.item ?? "none"}`} className="cover-pop relative mx-auto aspect-[4/3] w-full max-w-full overflow-hidden rounded-r-md rounded-l-sm shadow-lg" style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
-            <span className="absolute inset-y-0 left-0 w-[9%]" style={{ background: "linear-gradient(90deg, rgba(0,0,0,.35), rgba(255,255,255,.12))" }} />
-            <div className="absolute inset-0 grid place-items-center px-4 text-center">
-              {front && front.count > 0
-                ? <span className="text-[13px] font-semibold leading-tight tracking-wide" style={{ color: light ? "#334155" : "#f5d98b", fontFamily: "Georgia, serif" }}>{title || "Our Album"}</span>
-                : <span className="text-[11px] font-semibold text-white/60">No cover chosen</span>}
-            </div>
-          </div>
-          <div className="mt-1.5 truncate text-center text-[11px] font-semibold text-ink" title={front?.item}>{front?.item ? shortName(front.item) : "—"}</div>
-        </div>
-        <div>
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-sub">Inside pages</div>
-          <div key={`in-${inside?.item ?? "none"}-${layout}`} className="cover-pop relative mx-auto flex aspect-[2/1.2] w-full max-w-full items-stretch rounded-md shadow-lg" style={{ background: `linear-gradient(90deg, ${p2}, ${p1})`, padding: "6px 6px 6px 6px" }}>
-            {[0, 1].map((side) => (
-              <div key={side} className="relative flex-1 rounded-sm bg-white p-1.5" style={{ boxShadow: side ? "inset 8px 0 8px -8px rgba(0,0,0,.25)" : "inset -8px 0 8px -8px rgba(0,0,0,.25)", marginRight: side ? 0 : 1 }}>
-                <div className={cx("grid h-full gap-1", layout === 1 ? "grid-cols-1" : "grid-cols-2")}>
-                  {Array.from({ length: layout === 1 ? 1 : side ? layout : 2 }, (_, k) => <span key={k} className="rounded-[2px]" style={{ background: ["#fbcfe8", "#fde68a", "#bae6fd", "#bbf7d0"][(k + side * 2) % 4], opacity: inside && inside.count > 0 ? 1 : 0.35 }} />)}
-                </div>
-              </div>
-            ))}
-            <span className="absolute -bottom-1 left-2 right-2 flex flex-col" style={{ gap: 1 }}>{Array.from({ length: edges }, (_, k) => <i key={k} className="block h-[1.5px] rounded-full bg-slate-300" />)}</span>
-          </div>
-          <div className="mt-3 truncate text-center text-[11px] font-semibold text-ink" title={inside?.item}>{inside?.item ? shortName(inside.item) : "—"}{inside && inside.count > 0 ? ` · ${inside.count} sheets` : ""}</div>
-        </div>
-      </div>
+      <Book3D title={title} front={front} inside={inside} back={parts.find((x) => x.label === BACK)} total={total} layout={layout} />
       <div className="mb-2 flex h-8 items-end justify-center gap-[2px] overflow-hidden" aria-hidden>
         {leaves.map((l, i) => <span key={`${i}-${l.color}`} title={l.label} className="leaf rounded-[2px]" style={{ width: 4, height: l.color === UNASSIGNED ? 20 : 30, background: l.color === UNASSIGNED ? "repeating-linear-gradient(135deg,#cbd5e1,#cbd5e1 2px,#e2e8f0 2px,#e2e8f0 4px)" : l.color, animationDelay: `${Math.min(i, 60) * 9}ms` }} />)}
       </div>
@@ -77,6 +50,54 @@ export function AlbumVisual({ total, parts, title }: { total: number; parts: Par
       <p className={cx("mt-1.5 text-xs font-semibold", over ? "text-rose-600" : assigned === total ? "text-emerald-700" : "text-amber-700")}>
         {over ? `${assigned - total} sheet${assigned - total === 1 ? "" : "s"} more than the album has` : assigned === total ? "Every sheet is assigned" : `${total - assigned} sheet${total - assigned === 1 ? "" : "s"} still to assign`}
       </p>
+    </div>
+  );
+}
+
+/** A real 3D album: spine, page block, back cover and a front cover that swings open. Drag to turn it. */
+function Book3D({ title, front, inside, back, total, layout }: { title?: string; front?: Part; inside?: Part; back?: Part; total: number; layout: number }) {
+  const [rot, setRot] = useState(-28), [tilt, setTilt] = useState(-12), [open, setOpen] = useState(false), [drag, setDrag] = useState<{ x: number; y: number; r: number; t: number } | null>(null);
+  const W = 176, H = 128, T = Math.max(14, Math.min(46, 10 + total * 0.9));
+  const [c1, c2] = toneOf(front?.item), [b1, b2] = toneOf(back?.item ?? front?.item), light = /white|ivory|cream|silver|gold/i.test(front?.item ?? "");
+  const [p1] = toneOf(inside?.item);
+  const slabs = Math.max(3, Math.min(10, Math.round(total / 4)));
+  const face = (x: number, y: number, w: number, h: number, t: string, bg: string, extra: React.CSSProperties = {}): React.CSSProperties => ({ position: "absolute", left: x, top: y, width: w, height: h, transform: t, background: bg, backfaceVisibility: "hidden", ...extra });
+  const cover = (a: string, b: string) => `linear-gradient(135deg, ${a}, ${b})`;
+  const onDown = (e: React.PointerEvent) => { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); setDrag({ x: e.clientX, y: e.clientY, r: rot, t: tilt }); };
+  const onMove = (e: React.PointerEvent) => { if (drag) { setRot(drag.r + (e.clientX - drag.x) * 0.6); setTilt(Math.max(-60, Math.min(40, drag.t - (e.clientY - drag.y) * 0.4))); } };
+  return (
+    <div className="mb-3 rounded-2xl bg-gradient-to-br from-slate-50 to-brand-soft p-3" data-testid="album-3d">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-sub">3D preview · drag to turn</span>
+        <button type="button" aria-label={open ? "Close album" : "Open album"} onClick={() => setOpen((v) => !v)} className="ml-auto rounded-lg border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-brand hover:bg-brand-soft">{open ? "Close" : "Open"}</button>
+        <button type="button" aria-label="Reset view" onClick={() => { setRot(-28); setTilt(-12); }} className="rounded-lg border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-sub hover:bg-brand-soft">Reset</button>
+      </div>
+      <div aria-hidden className="relative grid cursor-grab touch-none select-none place-items-center active:cursor-grabbing" style={{ height: 210, perspective: 900 }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={() => setDrag(null)} onPointerCancel={() => setDrag(null)}>
+        <span className="absolute bottom-3 h-4 w-44 rounded-[50%] bg-slate-900/20 blur-md" />
+        <div style={{ position: "relative", width: W, height: H, transformStyle: "preserve-3d", transform: `translateX(${open ? 62 : 0}px) scale(${open ? 0.76 : 1}) rotateX(${tilt}deg) rotateY(${rot}deg)`, transition: drag ? "none" : "transform .7s cubic-bezier(.2,.8,.2,1)" }}>
+          <div style={face(0, 0, W, H, `translateZ(${-T / 2}px)`, cover(b1, b2), { backfaceVisibility: "visible" })} />
+          {Array.from({ length: slabs }, (_, i) => (
+            <div key={i} style={face(3, 4, W - 7, H - 8, `translateZ(${-T / 2 + 2 + (i * (T - 4)) / slabs}px)`, i === slabs - 1 ? "#fff" : "#f1f5f9", { border: "1px solid #e2e8f0", backfaceVisibility: "visible" })}>
+              {i === slabs - 1 && <div className={cx("grid h-full gap-1 p-2", layout === 1 ? "grid-cols-1" : "grid-cols-2")}>{Array.from({ length: layout === 1 ? 1 : layout }, (_, k) => <span key={k} className="rounded-[2px]" style={{ background: ["#fbcfe8", "#fde68a", "#bae6fd", "#bbf7d0"][k % 4], opacity: inside && inside.count > 0 ? 1 : 0.4 }} />)}</div>}
+            </div>
+          ))}
+          <div style={face(-T / 2, 0, T, H, "rotateY(-90deg)", `linear-gradient(90deg, ${c2}, ${c1})`, { backfaceVisibility: "visible" })} />
+          <div style={face(W - T / 2, 3, T, H - 6, "rotateY(90deg)", "repeating-linear-gradient(0deg,#fff,#fff 2px,#cbd5e1 2px,#cbd5e1 3px)", { backfaceVisibility: "visible" })} />
+          <div style={face(3, -T / 2 + 0, W - 6, T, "rotateX(90deg)", p1 === "#334155" ? "#e2e8f0" : p1, { backfaceVisibility: "visible", opacity: 0.9 })} />
+          <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transformStyle: "preserve-3d", transformOrigin: "left center", transform: `translateZ(${T / 2}px) rotateY(${open ? -150 : 0}deg)`, transition: drag ? "transform .7s" : "transform .9s cubic-bezier(.2,.8,.2,1)" }}>
+            <div style={face(0, 0, W, H, "none", cover(c1, c2), { boxShadow: "inset 6px 0 8px rgba(0,0,0,.35)" })} className="grid place-items-center px-4 text-center">
+              {front && front.count > 0
+                ? <span className="text-[14px] font-semibold leading-tight tracking-wide" style={{ color: light ? "#334155" : "#f5d98b", fontFamily: "Georgia, serif", textShadow: light ? "none" : "0 1px 2px rgba(0,0,0,.5)" }}>{title || "Our Album"}</span>
+                : <span className="text-[11px] font-semibold text-white/60">No cover chosen</span>}
+            </div>
+            <div style={face(0, 0, W, H, "rotateY(180deg)", cover(c2, c1), { boxShadow: "inset -6px 0 8px rgba(0,0,0,.3)" })} />
+          </div>
+        </div>
+      </div>
+      <div className="mt-1 flex justify-between gap-2 text-[11px] font-semibold text-ink">
+        <span className="truncate" title={front?.item}>Cover: {front?.item ? shortName(front.item) : "—"}</span>
+        <span className="truncate text-right" title={inside?.item}>Pages: {inside?.item ? shortName(inside.item) : "—"}</span>
+      </div>
     </div>
   );
 }
