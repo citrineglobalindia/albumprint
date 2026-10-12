@@ -9,8 +9,8 @@ test("reception creates an order with two albums and the couple's name", async (
   await page.getByRole("button", { name: "Create Order" }).first().click();
   const dlg = page.getByRole("dialog", { name: "New Order" });
   await dlg.getByRole("button", { name: /^Customer/ }).click();
-  await page.getByPlaceholder("Search by name, studio or mobile…").fill(studio);
-  await page.getByRole("button", { name: "Add new customer", exact: true }).click();
+  await page.getByPlaceholder("Type to search…").fill(studio);
+  await page.getByRole("button", { name: /Add new customer/ }).last().click();
   await dlg.getByPlaceholder("Mobile number").fill(`9${String(Date.now()).slice(-9)}`);
   await dlg.getByRole("button", { name: "Next" }).click();
   await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
