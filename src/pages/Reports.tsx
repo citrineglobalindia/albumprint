@@ -6,8 +6,11 @@ import { Combobox, DateRangePicker, FilterChips, MultiSelect, fmtShort, presetRa
 import { KpiRow, LineTabs, Panel, PageHeader, Pill, ProgressBar, Td, Th, tableCls, trCls, inputCls, Field, SlideOver, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { downloadCsv } from "../lib/csv";
+import { downloadRows, type ExportFormat } from "../lib/exporters";
 import { ORDERS, STAFF, STAGES, CUSTOMERS, stageLabel, type Order, type StageKey } from "../lib/data";
 import { AUDIT } from "../lib/audit";
+import { SCHEDULES, addSchedule, removeSchedule } from "../lib/schedules";
+import { useStore } from "../lib/store";
 import { useLive } from "../lib/useLive";
 import { inr } from "../lib/format";
 
@@ -114,7 +117,6 @@ const metricVal = (os: Order[], m: string) => (m === "Orders" ? os.length : m ==
 const fmtMetric = (m: string, v: number) => (m === "Orders" ? String(v) : inr(v));
 interface CFilters { stage: string[]; priority: string[]; event: string[]; pay: string[] }
 interface Saved { id: string; name: string; metrics: string[]; groupBy: string; filters: CFilters }
-interface Sched { id: string; name: string; freq: string; day: string; time: string; to: string; format: string }
 interface RunRec { id: string; name: string; at: string; rows: number; range: string; metrics: string[]; groupBy: string; filters: CFilters }
 const NOF: CFilters = { stage: [], priority: [], event: [], pay: [] };
 const lsGet = <T,>(k: string, d: T): T => { try { const r = localStorage.getItem(k); return r ? (JSON.parse(r) as T) : d; } catch { return d; } };
@@ -143,7 +145,8 @@ export default function Reports() {
   const [rname, setRname] = useState("Custom report");
   const [nameErr, setNameErr] = useState("");
   const [saved, setSaved] = useState<Saved[]>(() => lsGet<Partial<Saved & { metric: string }>[]>("albumpro.reports.saved", []).map((r) => ({ id: r.id ?? `R${Math.random()}`, name: r.name ?? "Report", metrics: r.metrics ?? [r.metric ?? "Orders"], groupBy: r.groupBy ?? "Event Type", filters: r.filters ?? NOF })));
-  const [scheds, setScheds] = useState<Sched[]>(() => lsGet("albumpro.reports.scheduled", []));
+  useStore();
+  const scheds = SCHEDULES;
   const [runs, setRuns] = useState<RunRec[]>(() => lsGet("albumpro.reports.runs", []));
   const [schedOpen, setSchedOpen] = useState(false);
   const [sf, setSf] = useState({ freq: "Weekly", day: "Monday", time: "09:00", to: "", format: "CSV" });
@@ -249,7 +252,8 @@ export default function Reports() {
       case "Custom Report": return [...hdr, [groupBy, ...metrics], ...customRows.map((r) => [r.k, ...r.vals])];
     }
   };
-  const exportCsv = () => { downloadCsv(`report-${tab.toLowerCase().replace(/\s+/g, "-")}.csv`, csvFor(tab)); show(`${tab} report exported (${label})`); };
+  const exportAs = async (format: ExportFormat) => { try { await downloadRows(format, `report-${tab.toLowerCase().replace(/\s+/g, "-")}`, csvFor(tab), `${tab} report`, label); show(`${tab} report exported as ${format} (${label})`); } catch (e) { show(`Export failed: ${String((e as Error).message ?? e)}`); } };
+  const exportCsv = () => void exportAs("CSV");
   const printIt = () => { const t = document.title; document.title = `AlbumPro ${tab} report - ${label}`; window.print(); document.title = t; };
   const exportDrill = () => { if (!drill) return; downloadCsv("drill-orders.csv", [["Order", "Customer", "Event", "Stage", "Total", "Paid"], ...drill.orders.map((o) => [o.id, o.customer, o.event, stageLabel(o.stage), o.total, o.paid])]); show(`Exported ${drill.orders.length} orders`); };
 
@@ -263,13 +267,20 @@ export default function Reports() {
     const next = [...saved.filter((r) => r.name.toLowerCase() !== rname.trim().toLowerCase()), { id: `R${Date.now()}`, name: rname.trim(), metrics, groupBy, filters: cf }];
     setSaved(next); lsSet("albumpro.reports.saved", next); show(`Report "${rname.trim()}" saved`);
   };
-  const saveSched = () => {
+  const saveSched = async () => {
     const list = sf.to.split(/[,;\s]+/).filter(Boolean);
     if (!list.length) { setSErr({ to: "Add at least one recipient email" }); return; }
     if (list.some((e) => !/^\S+@\S+\.\S+$/.test(e))) { setSErr({ to: "One or more email addresses are invalid" }); return; }
-    const next = [...scheds, { id: `S${Date.now()}`, name: rname.trim(), freq: sf.freq, day: sf.day, time: sf.time, to: list.join(", "), format: sf.format }];
-    setScheds(next); lsSet("albumpro.reports.scheduled", next); setSchedOpen(false); setSErr({});
-    show(`"${rname.trim()}" scheduled ${sf.freq.toLowerCase()} at ${sf.time} to ${list.length} recipient${list.length > 1 ? "s" : ""}`);
+    if (!metrics.length) { setSErr({ to: "Pick at least one metric for the report first" }); return; }
+    const e = await addSchedule({ name: rname.trim(), freq: sf.freq, day: sf.freq === "Daily" ? "" : sf.day, time: sf.time, to: list.join(", "), format: sf.format, metrics, groupBy, filters: cf });
+    if (e) { setSErr({ to: e }); return; }
+    setSchedOpen(false); setSErr({});
+    show(`"${rname.trim()}" scheduled ${sf.freq.toLowerCase()} at ${sf.time}. Recipients are notified in AlbumPro when it is due`);
+  };
+  const runSched = async (r: (typeof SCHEDULES)[number]) => {
+    const t = customTable(filterOrders(orders, r.filters), r.metrics, r.groupBy);
+    await downloadRows(r.format as ExportFormat, r.name, [["Report", r.name], ["Range", label], [], [r.groupBy, ...r.metrics], ...t.map((x) => [x.k, ...x.vals])], r.name, label);
+    show(`Downloaded "${r.name}" (${r.format})`);
   };
   const loadReport = (r: { name: string; metrics: string[]; groupBy: string; filters: CFilters }) => { setMetrics(r.metrics); setGroupBy(r.groupBy); setCf(r.filters); setRname(r.name); };
   const downloadRun = (r: RunRec) => { const t = customTable(filterOrders(orders, r.filters), r.metrics, r.groupBy); downloadCsv(`${r.name.replace(/\W+/g, "-").toLowerCase()}.csv`, [[r.groupBy, ...r.metrics], ...t.map((x) => [x.k, ...x.vals])]); show(`Downloaded "${r.name}"`); };
@@ -289,6 +300,8 @@ export default function Reports() {
         <DateRangePicker value={range} onChange={(r) => { setRange(r); show(`Date range set: ${r.preset === "All Time" ? "All Time" : `${fmtShort(r.from)} – ${fmtShort(r.to)}`}`); }} />
         <button onClick={() => canCompare && setCompare(!compare)} aria-pressed={cmp} disabled={!canCompare} title={canCompare ? "Compare with the previous period of equal length" : "Pick a bounded date range to compare"} className={cx("inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-bold disabled:opacity-40", cmp ? "border-brand bg-brand-soft text-brand" : "border-line bg-white hover:bg-brand-soft")}><GitCompareArrows className="size-4" />Compare to previous period</button>
         <button onClick={printIt} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Printer className="size-4" />Print / PDF</button>
+        <button onClick={() => void exportAs("Excel")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Download className="size-4" />Excel</button>
+        <button onClick={() => void exportAs("PDF")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-[13px] font-bold hover:bg-brand-soft"><Download className="size-4" />PDF</button>
         <button onClick={exportCsv} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-md shadow-brand/25 hover:bg-brand-dark"><Download className="size-4" />Export CSV</button>
       </PageHeader>
       {cmp && <p data-testid="compare-note" className="-mt-2 mb-3 text-xs text-sub">Comparing {label} with {fmtShort(toD(prevFrom))} – {fmtShort(toD(prevTo))}{simulated ? ". No earlier orders exist in the demo data, so the previous period is simulated." : "."} Dashed series show the previous period.</p>}
@@ -451,7 +464,8 @@ export default function Reports() {
             <ul className="space-y-2">{scheds.map((r) => (
               <li key={r.id} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-[13px]">
                 <span className="flex-1"><b>{r.name}</b><span className="block text-xs text-sub">{r.freq}{r.freq !== "Daily" ? ` (${r.day})` : ""} at {r.time} · {r.format} · {r.to}</span></span>
-                <button aria-label={`Remove schedule ${r.name}`} onClick={() => { const n = scheds.filter((x) => x.id !== r.id); setScheds(n); lsSet("albumpro.reports.scheduled", n); show(`Schedule removed for "${r.name}"`); }} className="text-rose-600"><Trash2 className="size-4" /></button>
+                <button aria-label={`Download ${r.name} now`} onClick={() => void runSched(r)} className="h-8 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">Download now</button>
+                <button aria-label={`Remove schedule ${r.name}`} onClick={async () => { const e = await removeSchedule(r.id); show(e ?? `Schedule removed for "${r.name}"`); }} className="text-rose-600"><Trash2 className="size-4" /></button>
               </li>))}</ul>
           </Panel>
           <Panel title={<span className="flex items-center gap-2"><History className="size-4 text-brand" />Run history</span>} bodyClassName="pt-3">
@@ -486,7 +500,7 @@ export default function Reports() {
         <button onClick={() => setSchedOpen(false)} className="h-11 px-5 text-sm font-bold">Cancel</button>
         <button onClick={saveSched} className="h-11 rounded-xl bg-brand px-5 text-sm font-bold text-white">Save schedule</button>
       </>}>
-        <p className="mb-4 text-sm text-sub">Email "{rname}" ({metrics.join(", ")} by {groupBy}) automatically (SRS 19.3).</p>
+        <p className="mb-4 text-sm text-sub">Run "{rname}" ({metrics.join(", ")} by {groupBy}) on a schedule (SRS 19.3). When it comes due, the recipients who have an AlbumPro login get a notification with a link to download it; email delivery follows once a messaging provider is connected.</p>
         <Field label="Frequency"><Combobox options={["Daily", "Weekly", "Monthly"].map((x) => ({ value: x, label: x }))} value={sf.freq} onChange={(v) => setSf({ ...sf, freq: v, day: v === "Weekly" ? "Monday" : "1st" })} /></Field>
         {sf.freq !== "Daily" && <Field label={sf.freq === "Weekly" ? "Day of week" : "Day of month"}><Combobox options={(sf.freq === "Weekly" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ["1st", "5th", "10th", "15th", "Last day"]).map((x) => ({ value: x, label: x }))} value={sf.day} onChange={(v) => setSf({ ...sf, day: v })} /></Field>}
         <Field label="Time"><input type="time" className={inputCls} value={sf.time} onChange={(e) => setSf({ ...sf, time: e.target.value })} /></Field>
