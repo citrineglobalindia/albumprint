@@ -503,14 +503,21 @@ export default function Masters() {
 }
 
 /* ───────────── SRS §3.2 Pricing Rules (persisted; read by lib/pricing.ts and the New Order wizard) ───────────── */
-type MapKey = "albumTypes" | "paper" | "covers" | "lamination" | "boxes" | "finishes";
+type MapKey = "albumTypes" | "sizes" | "binding" | "paper" | "covers" | "lamination" | "boxes" | "finishes";
+type ListKey = "workGroups" | "eventTypes";
 const MAP_SECTIONS: { key: MapKey; title: string; unit: string; hint: string }[] = [
   { key: "albumTypes", title: "Album types", unit: "per copy", hint: "Base price per album copy" },
+  { key: "sizes", title: "Album sizes", unit: "per copy", hint: "Add-on per copy for each size; the size list in New Order comes from here" },
+  { key: "binding", title: "Binding", unit: "per copy", hint: "Add-on per copy; the binding list in New Order comes from here" },
   { key: "paper", title: "Paper (per sheet)", unit: "per sheet", hint: "Charged per sheet per copy" },
   { key: "covers", title: "Cover types", unit: "per copy", hint: "Add-on per copy" },
   { key: "lamination", title: "Lamination", unit: "per copy", hint: "Add-on per copy" },
   { key: "boxes", title: "Boxes", unit: "per copy", hint: "Add-on per copy" },
   { key: "finishes", title: "Finishes", unit: "per copy", hint: "Add-on per copy" },
+];
+const LIST_SECTIONS: { key: ListKey; title: string; hint: string }[] = [
+  { key: "workGroups", title: "Work groups", hint: "Options in the Work Group dropdown (no price)" },
+  { key: "eventTypes", title: "Event types", hint: "Options in the Event Type dropdown (no price)" },
 ];
 const SCALARS: { key: "designCharge" | "gradingPerImage" | "gstPct" | "discountApprovalPct"; label: string; unit: string; max?: number; hint: string }[] = [
   { key: "designCharge", label: "Design charge", unit: "INR / order", hint: "Applied when the order includes design (ALB-FR-0033)" },
@@ -524,7 +531,15 @@ function PricingRules({ show }: { show: (m: string) => void }) {
   const [d, setD] = useState<PricingSnapshot>(saved);
   const [adding, setAdding] = useState<Record<string, { name: string; price: string }>>({});
   const [errs, setErrs] = useState<Record<string, string>>({});
+  const [newItem, setNewItem] = useState<Record<string, string>>({});
   const dirty = JSON.stringify(d) !== JSON.stringify(saved);
+  const addListItem = (k: ListKey) => {
+    const v = (newItem[k] ?? "").trim();
+    if (!v) { setErrs((e) => ({ ...e, [k]: "Enter a name" })); return; }
+    if (d[k].some((x) => x.toLowerCase() === v.toLowerCase())) { setErrs((e) => ({ ...e, [k]: "That name already exists" })); return; }
+    setD((x) => ({ ...x, [k]: [...x[k], v] })); setNewItem((s) => ({ ...s, [k]: "" })); setErrs((e) => ({ ...e, [k]: "" }));
+  };
+  const removeListItem = (k: ListKey, v: string) => { if (d[k].length <= 1) { setErrs((e) => ({ ...e, [k]: "Keep at least one option" })); return; } setD((x) => ({ ...x, [k]: x[k].filter((i) => i !== v) })); setErrs((e) => ({ ...e, [k]: "" })); };
 
   const setPrice = (sec: MapKey, name: string, v: string) => setD((x) => ({ ...x, [sec]: { ...x[sec], [name]: v === "" ? ("" as unknown as number) : Number(v) } }));
   const remove = (sec: MapKey, name: string) => setD((x) => { const m = { ...x[sec] }; delete m[name]; return { ...x, [sec]: m }; });
@@ -551,6 +566,7 @@ function PricingRules({ show }: { show: (m: string) => void }) {
       const names = new Set([...Object.keys(saved[s.key]), ...Object.keys(d[s.key])]);
       names.forEach((n) => { const a = saved[s.key][n], b = d[s.key][n]; if (a !== b) changes.push([`${s.title}: ${n}`, a === undefined ? "(new)" : String(a), b === undefined ? "(removed)" : String(b)]); });
     });
+    LIST_SECTIONS.forEach((s) => { const a = new Set(saved[s.key]), b = new Set(d[s.key]); d[s.key].forEach((n) => { if (!a.has(n)) changes.push([`${s.title}: ${n}`, "(new)", "added"]); }); saved[s.key].forEach((n) => { if (!b.has(n)) changes.push([`${s.title}: ${n}`, "listed", "(removed)"]); }); });
     SCALARS.forEach((s) => { if (saved[s.key] !== d[s.key]) changes.push([s.label, String(saved[s.key]), String(d[s.key])]); });
     applyPricing(d);
     changes.slice(0, 40).forEach(([what, from, to]) => logAudit({ entity: "pricing", entityId: what, action: "price_change", from, to }));
@@ -602,6 +618,22 @@ function PricingRules({ show }: { show: (m: string) => void }) {
             </Panel>
           );
         })}
+        {LIST_SECTIONS.map((s) => (
+          <Panel key={s.key} title={s.title} subtitle={s.hint}>
+            <ul className="flex flex-wrap gap-2">
+              {d[s.key].map((v) => (
+                <li key={v} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-slate-50 py-1 pl-3 pr-1.5 text-[13px] font-semibold">{v}
+                  <button aria-label={`Remove ${v} from ${s.title}`} onClick={() => removeListItem(s.key, v)} className="grid size-5 place-items-center rounded-full text-sub hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-3" /></button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+              <input aria-label={`New ${s.title} name`} placeholder="New option" value={newItem[s.key] ?? ""} onChange={(e) => setNewItem({ ...newItem, [s.key]: e.target.value })} onKeyDown={(e) => e.key === "Enter" && addListItem(s.key)} className="h-9 min-w-0 flex-1 rounded-lg border border-line px-2 text-[13px]" />
+              <button onClick={() => addListItem(s.key)} className="grid size-9 place-items-center rounded-lg border border-line text-brand hover:bg-brand-soft" aria-label={`Add ${s.title}`}><Plus className="size-4" /></button>
+            </div>
+            {errs[s.key] && <span className={ERR}>{errs[s.key]}</span>}
+          </Panel>
+        ))}
       </div>
     </div>
   );

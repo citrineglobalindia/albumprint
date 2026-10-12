@@ -19,7 +19,7 @@ interface Draft {
 }
 const iso = (n = 0) => { const d = new Date("2026-10-03"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const blank = (): Draft => ({
-  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", workGroup: "", eventName: "", event: "Wedding", eventDate: "", priority: "Normal", instructions: "",
+  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", workGroup: "", eventName: "", event: EVENT_TYPES.includes("Wedding") ? "Wedding" : EVENT_TYPES[0] ?? "Wedding", eventDate: "", priority: "Normal", instructions: "",
   albums: [blankAlbum()], images: 300, discountPct: 0,
 });
 const COUPLE_EVENTS = (e: string) => e.includes("Wedding") || e === "Engagement" || e === "Reception";
@@ -263,7 +263,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 }
 
 function PriceCard({ p, designed, albums, names }: { p: ReturnType<typeof priceAlbums>; designed: boolean; albums: AlbumSpec[]; names: string[] }) {
-  const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Cover, lamination, box & finishes", p.addons], ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
+  const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Size, binding, cover, lamination, box & finishes", p.addons], ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm">
       <div className="mb-2 font-extrabold">Price breakup</div>
