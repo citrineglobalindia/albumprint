@@ -4,7 +4,7 @@ import { Check, ChevronLeft, ChevronRight, X, UserPlus, Palette, Printer, PartyP
 import { cx, Field, inputCls, Toggle } from "./ui";
 import { Combobox } from "./controls";
 import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type Priority } from "../lib/data";
-import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, type AlbumSpec } from "../lib/pricing";
+import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, WORK_GROUPS, type AlbumSpec } from "../lib/pricing";
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
@@ -14,12 +14,12 @@ import { dbCreateCustomer, dbCreateOrder } from "../lib/db/orders";
 // SRS §4.3 (order fields), §5 (workflow routing), §6.1 (album spec), §3.2 (pricing).
 interface Draft {
   customerId: string; newCustomer: { studio: string; mobile: string } | null;
-  workflow: "Design + Printing" | "Printing"; orderDate: string; due: string; couple: string; eventName: string; event: string; eventDate: string; priority: Priority; instructions: string;
+  workflow: "Design + Printing" | "Printing"; orderDate: string; due: string; couple: string; workGroup: string; eventName: string; event: string; eventDate: string; priority: Priority; instructions: string;
   albums: AlbumSpec[]; images: number; discountPct: number;     // each album has its own specification; images + discount apply to the whole order
 }
 const iso = (n = 0) => { const d = new Date("2026-10-03"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const blank = (): Draft => ({
-  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", eventName: "", event: "Wedding", eventDate: "", priority: "Normal", instructions: "",
+  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", workGroup: "", eventName: "", event: "Wedding", eventDate: "", priority: "Normal", instructions: "",
   albums: [blankAlbum()], images: 300, discountPct: 0,
 });
 const COUPLE_EVENTS = (e: string) => e.includes("Wedding") || e === "Engagement" || e === "Reception";
@@ -86,7 +86,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
         }
         if (!customerUid) { setSaving(false); show("Choose a customer"); return; }
         const order = await dbCreateOrder({
-          customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: eventTitle, eventType: d.event, couple: d.couple.trim() || undefined, eventDate: d.eventDate || undefined,
+          customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: eventTitle, eventType: d.event, couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, eventDate: d.eventDate || undefined,
           orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: named,
         });
         setSaving(false);
@@ -103,7 +103,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     }
     const order: Order = {
       id: `IDP${String(n).padStart(5, "0")}`, customer: custName, mobile: d.newCustomer?.mobile ?? cust?.mobile ?? "", event: d.event, workflow: d.workflow, size: d.albums[0]!.size, pages: d.albums[0]!.sheets,
-      couple: d.couple.trim() || undefined, albums: named,
+      couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, albums: named,
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: p.total, paid: 0, progress: 0,
     };
     ORDERS.unshift(order);
@@ -166,6 +166,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
               {COUPLE_EVENTS(d.event) && <div className="md:col-span-2"><Field label="Couple Name" hint="Names of the couple, e.g. Rahul & Priya"><input className={inputCls} value={d.couple} onChange={(e) => set("couple", e.target.value)} placeholder="e.g. Rahul & Priya" /></Field></div>}
               <Field label="Event Name" hint={!d.eventName && d.couple.trim() ? `Will be saved as “${eventTitle}”` : undefined}><input className={inputCls} value={d.eventName} onChange={(e) => set("eventName", e.target.value)} placeholder={d.couple.trim() ? eventTitle : "e.g. Rahul & Priya Wedding"} /></Field>
               <Field label="Event Type"><select className={inputCls} value={d.event} onChange={(e) => set("event", e.target.value)}>{EVENT_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field>
+              <Field label="Work Group"><select className={inputCls} value={d.workGroup} onChange={(e) => set("workGroup", e.target.value)}><option value="">Select</option>{WORK_GROUPS.map((x) => <option key={x}>{x}</option>)}</select></Field>
               <Field label="Event Date"><input type="date" className={inputCls} value={d.eventDate} onChange={(e) => set("eventDate", e.target.value)} /></Field>
               <Field label="Priority" required><div className="flex gap-1.5">{PRIORITIES.filter((x) => x !== "Low").map((x) => <button key={x} onClick={() => set("priority", x)} className={cx("h-10 flex-1 rounded-lg border text-[13px] font-bold", d.priority === x ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{x}</button>)}</div></Field>
               <Field label="Order Date" required><input type="date" className={inputCls} value={d.orderDate} onChange={(e) => set("orderDate", e.target.value)} /></Field>
@@ -227,7 +228,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
               <div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  {[["Customer", custName], ["Order type", d.workflow], ["Couple", d.couple || "—"], ["Event", `${d.event}${eventTitle ? ` · ${eventTitle}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+                  {[["Customer", custName], ["Order type", d.workflow], ["Work group", d.workGroup || "—"], ["Couple", d.couple || "—"], ["Event", `${d.event}${eventTitle ? ` · ${eventTitle}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
                 </dl>
                 <div className="mt-4 space-y-3">
                   {d.albums.map((a, i) => (

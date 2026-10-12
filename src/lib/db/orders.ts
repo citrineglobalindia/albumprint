@@ -43,6 +43,7 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
     qc: r.qc_status === "pending" ? undefined : r.qc_status,
   };
   if (r.couple_name) o.couple = r.couple_name;
+  if (r.work_group) o.workGroup = r.work_group;
   const al: Row[] | undefined = r.order_albums;
   if (al?.length) o.albums = [...al].sort((a, b) => a.position - b.position).map(albumFromRow);
   if (r.sla_paused_at) { o.slaPausedAt = r.sla_paused_at; o.slaPauseReason = r.sla_pause_reason ?? undefined; }
@@ -106,12 +107,12 @@ export async function dbUpdateCustomer(code: string, patch: Partial<NewCustomer>
 
 export interface NewOrder {
   customerUid: string; type: "design_printing" | "printing_only"; priority: Priority; eventName?: string; eventType?: string; bride?: string; groom?: string; eventDate?: string;
-  orderDate: string; dueDate: string; total: number; instructions?: string; couple?: string;
+  orderDate: string; dueDate: string; total: number; instructions?: string; couple?: string; workGroup?: string;
   albums: AlbumSpec[];                 // at least one; the first is also written to order_specs
 }
 export async function dbCreateOrder(n: NewOrder): Promise<Order | null> {
   const row = await q<Row>("Creating order", sb().from("orders").insert({
-    customer_id: n.customerUid, type: n.type, priority: priorityToDb(n.priority), event_name: n.eventName || null, event_type: n.eventType || null, bride: n.bride || null, groom: n.groom || null, couple_name: n.couple || null,
+    customer_id: n.customerUid, type: n.type, priority: priorityToDb(n.priority), event_name: n.eventName || null, event_type: n.eventType || null, bride: n.bride || null, groom: n.groom || null, couple_name: n.couple || null, work_group: n.workGroup || null,
     event_date: n.eventDate || null, order_date: n.orderDate, due_date: n.dueDate, total: n.total, special_instructions: n.instructions || null, code: "pending",
   }).select().single() as never);
   if (!row) return null;
@@ -125,6 +126,6 @@ export async function dbCreateOrder(n: NewOrder): Promise<Order | null> {
   if (sp === null && false) return null;
   const cust = new Map(CUSTOMERS.filter((c) => c.uid).map((c) => [c.uid!, c]));
   const { data: me } = await sb().auth.getUser();
-  const order = orderFromRow({ ...row, order_specs: [{ album_size: a.size, pages: a.sheets }], order_albums: n.albums.map((x, i) => albumToRow(row.id, i + 1, x)), couple_name: n.couple }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
+  const order = orderFromRow({ ...row, order_specs: [{ album_size: a.size, pages: a.sheets }], order_albums: n.albums.map((x, i) => albumToRow(row.id, i + 1, x)), couple_name: n.couple, work_group: n.workGroup }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
   ORDERS.unshift(order); notify(); return order;
 }

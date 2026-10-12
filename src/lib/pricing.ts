@@ -9,6 +9,7 @@ export const COVERS: Record<string, number> = { Leatherette: 0, Acrylic: 1500, "
 export const LAMINATION: Record<string, number> = { None: 0, Matte: 300, Gloss: 300, Texture: 450 };
 export const BINDING = ["Lay-flat", "Flush mount", "Standard", "Custom"];
 export const BOXES: Record<string, number> = { None: 0, Standard: 400, Premium: 900, Wooden: 1800, Acrylic: 1500, Custom: 1500 };
+export const WORK_GROUPS = ["Photo Book", "Amateur", "Professional", "Rework", "Company Mistakes"];
 export const EVENT_TYPES = ["Wedding", "Pre Wedding", "Reception", "Engagement", "Baby", "Corporate", "Birthday", "Other"];
 export const FINISHES: Record<string, number> = { "UV Printing": 600, Foiling: 800, Embossing: 700 };
 export let DESIGN_CHARGE = 4000;       // applies when order type includes design (ALB-FR-0033)

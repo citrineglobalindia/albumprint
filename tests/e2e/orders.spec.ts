@@ -31,6 +31,7 @@ test.describe("orders", () => {
     await dlg.getByRole("button", { name: "Next" }).click();
     await expect(dlg.getByText(/^Total/)).toHaveCount(0);                       // no price before the album spec exists
     await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
+    await dlg.getByLabel("Work Group").selectOption("Photo Book");
     await dlg.getByRole("button", { name: "Next" }).click();
     // album 1 stays as the default; album 2 is a different spec
     await dlg.getByRole("button", { name: "Add album" }).click();
@@ -49,6 +50,7 @@ test.describe("orders", () => {
     await expect(page.getByText("Print Specification · 2 albums")).toBeVisible();
     await expect(page.getByText("Engagement Album · Photobook")).toBeVisible();
     await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
+    await expect(page.getByText("Photo Book").first()).toBeVisible();
   });
 
   test("a new customer + order persist, customers list included", async ({ page }) => {
