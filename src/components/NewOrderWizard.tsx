@@ -211,7 +211,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 
         <footer className="flex items-center justify-between border-t border-line px-6 py-4">
           <button onClick={step === 0 ? onClose : () => setStep(step - 1)} className="inline-flex h-10 items-center gap-1 rounded-lg border border-line px-4 text-sm font-bold hover:bg-slate-50">{step > 0 && <ChevronLeft className="size-4" />}{step === 0 ? "Cancel" : "Back"}</button>
-          <span className="text-sm text-sub">Total <b className="ml-1 text-lg text-ink">{inr(p.total)}</b></span>
+          {step >= 2 ? <span className="text-sm text-sub">Total <b className="ml-1 text-lg text-ink">{inr(p.total)}</b></span> : <span />}
           {step < STEPS.length - 1
             ? <button onClick={next} className="inline-flex h-10 items-center gap-1 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Next<ChevronRight className="size-4" /></button>
             : <button onClick={create} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"><Check className="size-4" />{saving ? "Saving…" : "Create Order"}</button>}
