@@ -1,0 +1,40 @@
+# Nightly off-site backup of the AlbumPro database (Supabase, Postgres 17). Needs one repository secret: SUPABASE_DB_URL
+# (Supabase dashboard → Connect → "Session pooler" connection string, with your database password filled in).
+# The dump is stored as a workflow artifact for 30 days. Keep this repository PRIVATE: the dump contains customer data.
+name: Nightly database backup
+on:
+  schedule:
+    - cron: "17 20 * * *"        # 20:17 UTC = 01:47 IST
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the secret is set
+        env: { DB_URL: "${{ secrets.SUPABASE_DB_URL }}" }
+        run: |
+          if [ -z "$DB_URL" ]; then echo "::error::Add the repository secret SUPABASE_DB_URL (see supabase/BACKUP.md)"; exit 1; fi
+      - name: Install the Postgres 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsS -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Dump
+        env: { DB_URL: "${{ secrets.SUPABASE_DB_URL }}" }
+        run: |
+          set -euo pipefail
+          mkdir out
+          pg_dump "$DB_URL" --no-owner --no-privileges --schema=public --format=custom --file=out/public.dump
+          pg_dump "$DB_URL" --no-owner --no-privileges --data-only --table=auth.users --table=auth.identities --file=out/auth-users.sql
+          pg_restore --list out/public.dump > out/public.list
+          ls -l out
+          # a dump that is suspiciously small means something went wrong
+          test "$(stat -c %s out/public.dump)" -gt 20000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: albumpro-db-${{ github.run_id }}
+          path: out/
+          retention-days: 30

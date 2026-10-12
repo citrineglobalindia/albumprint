@@ -87,6 +87,7 @@ const SECTIONS: SectionDef[] = [
       { k: "pw_min", l: "Minimum password length", t: "slider", min: 6, max: 20, unit: "characters" }, { k: "pw_exp", l: "Password expiry", t: "slider", min: 0, max: 365, step: 15, unit: "days", zero: "Never" },
       { k: "pw_cx", l: "", t: "toggle", hint: "Require upper, lower, number and symbol" }, { k: "pw_hist", l: "", t: "toggle", hint: "Block reuse of last 5 passwords" }] }] },
   { key: "data", label: "Data & Storage", icon: Database, title: "Data & Storage", desc: "Saved demo data, backup, restore and audit summary", keywords: "backup restore export import reset local storage audit summary" },
+  { key: "backup", label: "Backups", icon: Database, title: "Backups", desc: "Download a full copy of your data and see how automatic backups work", keywords: "backup restore export download database zip nightly" },
   { key: "audit", label: "Activity Log", icon: History, title: "Activity Log", desc: "Audit trail of sensitive actions" },
 ];
 
@@ -316,7 +317,7 @@ export default function Settings() {
   }, [dirty]);
 
   const set = (k: string, val: Val) => { setV((p) => ({ ...p, [k]: val })); if (errs[k]) setErrs((e) => { const c = { ...e }; delete c[k]; return c; }); };
-  const matches = useMemo(() => SECTIONS.filter((x) => !(backendOn && (x.key === "data" || x.key === "audit")) && (!q.trim() || matchSection(x, q.trim().toLowerCase()))), [q]);
+  const matches = useMemo(() => SECTIONS.filter((x) => !(backendOn && (x.key === "data" || x.key === "audit")) && !(!backendOn && x.key === "backup") && (!q.trim() || matchSection(x, q.trim().toLowerCase()))), [q]);
   useEffect(() => { if (matches.length && !matches.some((x) => x.key === sec)) setSec(matches[0]!.key); }, [matches, sec]);
   const s = SECTIONS.find((x) => x.key === sec)!;
   const str = (k: string) => String(v[k] ?? "");
@@ -411,6 +412,7 @@ export default function Settings() {
           {sec === "workflow" && <StageEditor value={str("wf_stages")} onChange={(x) => set("wf_stages", x)} error={errs.wf_stages} />}
           {sec === "workflow" && <BusinessHours v={v} set={set} errs={errs} />}
           {sec === "data" && <DataStorage show={show} />}
+          {sec === "backup" && <BackupPanel show={show} />}
           {sec === "audit" && (
             <div>
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -622,4 +624,41 @@ function DataStorage({ show }: { show: (m: string) => void }) {
       <div className="mt-3 flex flex-wrap gap-2">{ent.map(([k, n]) => <Pill key={k} tone="blue">{k}: {n}</Pill>)}{ent.length === 0 && <span className="text-xs text-sub">No events recorded yet.</span>}</div>
     </div>
   </>);
+}
+
+function BackupPanel({ show }: { show: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState("");
+  const [last, setLast] = useState(() => { try { return localStorage.getItem("albumpro.lastBackup"); } catch { return null; } });
+  const run = async () => {
+    setBusy(true);
+    try {
+      const { downloadBackup } = await import("../lib/db/backup");
+      const r = await downloadBackup((i, n, t) => setProg(`${i + 1} / ${n}: ${t}`));
+      setLast(new Date().toISOString());
+      show(r.skipped.length ? `Backup downloaded with ${r.skipped.length} table(s) skipped (${r.skipped[0]})` : `Backup downloaded: ${r.tables} tables, ${r.rows.toLocaleString("en-IN")} rows`);
+    } catch (e) { show(`Backup failed: ${String((e as Error).message ?? e)}`); }
+    setBusy(false); setProg("");
+  };
+  return (
+    <div className="space-y-4" data-testid="backup-panel">
+      <div className="rounded-2xl border border-line p-5">
+        <h3 className="text-base font-extrabold">Download a backup now</h3>
+        <p className="mt-1 text-xs text-sub">One zip with every table as a JSON file (orders, customers, costing, invoices, payments, audit log, settings and more). Only an admin can download it. Uploaded files stay in Storage and are not in the zip.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button onClick={() => void run()} disabled={busy} data-testid="backup-now" className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-[13px] font-bold text-white hover:bg-brand-dark disabled:opacity-50"><Download className="size-4" />{busy ? "Preparing…" : "Download backup"}</button>
+          <span className="text-xs text-sub">{busy ? prog : last ? `Last downloaded ${new Date(last).toLocaleString("en-IN")}` : "Not downloaded from this browser yet"}</span>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-line p-5 text-sm">
+        <h3 className="text-base font-extrabold">Automatic nightly backup</h3>
+        <p className="mt-1 text-xs text-sub">A scheduled job in the code repository (GitHub Actions) takes a full database dump every night and keeps it for 30 days. It needs one secret, <b>SUPABASE_DB_URL</b>, added once in the repository settings. The steps, and how to restore a dump, are in <code>supabase/BACKUP.md</code>.</p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-sub">
+          <li>Supabase&apos;s own daily backups are included on paid plans (Pro and above); the free plan has none, which is why this job exists.</li>
+          <li>Uploaded files (Storage bucket <code>order-files</code>) are copied separately; see the guide.</li>
+          <li>Test a restore into a scratch project at least once a quarter.</li>
+        </ul>
+      </div>
+    </div>
+  );
 }
