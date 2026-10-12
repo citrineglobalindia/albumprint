@@ -49,7 +49,7 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
     const pos = new Map<string, number>((r.order_albums ?? []).map((a: Row) => [a.id as string, a.position as number]));
     const lines = [...(r.album_lines ?? [])].sort((a: Row, b: Row) => (pos.get(a.album_id) ?? 0) - (pos.get(b.album_id) ?? 0) || a.position - b.position).map((l: Row): CostLine => {
       const cost = Array.isArray(l.album_line_costs) ? l.album_line_costs[0] : l.album_line_costs;
-      return { id: l.id, albumPos: pos.get(l.album_id) ?? 1, itemId: l.item_id ?? undefined, name: l.name, unit: l.unit, qty: Number(l.qty), countsSheets: l.counts_sheets, remarks: l.remarks ?? undefined, dimension: l.dimension ?? undefined, sell: Number(l.sell_price), cost: cost ? Number(cost.cost_price) : undefined };
+      return { id: l.id, albumPos: pos.get(l.album_id) ?? 1, itemId: l.item_id ?? undefined, name: l.name, unit: l.unit, qty: Number(l.qty), countsSheets: l.counts_sheets, section: l.section ?? undefined, remarks: l.remarks ?? undefined, dimension: l.dimension ?? undefined, sell: Number(l.sell_price), cost: cost ? Number(cost.cost_price) : undefined };
     });
     o.costing = { lines, designCharge: Number(oc.design_charge), gradingImages: Number(oc.grading_images), gradingRate: Number(oc.grading_rate), discountPct: Number(oc.discount_pct), gstPct: Number(oc.gst_pct), finalized: !!oc.finalized_at };
   }

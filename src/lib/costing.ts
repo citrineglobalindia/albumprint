@@ -32,7 +32,7 @@ export const allocated = (c: Costing, albumPos: number) => c.lines.filter((l) =>
 export const countsSheetsFor = (name: string) => /^(PAPER|COVER|MINI BOOK|MINI BOOK COVER|CUT PAD|PAD)\b/i.test(name.trim());
 export const newLineId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `L${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`);
 
-type Backend = { save: (o: Order, c: Costing) => Promise<string | null>; finalize: (o: Order) => Promise<{ total: number } | { error: string }>; reopen: (o: Order) => Promise<string | null> };
+type Backend = { setSheets: (o: Order, pos: number, sheets: number) => Promise<string | null>; save: (o: Order, c: Costing) => Promise<string | null>; finalize: (o: Order) => Promise<{ total: number } | { error: string }>; reopen: (o: Order) => Promise<string | null> };
 let backend: Backend | null = null;
 export const registerCostingBackend = (b: Backend) => { backend = b; };
 
@@ -62,6 +62,19 @@ export async function saveCosting(orderId: string, c: Costing): Promise<Out> {
   patchOrder(o.id, { costing: next });
   logAudit({ entity: "order", entityId: o.id, action: "costing_saved", detail: `${next.lines.length} lines · ${money(costTotals(next).total)}` });
   return ok("Costing saved");
+}
+
+/** The admin can correct an album's total sheet count while costing it. */
+export async function setAlbumSheets(orderId: string, pos: number, sheets: number): Promise<Out> {
+  if (!isAdmin()) return no("Only an admin can change the sheet count");
+  const o = ord(orderId); if (!o?.albums?.[pos - 1]) return no("Album not found");
+  if (o.costing?.finalized || o.closed) return no("The costing is finalized: reopen it to change the sheet count");
+  if (!Number.isInteger(sheets) || sheets < 1 || sheets > 500) return no("Enter a whole number of sheets from 1 to 500");
+  if (backendOn) { if (!backend) return no("Not connected to the database"); const e = await backend.setSheets(o, pos, sheets); if (e) return no(e); }
+  const albums = o.albums.map((a, i) => (i === pos - 1 ? { ...a, sheets } : a));
+  patchOrder(o.id, { albums, ...(pos === 1 ? { pages: sheets } : {}) });
+  logAudit({ entity: "order", entityId: o.id, action: "sheets_changed", detail: `Album ${pos}: ${sheets} sheets` });
+  return ok(`Album ${pos} now has ${sheets} sheets`);
 }
 
 export async function finalizeCosting(orderId: string): Promise<Out> {

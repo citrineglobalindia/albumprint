@@ -27,10 +27,16 @@ registerCostingBackend({
     const seq = new Map<number, number>();
     const rows = c.lines.map((l) => {
       const p = (seq.get(l.albumPos) ?? 0) + 1; seq.set(l.albumPos, p);
-      return { id: l.id, order_id: oid, album_id: albumId.get(l.albumPos)!, position: p, item_id: l.itemId ?? null, name: l.name, unit: l.unit, qty: l.qty, counts_sheets: l.countsSheets, remarks: l.remarks || null, dimension: l.dimension || null, sell_price: l.sell };
+      return { id: l.id, order_id: oid, album_id: albumId.get(l.albumPos)!, position: p, item_id: l.itemId ?? null, name: l.name, unit: l.unit, qty: l.qty, counts_sheets: l.countsSheets, section: l.section ?? null, remarks: l.remarks || null, dimension: l.dimension || null, sell_price: l.sell };
     }).sort((a, b) => a.position - b.position);
     e = msg((await sb().from("album_lines").upsert(rows, { onConflict: "id" })).error); if (e) return e;
     e = msg((await sb().from("album_line_costs").upsert(c.lines.map((l) => ({ line_id: l.id, cost_price: l.cost ?? 0 })), { onConflict: "line_id" })).error);
+    return e;
+  },
+  async setSheets(o: Order, pos: number, sheets: number) {
+    const oid = orderUid(o); if (!oid) return "This order has not been saved yet";
+    let e = msg((await sb().from("order_albums").update({ pages: sheets }).eq("order_id", oid).eq("position", pos)).error);
+    if (!e && pos === 1) e = msg((await sb().from("order_specs").update({ pages: sheets }).eq("order_id", oid)).error);
     return e;
   },
   async finalize(o: Order) {

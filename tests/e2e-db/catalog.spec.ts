@@ -46,15 +46,18 @@ test("admin maintains the catalog, costs a reception order, finalizes and invoic
   await costing.getByRole("button", { name: "Add from catalog" }).click();
   const pick = page.getByRole("dialog", { name: "Choose product" });
   await pick.getByRole("button", { name: /^BOX/ }).click();
-  await pick.getByRole("button", { name: /DB TEST/ }).click();
+  await pick.getByRole("button", { name: new RegExp(`DB TEST ${TAG}`) }).click();
   await pick.getByLabel("Quantity").fill("2");
   await pick.getByRole("button", { name: "Add Item" }).click();
-  await costing.getByRole("button", { name: "Add custom item" }).click();
-  await costing.getByLabel("Item name").last().fill("PAPER-DB SHEETS");
-  await costing.getByLabel(/^Quantity of PAPER-DB/).fill("30");
-  await costing.getByLabel(/^Selling price of PAPER-DB/).fill("80");
+  await costing.getByRole("region", { name: "Inside pages" }).getByRole("button", { name: "Choose sheet type" }).click();
+  const pick2 = page.getByRole("dialog", { name: "Choose product" });
+  await pick2.getByRole("button", { name: "Not in the catalog? Enter a custom item" }).click();
+  await pick2.getByLabel("Custom item name").fill("PAPER-DB SHEETS");
+  await pick2.getByLabel("Custom item price").fill("80");
+  await pick2.getByRole("button", { name: "Next" }).click();
+  await expect(pick2.getByLabel("Quantity")).toHaveValue("30");                          // defaults to the unassigned sheets
+  await pick2.getByRole("button", { name: "Add Item" }).click();
   await costing.getByLabel(/^Purchase price of PAPER-DB/).fill("60");
-  await costing.getByRole("checkbox").last().check();
   await costing.getByLabel("Design charge (₹)").fill("0");
   await expect(costing.getByTestId("alloc-1")).toHaveText("30 / 30 sheets assigned");
   await page.getByRole("button", { name: "Save costing" }).click();
@@ -65,6 +68,7 @@ test("admin maintains the catalog, costs a reception order, finalizes and invoic
   expect(sql(`select count(*) from album_lines where order_id = '${oid}'`)).toBe("2");
   expect(sql(`select cost_price from album_line_costs where line_id = (select id from album_lines where order_id = '${oid}' and name = 'PAPER-DB SHEETS')`)).toBe("60.00");
   expect(sql(`select name || ':' || sell_price from album_lines where order_id = '${oid}' and item_id is not null`)).toBe(`${PRODUCT}:1200.00`);
+  expect(sql(`select section || ':' || qty from album_lines where order_id = '${oid}' and name = 'PAPER-DB SHEETS'`)).toBe("Inside pages:30.00");
 
   await page.getByRole("button", { name: "Finalize costing" }).click();
   await expect(page.getByText(/Costing finalized: order total ₹5,664/).first()).toBeVisible();

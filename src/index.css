@@ -69,3 +69,10 @@ main section, main .min-w-0 { min-width: 0; }
   .app-main { overflow: visible !important; padding: 0 !important; }
   section { break-inside: avoid; box-shadow: none !important; }
 }
+
+/* ── album sheet planner: the stack of leaves animates as sheets are assigned ── */
+@keyframes leaf-in { from { transform: scaleY(0.15) translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.leaf { transform-origin: bottom; animation: leaf-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.album-stack { perspective: 700px; }
+.album-stack-inner { transform: rotateX(8deg) rotateY(-22deg); transform-style: preserve-3d; transition: transform 0.4s ease; }
+.album-stack:hover .album-stack-inner { transform: rotateX(4deg) rotateY(-10deg); }

@@ -77,7 +77,7 @@ export const CUSTOMERS: Customer[] = customerSeed.map(([name, studio, city, emai
 }));
 
 /** One priced line of an album's costing (cover, inside paper, box…), chosen by the admin from the product catalog. */
-export interface CostLine { id: string; albumPos: number; itemId?: string; name: string; unit: string; qty: number; countsSheets: boolean; remarks?: string; dimension?: string; sell: number; cost?: number }
+export interface CostLine { id: string; albumPos: number; itemId?: string; name: string; unit: string; qty: number; countsSheets: boolean; section?: string; remarks?: string; dimension?: string; sell: number; cost?: number }
 export interface Costing { lines: CostLine[]; designCharge: number; gradingImages: number; gradingRate: number; discountPct: number; gstPct: number; finalized?: boolean }
 export interface OrderItem { itemId?: string; name: string; unit: string; qty: number; price: number; remarks?: string }
 export interface Order {

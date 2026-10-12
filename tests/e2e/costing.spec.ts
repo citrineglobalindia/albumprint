@@ -24,31 +24,36 @@ test("admin costs two albums from the catalog, finalizes the total and generates
   await expect(costing).toBeVisible();
   await expect(costing.getByTestId("alloc-1")).toHaveText("0 / 30 sheets assigned");
 
-  // album 1: cover (1 sheet) + inside paper (29 sheets), picked by drilling down the catalog
-  await costing.getByRole("region", { name: /Costing for Asha & Ravi Wedding Album/ }).getByRole("button", { name: "Add from catalog" }).click();
-  const pick = page.getByRole("dialog", { name: "Choose product" });
-  await pick.getByRole("button", { name: /^PAPER/ }).click();
-  await pick.getByRole("button", { name: /^NT$/ }).click();
+  // album 1: the sheet count is already 30; give the front cover and the inside pages a sheet type each
+  const a1 = costing.getByRole("region", { name: /Costing for Asha & Ravi Wedding Album/ });
+  await expect(a1.locator(".leaf")).toHaveCount(30);                                   // the visual shows one leaf per sheet (unassigned ones are grey)
+  await a1.getByRole("region", { name: "Front cover" }).getByRole("button", { name: "Choose sheet type" }).click();
+  let pick = page.getByRole("dialog", { name: "Choose product" });
+  await pick.getByRole("button", { name: "Not in the catalog? Enter a custom item" }).click();
+  await pick.getByLabel("Custom item name").fill("COVER-PIXEL BUDGET COVER-PL 06");
+  await pick.getByLabel("Custom item price").fill("900");
+  await pick.getByRole("button", { name: "Next" }).click();
+  await pick.getByLabel("Quantity").fill("1");
+  await pick.getByRole("button", { name: "Add Item" }).click();
+  await a1.getByRole("region", { name: "Inside pages" }).getByRole("button", { name: "Choose sheet type" }).click();
+  pick = page.getByRole("dialog", { name: "Choose product" });
+  await pick.getByRole("button", { name: /^NT$/ }).click();                           // starts inside PAPER: NT → 125 GSM → GLOSSY
   await pick.getByRole("button", { name: /^125 GSM/ }).click();
   await pick.getByRole("button", { name: /^GLOSSY/ }).click();
   await expect(pick.getByText("Item Selected: PAPER-NT-125 GSM-GLOSSY")).toBeVisible();
-  await pick.getByLabel("Quantity").fill("29");
+  await expect(pick.getByLabel("Quantity")).toHaveValue("29");                         // defaults to the sheets still unassigned
   await pick.getByRole("button", { name: "Add Item" }).click();
-  const a1 = costing.getByRole("region", { name: /Costing for Asha & Ravi Wedding Album/ });
-  await a1.getByRole("button", { name: "Add custom item" }).click();
-  await a1.getByLabel("Item name").last().fill("COVER-PIXEL BUDGET COVER-PL 06");
-  await a1.getByLabel(/^Selling price of/).last().fill("900");
-  await a1.getByRole("checkbox").last().check();
   await expect(costing.getByTestId("alloc-1")).toHaveText("30 / 30 sheets assigned");
-  await expect(costing.getByText("₹2,175").first()).toBeVisible();                  // 29 × 75 on the paper line
+  await expect(a1.getByText("Every sheet is assigned")).toBeVisible();
+  await expect(costing.getByText("₹2,175").first()).toBeVisible();                    // 29 × 75 on the paper line
 
-  // album 2: one custom line that does not cover all 20 sheets
+  // album 2: 10 of its 20 sheets get a type, so finalizing will warn
   const a2 = costing.getByRole("region", { name: /Costing for Engagement Album/ });
-  await a2.getByRole("button", { name: "Add custom item" }).click();
-  await a2.getByLabel("Item name").fill("PAPER-TRANSPARENT");
-  await a2.getByLabel(/^Selling price of/).fill("140");
-  await a2.getByLabel(/^Quantity of/).fill("10");
-  await a2.getByRole("checkbox").check();
+  await a2.getByRole("region", { name: "Inside pages" }).getByRole("button", { name: "Choose sheet type" }).click();
+  pick = page.getByRole("dialog", { name: "Choose product" });
+  await pick.getByRole("button", { name: /^TRANSPARENT/ }).click();
+  await pick.getByLabel("Quantity").fill("10");
+  await pick.getByRole("button", { name: "Add Item" }).click();
   await costing.getByLabel("Design charge (₹)").fill("0");
   await costing.getByLabel("GST %").fill("18");
   await page.getByRole("button", { name: "Save costing" }).click();
