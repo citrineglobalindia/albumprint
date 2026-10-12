@@ -1,5 +1,5 @@
 import type { AlbumSpec } from "../pricing";
-import { ORDERS, CUSTOMERS, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
+import { ORDERS, CUSTOMERS, type OrderItem, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
 import { notify, progressFor } from "../store";
 import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
 
@@ -44,6 +44,8 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
   };
   if (r.couple_name) o.couple = r.couple_name;
   if (r.work_group) o.workGroup = r.work_group;
+  const oi: Row[] | undefined = r.order_items;
+  if (oi?.length) o.items = [...oi].sort((a, b) => a.position - b.position).map((i): OrderItem => ({ itemId: i.item_id ?? undefined, name: i.name, unit: i.unit, qty: Number(i.qty), price: Number(i.sell_price), remarks: i.remarks ?? undefined }));
   const al: Row[] | undefined = r.order_albums;
   if (al?.length) o.albums = [...al].sort((a, b) => a.position - b.position).map(albumFromRow);
   if (r.sla_paused_at) { o.slaPausedAt = r.sla_paused_at; o.slaPauseReason = r.sla_pause_reason ?? undefined; }
@@ -61,7 +63,7 @@ async function hydrate() {
   const client = sb();
   const [custRows, ordRows, staffRows] = await Promise.all([
     q<Row[]>("Loading customers", client.rpc("list_customers") as never),
-    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*)").order("created_at", { ascending: false }) as never),
+    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*), order_items(*)").order("created_at", { ascending: false }) as never),
     q<Row[]>("Loading staff", client.from("profiles").select("id,full_name") as never),
   ]);
   const customers = (custRows ?? []).map(customerFromRow);
@@ -108,6 +110,7 @@ export async function dbUpdateCustomer(code: string, patch: Partial<NewCustomer>
 export interface NewOrder {
   customerUid: string; type: "design_printing" | "printing_only"; priority: Priority; eventName?: string; eventType?: string; bride?: string; groom?: string; eventDate?: string;
   orderDate: string; dueDate: string; total: number; instructions?: string; couple?: string; workGroup?: string;
+  items?: OrderItem[];                 // catalog items (priced by the server) and custom items
   albums: AlbumSpec[];                 // at least one; the first is also written to order_specs
 }
 export async function dbCreateOrder(n: NewOrder): Promise<Order | null> {
@@ -122,10 +125,11 @@ export async function dbCreateOrder(n: NewOrder): Promise<Order | null> {
     cover_type: a.cover, lamination: a.lamination || null, binding: a.binding, box_required: a.box !== "None", box_type: a.box !== "None" ? a.box : null,
     uv_printing: a.finishes.includes("UV Printing"), foiling: a.finishes.includes("Foiling"), embossing: a.finishes.includes("Embossing"), name_printing: a.nameText || null,
   }) as never);
+  if (n.items?.length) await q("Saving the order items", sb().from("order_items").insert(n.items.map((i, k) => ({ order_id: row.id, position: k + 1, item_id: i.itemId ?? null, name: i.name, unit: i.unit, qty: i.qty, sell_price: i.price, remarks: i.remarks ?? null }))) as never);
   await q("Saving the albums", sb().from("order_albums").insert(n.albums.map((x, i) => albumToRow(row.id, i + 1, x))) as never);
   if (sp === null && false) return null;
   const cust = new Map(CUSTOMERS.filter((c) => c.uid).map((c) => [c.uid!, c]));
   const { data: me } = await sb().auth.getUser();
-  const order = orderFromRow({ ...row, order_specs: [{ album_size: a.size, pages: a.sheets }], order_albums: n.albums.map((x, i) => albumToRow(row.id, i + 1, x)), couple_name: n.couple, work_group: n.workGroup }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
+  const order = orderFromRow({ ...row, order_specs: [{ album_size: a.size, pages: a.sheets }], order_albums: n.albums.map((x, i) => albumToRow(row.id, i + 1, x)), order_items: (n.items ?? []).map((i, k) => ({ position: k + 1, item_id: i.itemId, name: i.name, unit: i.unit, qty: i.qty, sell_price: i.price, remarks: i.remarks })), couple_name: n.couple, work_group: n.workGroup }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
   ORDERS.unshift(order); notify(); return order;
 }

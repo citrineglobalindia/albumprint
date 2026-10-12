@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Check, ChevronLeft, ChevronRight, X, UserPlus, Palette, Printer, PartyPopper, Plus, Copy, Trash2 } from "lucide-react";
 import { cx, Field, inputCls, Toggle } from "./ui";
 import { Combobox } from "./controls";
-import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type Priority } from "../lib/data";
+import { CATALOG, catalogCategories, subNameOf } from "../lib/catalog";
+import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type OrderItem, type Priority } from "../lib/data";
 import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, WORK_GROUPS, type AlbumSpec } from "../lib/pricing";
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
@@ -15,15 +16,15 @@ import { dbCreateCustomer, dbCreateOrder } from "../lib/db/orders";
 interface Draft {
   customerId: string; newCustomer: { studio: string; mobile: string } | null;
   workflow: "Design + Printing" | "Printing"; orderDate: string; due: string; couple: string; workGroup: string; eventName: string; event: string; eventDate: string; priority: Priority; instructions: string;
-  albums: AlbumSpec[]; images: number; discountPct: number;     // each album has its own specification; images + discount apply to the whole order
+  albums: AlbumSpec[]; items: OrderItem[]; images: number; discountPct: number;     // each album has its own specification; images + discount apply to the whole order
 }
 const iso = (n = 0) => { const d = new Date("2026-10-03"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const blank = (): Draft => ({
   customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", workGroup: "", eventName: "", event: EVENT_TYPES.includes("Wedding") ? "Wedding" : EVENT_TYPES[0] ?? "Wedding", eventDate: "", priority: "Normal", instructions: "",
-  albums: [blankAlbum()], images: 300, discountPct: 0,
+  albums: [blankAlbum()], items: [], images: 300, discountPct: 0,
 });
 const COUPLE_EVENTS = (e: string) => e.includes("Wedding") || e === "Engagement" || e === "Reception";
-const STEPS = ["Customer & type", "Event & dates", "Album spec", "Pricing", "Review"];
+const STEPS = ["Customer & type", "Event & dates", "Album spec", "Order items", "Pricing", "Review"];
 
 interface Ctx { open: (opts?: { customerId?: string }) => void }
 const NewOrderCtx = createContext<Ctx>({ open: () => {} });
@@ -54,7 +55,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   const addAlbum = (copyOf?: AlbumSpec) => { setD((x) => ({ ...x, albums: [...x.albums, copyOf ? { ...copyOf, finishes: [...copyOf.finishes] } : blankAlbum()] })); setCur(d.albums.length); };
   const removeAlbum = (i: number) => { setD((x) => ({ ...x, albums: x.albums.filter((_, j) => j !== i) })); setCur(Math.max(0, i - 1)); };
   const designed = d.workflow === "Design + Printing";
-  const p = useMemo(() => priceAlbums(d.albums, { designed, images: d.images, discountPct: d.discountPct }), [d.albums, d.images, d.discountPct, designed]);
+  const p = useMemo(() => priceAlbums(d.albums, { designed, images: d.images, discountPct: d.discountPct, items: d.items.reduce((t, i) => t + i.qty * i.price, 0) }), [d.albums, d.items, d.images, d.discountPct, designed]);
   const nameOf = (a: AlbumSpec, i: number) => albumName(a, i, d.couple, d.event);
   const eventTitle = d.eventName.trim() || (d.couple.trim() ? `${d.couple.trim()} ${d.event}` : "");
   const cust = CUSTOMERS.find((c) => c.id === d.customerId);
@@ -65,14 +66,15 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     if (s === 0) { if (!d.customerId && !d.newCustomer) e.customer = "Choose a customer or add a new one"; if (d.newCustomer) { if (d.newCustomer.studio.trim().length < 2) e.studio = "Enter studio name"; if (!/^\+?[0-9 ]{10,14}$/.test(d.newCustomer.mobile.trim())) e.mobile = "Valid mobile required"; } }
     if (s === 1) { if (!d.due) e.due = "Required"; else if (d.due < d.orderDate) e.due = "Delivery date cannot be before order date"; }
     if (s === 2) { const bad = d.albums.findIndex((a) => a.sheets < 1 || a.copies < 1); if (bad >= 0) { setCur(bad); if (d.albums[bad]!.sheets < 1) e.sheets = "Positive number"; if (d.albums[bad]!.copies < 1) e.copies = "At least 1"; } }
-    if (s === 3 && (d.discountPct < 0 || d.discountPct > 100)) e.discount = "0–100%";
+    if (s === 3) { const bad = d.items.find((i) => !(i.qty > 0) || !(i.price >= 0) || !i.name.trim()); if (bad) e.items = "Every item needs a quantity above 0 and a price"; }
+    if (s === 4 && (d.discountPct < 0 || d.discountPct > 100)) e.discount = "0–100%";
     setErr(e); return Object.keys(e).length === 0;
   };
   const next = () => validate(step) && setStep(step + 1);
 
   const [saving, setSaving] = useState(false);
   const create = async () => {
-    if (![0, 1, 2, 3].every(validate)) { setStep(0); return; }
+    if (![0, 1, 2, 3, 4].every(validate)) { setStep(0); return; }
     const named = d.albums.map((a, i) => ({ ...a, title: nameOf(a, i) }));     // every album is saved with its name
 
     if (backendOn) {                                  // database mode: the server assigns the order number; nothing is shown until it is saved
@@ -87,7 +89,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
         if (!customerUid) { setSaving(false); show("Choose a customer"); return; }
         const order = await dbCreateOrder({
           customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: eventTitle, eventType: d.event, couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, eventDate: d.eventDate || undefined,
-          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: named,
+          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: named, items: d.items,
         });
         setSaving(false);
         if (!order) return;                           // the error was already shown by the data layer
@@ -103,7 +105,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     }
     const order: Order = {
       id: `IDP${String(n).padStart(5, "0")}`, customer: custName, mobile: d.newCustomer?.mobile ?? cust?.mobile ?? "", event: d.event, workflow: d.workflow, size: d.albums[0]!.size, pages: d.albums[0]!.sheets,
-      couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, albums: named,
+      couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, albums: named, items: d.items.length ? d.items : undefined,
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: p.total, paid: 0, progress: 0,
     };
     ORDERS.unshift(order);
@@ -212,7 +214,9 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
             </div>
           )}
 
-          {step === 3 && (
+          {step === 3 && <ItemsStep items={d.items} onChange={(items) => set("items", items)} error={err.items} total={p.items} />}
+
+          {step === 4 && (
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
               <div>
                 {designed && <Field label="Source images to colour-grade" hint="Charged per image (SRS ALB-FR-0034)"><input type="number" min={0} className={inputCls} value={d.images} onChange={(e) => set("images", Number(e.target.value))} /></Field>}
@@ -224,12 +228,13 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
             </div>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
               <div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   {[["Customer", custName], ["Order type", d.workflow], ["Work group", d.workGroup || "—"], ["Couple", d.couple || "—"], ["Event", `${d.event}${eventTitle ? ` · ${eventTitle}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
                 </dl>
+                {d.items.length > 0 && <div className="mt-4 rounded-xl border border-line p-3 text-sm"><b>Order items</b>{d.items.map((i, k) => <div key={k} className="flex justify-between gap-3 py-0.5 text-xs"><span className="text-sub">{i.qty} × {i.name}{i.remarks ? ` (${i.remarks})` : ""}</span><span className="font-semibold">{inr(i.qty * i.price)}</span></div>)}</div>}
                 <div className="mt-4 space-y-3">
                   {d.albums.map((a, i) => (
                     <div key={i} className="rounded-xl border border-line p-3 text-sm">
@@ -263,7 +268,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 }
 
 function PriceCard({ p, designed, albums, names }: { p: ReturnType<typeof priceAlbums>; designed: boolean; albums: AlbumSpec[]; names: string[] }) {
-  const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Size, binding, cover, lamination, box & finishes", p.addons], ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
+  const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Size, binding, cover, lamination, box & finishes", p.addons], ...(p.items > 0 ? ([["Order items", p.items]] as [string, number][]) : []), ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm">
       <div className="mb-2 font-extrabold">Price breakup</div>
@@ -273,6 +278,77 @@ function PriceCard({ p, designed, albums, names }: { p: ReturnType<typeof priceA
       {p.discount > 0 && <div className="flex justify-between py-1 text-emerald-700"><span>Discount</span><b>−{inr(p.discount)}</b></div>}
       <div className="flex justify-between py-1"><span className="text-sub">GST ({GST_RATE * 100}%)</span><b>{inr(p.gst)}</b></div>
       <div className="mt-1 flex justify-between border-t-2 border-ink/10 pt-2 text-base"><b>Total</b><b className="text-brand">{inr(p.total)}</b></div>
+    </div>
+  );
+}
+
+/** Step 4: products from the admin's catalog. The price comes from the catalog, so the total is calculated automatically. */
+function ItemsStep({ items, onChange, error, total }: { items: OrderItem[]; onChange: (i: OrderItem[]) => void; error?: string; total: number }) {
+  const [cat, setCat] = useState("");
+  const [pick, setPick] = useState("");
+  const [qty, setQty] = useState("1");
+  const [remarks, setRemarks] = useState("");
+  const [custom, setCustom] = useState({ name: "", qty: "1", price: "" });
+  const [msg, setMsg] = useState("");
+  const options = CATALOG.filter((c) => c.active && c.category === cat).map((c) => ({ value: c.id, label: subNameOf(c.name), sub: `${inr(c.sell)} / ${c.unit}${c.sku ? ` · ${c.sku}` : ""}` }));
+  const chosen = CATALOG.find((c) => c.id === pick);
+  const add = () => {
+    if (!chosen) { setMsg("Choose a product"); return; }
+    const n = Number(qty);
+    if (!(n > 0)) { setMsg("Enter a quantity above 0"); return; }
+    onChange([...items, { itemId: chosen.id, name: chosen.name, unit: chosen.unit, qty: n, price: chosen.sell, remarks: remarks.trim() || undefined }]);
+    setPick(""); setQty("1"); setRemarks(""); setMsg("");
+  };
+  const addCustom = () => {
+    const n = Number(custom.qty), pr = Number(custom.price);
+    if (custom.name.trim().length < 2) { setMsg("Enter the item name"); return; }
+    if (!(n > 0) || !(pr >= 0) || custom.price === "") { setMsg("Enter a quantity above 0 and a price"); return; }
+    onChange([...items, { name: custom.name.trim(), unit: "Nos", qty: n, price: pr }]);
+    setCustom({ name: "", qty: "1", price: "" }); setMsg("");
+  };
+  return (
+    <div>
+      <p className="mb-4 text-sm text-sub">Optional: add print-room products (paper, covers, boxes, USB…). Prices come from the admin&apos;s product catalog and are added to the order total.</p>
+      <div className="grid gap-x-4 md:grid-cols-[200px_minmax(0,1fr)_110px]">
+        <Field label="Category"><select aria-label="Item category" className={inputCls} value={cat} onChange={(e) => { setCat(e.target.value); setPick(""); }}><option value="">Select category…</option>{catalogCategories().map((c) => <option key={c}>{c}</option>)}</select></Field>
+        <Field label="Product" hint={chosen ? `${inr(chosen.sell)} per ${chosen.unit}` : cat ? undefined : "Choose a category first"}>
+          <Combobox value={pick} onChange={setPick} placeholder={cat ? "Search products…" : "Select a category"} options={options} />
+        </Field>
+        <Field label="Qty"><input type="number" min={1} aria-label="Quantity" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value)} /></Field>
+      </div>
+      <div className="flex items-end gap-3">
+        <div className="min-w-0 flex-1"><Field label="Remarks"><input className={inputCls} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Optional" /></Field></div>
+        <button onClick={add} className="mb-4 inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark"><Plus className="size-4" />Add item</button>
+      </div>
+      <details className="mb-4 rounded-xl border border-line px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-bold text-brand">Add custom item</summary>
+        <div className="mt-3 grid items-end gap-3 md:grid-cols-[1fr_90px_130px_auto]">
+          <Field label="Item name"><input className={inputCls} value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} placeholder="Enter item name manually" /></Field>
+          <Field label="Qty"><input type="number" min={1} aria-label="Custom quantity" className={inputCls} value={custom.qty} onChange={(e) => setCustom({ ...custom, qty: e.target.value })} /></Field>
+          <Field label="Selling price"><input type="number" min={0} aria-label="Custom selling price" className={inputCls} value={custom.price} onChange={(e) => setCustom({ ...custom, price: e.target.value })} /></Field>
+          <button onClick={addCustom} className="mb-4 h-10 rounded-lg border border-line px-4 text-sm font-bold hover:bg-brand-soft">Add</button>
+        </div>
+      </details>
+      {(msg || error) && <p className="mb-3 text-xs font-semibold text-rose-600" role="alert">{msg || error}</p>}
+      {items.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-line">
+          <table className="w-full text-[13px]">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-sub"><tr><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-right">Qty</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-left">Remarks</th><th /></tr></thead>
+            <tbody>
+              {items.map((i, k) => (
+                <tr key={k} className="border-t border-line">
+                  <td className="px-3 py-2 font-semibold">{i.name}{!i.itemId && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Custom</span>}</td>
+                  <td className="px-3 py-2 text-right"><input type="number" min={1} aria-label={`Quantity of ${i.name}`} className="h-8 w-16 rounded-md border border-line px-2 text-right" value={i.qty} onChange={(e) => onChange(items.map((x, j) => (j === k ? { ...x, qty: Number(e.target.value) } : x)))} /></td>
+                  <td className="px-3 py-2 text-right">{inr(i.price)}</td><td className="px-3 py-2 text-right font-bold">{inr(i.qty * i.price)}</td>
+                  <td className="px-3 py-2 text-sub">{i.remarks ?? "—"}</td>
+                  <td className="px-3 py-2 text-right"><button aria-label={`Remove ${i.name}`} onClick={() => onChange(items.filter((_, j) => j !== k))} className="text-sub hover:text-rose-600"><Trash2 className="size-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t border-line bg-slate-50"><td colSpan={3} className="px-3 py-2 text-right text-xs font-bold text-sub">Items total (before discount and GST)</td><td className="px-3 py-2 text-right font-extrabold">{inr(total)}</td><td colSpan={2} /></tr></tfoot>
+          </table>
+        </div>
+      ) : <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-sub">No items added. You can skip this step.</p>}
     </div>
   );
 }

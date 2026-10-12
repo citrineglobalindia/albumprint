@@ -162,6 +162,16 @@ export default function OrderDetail() {
             <div className="flex items-center gap-3"><Avatar name={o.customer} size={44} /><div><div className="font-bold">{o.customer}</div><div className="flex items-center gap-1.5 text-xs text-sub"><Phone className="size-3" aria-hidden />{o.mobile}</div></div></div>
             <div className="mt-3 flex gap-4 text-xs text-sub"><span className="flex items-center gap-1"><User className="size-3.5" aria-hidden />Studio client</span><span className="flex items-center gap-1"><CalendarDays className="size-3.5" aria-hidden />Since Jan 2024</span></div>
           </Panel>
+          {o.items && o.items.length > 0 && (
+            <Panel title={`Order Items · ${o.items.length}`} bodyClassName="p-0">
+              <div className="overflow-x-auto"><table className="w-full text-[13px]">
+                <thead className="text-[11px] uppercase tracking-wide text-sub"><tr><th className="px-4 py-2 text-left">Item</th><th className="px-3 py-2 text-right">Qty</th><th className="px-3 py-2 text-right">Price</th><th className="px-4 py-2 text-right">Total</th></tr></thead>
+                <tbody>{o.items.map((i, k) => (
+                  <tr key={k} className="border-t border-line"><td className="px-4 py-2"><b>{i.name}</b>{i.remarks && <div className="text-[11px] text-sub">{i.remarks}</div>}</td><td className="px-3 py-2 text-right">{i.qty} {i.unit}</td><td className="px-3 py-2 text-right">{inr(i.price)}</td><td className="px-4 py-2 text-right font-bold">{inr(i.qty * i.price)}</td></tr>
+                ))}</tbody>
+              </table></div>
+            </Panel>
+          )}
           <Panel title={o.albums && o.albums.length > 1 ? `Print Specification · ${o.albums.length} albums` : "Print Specification"} bodyClassName="space-y-4">
             {o.albums?.length ? o.albums.map((a, i) => (
               <div key={i} className={i > 0 ? "border-t border-line pt-4" : ""}>

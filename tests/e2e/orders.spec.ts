@@ -11,7 +11,7 @@ test.describe("orders", () => {
     await expect(dlg).toBeVisible();
     await dlg.getByRole("button", { name: /^Customer/ }).click();
     await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-    for (let i = 0; i < 4; i++) await dlg.getByRole("button", { name: "Next" }).click();
+    for (let i = 0; i < 5; i++) await dlg.getByRole("button", { name: "Next" }).click();
     await dlg.getByRole("button", { name: "Create Order" }).click();
     await expect(page).toHaveURL(/\/orders\/IDP00073$/);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("IDP00073");
@@ -41,6 +41,7 @@ test.describe("orders", () => {
     await dlg.getByLabel("Album Size").selectOption("8x12");
     await dlg.getByRole("tab", { name: /Asha & Ravi Wedding Album/ }).click();
     await expect(dlg.getByLabel("Album Type")).toHaveValue("Premium Album");     // album 1 was not changed
+    await dlg.getByRole("button", { name: "Next" }).click();                       // → Order items (skipped)
     await dlg.getByRole("button", { name: "Next" }).click();
     await expect(dlg.getByText(/Engagement Album · 8x12/)).toBeVisible();      // price breakup lists each album
     await dlg.getByRole("button", { name: "Next" }).click();
@@ -61,7 +62,7 @@ test.describe("orders", () => {
     await page.getByRole("button", { name: "Add new customer", exact: true }).click();
     await dlg.getByPlaceholder("Studio / customer name").fill("E2E Test Studio");
     await dlg.getByPlaceholder("Mobile number").fill("9876501234");
-    for (let i = 0; i < 4; i++) await dlg.getByRole("button", { name: "Next" }).click();
+    for (let i = 0; i < 5; i++) await dlg.getByRole("button", { name: "Next" }).click();
     await dlg.getByRole("button", { name: "Create Order" }).click();
     await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
     await savedContains(page, "customers", "E2E Test Studio");

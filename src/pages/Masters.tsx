@@ -6,13 +6,14 @@ import { Field, LineTabs, Pagination, Panel, PageHeader, Pill, PrimaryButton, Se
 import { ColumnsMenu, Combobox, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type SortState } from "../components/controls";
 import { useToast } from "../components/Toast";
 import { downloadCsv, parseCsv } from "../lib/csv";
+import CatalogTab from "./CatalogTab";
 import { inr } from "../lib/format";
 import { ORDERS } from "../lib/data";
 import { usePersistentState } from "../lib/localState";
 import { logAudit } from "../lib/audit";
 import { GST_RATE, applyPricing, pricingDefaults, snapshotPricing, type PricingSnapshot } from "../lib/pricing";
 
-const TABS = ["Album Products", "Pricing Rules", "Printing Options", "Materials", "Event Types", "Cover Types", "Box Types", "Design Styles", "Other Masters"] as const;
+const TABS = ["Album Products", "Pricing Rules", "Product Catalog", "Printing Options", "Materials", "Event Types", "Cover Types", "Box Types", "Design Styles", "Other Masters"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Product { id: string; name: string; category: string; size: string; sheets: number; price: number; active: boolean; archived: boolean; image?: string }
@@ -31,7 +32,7 @@ const P: [string, string, string, number, number, boolean][] = [
 const seedProducts: Product[] = P.map(([name, category, size, sheets, price, active], i) => ({ id: `PRD${String(i + 1).padStart(3, "0")}`, name, category, size, sheets, price, active, archived: false }));
 
 const mk = (names: [string, string][], priced = false): Item[] => names.map(([name, detail], i) => ({ id: `M${i + 1}`, name, detail, price: priced ? 500 + i * 250 : undefined, active: true, archived: false }));
-const SEED: Record<Exclude<Tab, "Album Products" | "Other Masters" | "Pricing Rules">, Item[]> = {
+const SEED: Record<Exclude<Tab, "Album Products" | "Other Masters" | "Pricing Rules" | "Product Catalog">, Item[]> = {
   "Printing Options": mk([["Silk", "Paper type"], ["Metallic", "Paper type"], ["Matte", "Paper type"], ["Glossy", "Paper type"], ["Velvet", "Paper type"], ["Fine Art", "Paper type"]], true),
   Materials: mk([["Leatherette", "Cover material"], ["Acrylic", "Cover material"], ["Photo Wrap", "Cover material"], ["Fabric", "Cover material"], ["Wood", "Cover material"]], true),
   "Event Types": mk([["Wedding", "Order category"], ["Reception", "Order category"], ["Engagement", "Order category"], ["Baby", "Order category"], ["Corporate", "Order category"], ["Pre Wedding", "Order category"]]),
@@ -110,7 +111,7 @@ export default function Masters() {
   const allOnPage = rows.length > 0 && rows.every((p) => sel.has(p.id));
   const colOn = (k: string) => !hidden.includes(k);
 
-  const curList = (): Item[] => (tab === "Pricing Rules" ? [] : tab === "Other Masters" ? other[otherKey]! : items[tab as keyof typeof SEED] ?? []);
+  const curList = (): Item[] => (tab === "Pricing Rules" || tab === "Product Catalog" ? [] : tab === "Other Masters" ? other[otherKey]! : items[tab as keyof typeof SEED] ?? []);
   const setCurList = (fn: (l: Item[]) => Item[]) => (tab === "Other Masters" ? setOther((o) => ({ ...o, [otherKey]: fn(o[otherKey]!) })) : setItems((o) => ({ ...o, [tab]: fn(o[tab as keyof typeof SEED]) })));
   const hasPrice = tab !== "Other Masters" && tab !== "Event Types" && tab !== "Design Styles";
   const noun = tab === "Other Masters" ? otherKey : tab.replace(/s$/, "");
@@ -283,12 +284,12 @@ export default function Masters() {
       {toast}{dialog}
       <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" data-testid="import-file" onChange={(e) => importFile(e.target.files?.[0])} />
       <PageHeader title="Masters" subtitle="Manage all configurable options used across the system.">
-        {tab !== "Pricing Rules" && <PrimaryButton onClick={() => (isProducts ? openProduct() : openItem())}>{addLabel}</PrimaryButton>}
+        {tab !== "Pricing Rules" && tab !== "Product Catalog" && <PrimaryButton onClick={() => (isProducts ? openProduct() : openItem())}>{addLabel}</PrimaryButton>}
       </PageHeader>
 
       <div className="mb-5 overflow-x-auto"><LineTabs className="min-w-max" tabs={TABS.map((t) => ({ key: t, label: t }))} value={tab} onChange={changeTab} /></div>
 
-      {tab === "Pricing Rules" ? <PricingRules show={show} /> : isProducts ? (
+      {tab === "Pricing Rules" ? <PricingRules show={show} /> : tab === "Product Catalog" ? <CatalogTab show={show} /> : isProducts ? (
         <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)]">
           <Panel title="Album Categories" bodyClassName="pt-3">
             <ul className="space-y-1 text-[13px]">
