@@ -7,7 +7,7 @@ test("admin uploads the print-ready file, locks it, and the order moves to Final
   const cust = sql(`insert into customers(studio_name, mobile, code) values ('Final Print ${tag}', '9${String(Date.now()).slice(-9)}', 'pending') returning id`).split("\n")[0];
   const [oid, code] = sql(`insert into orders(customer_id, type, due_date, total, code) values ('${cust}', 'design_printing', current_date + 14, 1000, 'pending') returning id || '|' || code`).split("\n")[0]!.split("|");
   sql(`select advance_order('${oid}', 'client_review', 'fixture', true)`);
-  sql(`insert into proofs(order_id, token_hash, expires_at, status, approved_by, responded_at, version) values ('${oid}', '${"ab".repeat(32)}', now() + interval '30 days', 'approved', 'Final Print Client', now(), 1)`);
+  sql(`insert into proofs(order_id, token_hash, expires_at, status, approved_by, responded_at, version) values ('${oid}', '${(tag + "0".repeat(64)).slice(0, 64).replace(/[^0-9a-f]/g, "a")}', now() + interval '30 days', 'approved', 'Final Print Client', now(), 1)`);
 
   await loginAs(page, "admin");
   await page.goto(`/designing/${code}`);
