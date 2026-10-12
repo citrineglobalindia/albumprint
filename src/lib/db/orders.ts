@@ -1,5 +1,5 @@
 import type { AlbumSpec } from "../pricing";
-import { ORDERS, CUSTOMERS, type OrderItem, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
+import { ORDERS, CUSTOMERS, type CostLine, type OrderItem, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
 import { notify, progressFor } from "../store";
 import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
 
@@ -44,6 +44,15 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
   };
   if (r.couple_name) o.couple = r.couple_name;
   if (r.work_group) o.workGroup = r.work_group;
+  const oc: Row | undefined = Array.isArray(r.order_costing) ? r.order_costing[0] : r.order_costing ?? undefined;
+  if (oc) {
+    const pos = new Map<string, number>((r.order_albums ?? []).map((a: Row) => [a.id as string, a.position as number]));
+    const lines = [...(r.album_lines ?? [])].sort((a: Row, b: Row) => (pos.get(a.album_id) ?? 0) - (pos.get(b.album_id) ?? 0) || a.position - b.position).map((l: Row): CostLine => {
+      const cost = Array.isArray(l.album_line_costs) ? l.album_line_costs[0] : l.album_line_costs;
+      return { id: l.id, albumPos: pos.get(l.album_id) ?? 1, itemId: l.item_id ?? undefined, name: l.name, unit: l.unit, qty: Number(l.qty), countsSheets: l.counts_sheets, remarks: l.remarks ?? undefined, dimension: l.dimension ?? undefined, sell: Number(l.sell_price), cost: cost ? Number(cost.cost_price) : undefined };
+    });
+    o.costing = { lines, designCharge: Number(oc.design_charge), gradingImages: Number(oc.grading_images), gradingRate: Number(oc.grading_rate), discountPct: Number(oc.discount_pct), gstPct: Number(oc.gst_pct), finalized: !!oc.finalized_at };
+  }
   const oi: Row[] | undefined = r.order_items;
   if (oi?.length) o.items = [...oi].sort((a, b) => a.position - b.position).map((i): OrderItem => ({ itemId: i.item_id ?? undefined, name: i.name, unit: i.unit, qty: Number(i.qty), price: Number(i.sell_price), remarks: i.remarks ?? undefined }));
   const al: Row[] | undefined = r.order_albums;
@@ -63,7 +72,7 @@ async function hydrate() {
   const client = sb();
   const [custRows, ordRows, staffRows] = await Promise.all([
     q<Row[]>("Loading customers", client.rpc("list_customers") as never),
-    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*), order_items(*)").order("created_at", { ascending: false }) as never),
+    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*), order_items(*), album_lines(*, album_line_costs(cost_price)), order_costing(*)").order("created_at", { ascending: false }) as never),
     q<Row[]>("Loading staff", client.from("profiles").select("id,full_name") as never),
   ]);
   const customers = (custRows ?? []).map(customerFromRow);

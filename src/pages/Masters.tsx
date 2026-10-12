@@ -578,7 +578,7 @@ function PricingRules({ show }: { show: (m: string) => void }) {
   return (
     <div data-testid="pricing-rules">
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white p-4">
-        <div className="min-w-0 flex-1"><h2 className="text-[17px] font-extrabold">Pricing Rules</h2><p className="text-xs text-sub">Used by the New Order wizard and quotations (SRS 3.2). Changes affect new orders only; existing order totals are unchanged.</p></div>
+        <div className="min-w-0 flex-1"><h2 className="text-[17px] font-extrabold">Pricing Rules</h2><p className="text-xs text-sub">Defaults for design charge, colour grading, GST and the discount limit, plus the option lists New Order uses. Each album is priced by the admin under Costing &amp; Invoices from the Product Catalog; the per-type price tables below are reference only. Changes affect new orders only.</p></div>
         {dirty && <span className="text-xs font-bold text-amber-600" data-testid="pricing-dirty">Unsaved changes</span>}
         <button onClick={reset} className={GHOST}><RotateCcw className="size-4" />Load defaults</button>
         <button onClick={() => { setD(saved); setErrs({}); }} disabled={!dirty} className={cx(GHOST, "disabled:opacity-40")}>Discard</button>

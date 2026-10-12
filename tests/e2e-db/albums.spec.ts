@@ -20,7 +20,7 @@ test("reception creates an order with two albums and the couple's name", async (
   await dlg.getByLabel("Album Name").fill("Engagement Album");
   await dlg.getByLabel("Album Type").selectOption("Photobook");
   await dlg.getByLabel("Album Size").selectOption("8x12");
-  for (let i = 0; i < 3; i++) await dlg.getByRole("button", { name: "Next" }).click();    // items, pricing, review
+  await dlg.getByRole("button", { name: "Next" }).click();                                 // review
   await dlg.getByRole("button", { name: "Create Order" }).click();
   await expect(page).toHaveURL(/\/orders\/IDP\d+$/, { timeout: 20_000 });
   const code = page.url().split("/").pop()!;

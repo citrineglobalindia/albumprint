@@ -4,4 +4,4 @@ export { backendOn, hydrateAll, onDbError, reportDbError } from "./core";
 import "./finance";
 import "./proofs"; import "./audit";
 import "./admin";
-import "./production"; import "./files"; import "./catalog";
+import "./production"; import "./files"; import "./catalog"; import "./costing";
