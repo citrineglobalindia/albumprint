@@ -78,6 +78,7 @@ export const CUSTOMERS: Customer[] = customerSeed.map(([name, studio, city, emai
 
 export interface Order {
   uid?: string;   // database id (uuid) when the backend is on
+  couple?: string; albums?: import("./pricing").AlbumSpec[];   // couple name; every album on the order with its own specification
   qc?: "pending" | "in_progress" | "passed" | "rework" | "failed"; closed?: boolean; closedAt?: string; cancelReason?: string; slaPausedAt?: string; slaPauseReason?: string;
   id: string; customer: string; mobile: string; event: string; workflow: WorkflowType; size: string; pages: number;
   stage: StageKey; priority: Priority; pendingAt: string; assignee: string; due: string; pay: PayStatus;

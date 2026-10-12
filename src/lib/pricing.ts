@@ -56,3 +56,17 @@ export function price(s: Spec) {
   const gst = Math.round(taxable * GST_RATE);
   return { base, sheets, addons, design, grading, sub, discount, taxable, gst, total: taxable + gst };
 }
+
+/** One album on an order: every album carries its own specification. */
+export interface AlbumSpec { albumType: string; size: string; orientation: string; sheets: number; copies: number; binding: string; paper: string; gsm: string; cover: string; lamination: string; box: string; finishes: string[]; nameText: string }
+export const blankAlbum = (): AlbumSpec => ({ albumType: "Premium Album", size: "12x36", orientation: "Landscape", sheets: 30, copies: 1, binding: "Lay-flat", paper: "Matte", gsm: "300", cover: "Leatherette", lamination: "Matte", box: "None", finishes: [], nameText: "" });
+/** Total for all albums on an order: per-album print cost, plus the order-level design/grading charges, discount and GST. */
+export function priceAlbums(albums: AlbumSpec[], o: { designed: boolean; images: number; discountPct: number }) {
+  const parts = albums.map((a) => price({ albumType: a.albumType, paper: a.paper, sheets: a.sheets, copies: a.copies, cover: a.cover, lamination: a.lamination, box: a.box, finishes: a.finishes, designed: false, images: 0, discountPct: 0 }));
+  const sum = (k: "base" | "sheets" | "addons") => parts.reduce((t, p) => t + p[k], 0);
+  const base = sum("base"), sheets = sum("sheets"), addons = sum("addons");
+  const design = o.designed ? DESIGN_CHARGE : 0, grading = o.designed ? o.images * GRADING_PER_IMAGE : 0;
+  const sub = base + sheets + addons + design + grading;
+  const discount = Math.round((sub * o.discountPct) / 100), taxable = sub - discount, gst = Math.round(taxable * GST_RATE);
+  return { base, sheets, addons, design, grading, sub, discount, taxable, gst, total: taxable + gst, perAlbum: parts.map((p) => p.sub) };
+}

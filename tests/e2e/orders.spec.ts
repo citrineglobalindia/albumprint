@@ -22,6 +22,34 @@ test.describe("orders", () => {
     await expect(page.getByTestId("last-saved")).toBeVisible();
   });
 
+  test("an order can hold several albums, each with its own spec, plus the couple's name", async ({ page }) => {
+    await page.goto("/orders");
+    await page.getByRole("button", { name: "Create Order" }).first().click();
+    const dlg = page.getByRole("dialog", { name: "New Order" });
+    await dlg.getByRole("button", { name: /^Customer/ }).click();
+    await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
+    await dlg.getByRole("button", { name: "Next" }).click();
+    await expect(dlg.getByText(/^Total/)).toHaveCount(0);                       // no price before the album spec exists
+    await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
+    await dlg.getByRole("button", { name: "Next" }).click();
+    // album 1 stays as the default; album 2 is a different spec
+    await dlg.getByRole("button", { name: "Add album" }).click();
+    await expect(dlg.getByRole("tab", { name: /Album 2/ })).toHaveAttribute("aria-selected", "true");
+    await dlg.getByLabel("Album Type").selectOption("Photobook");
+    await dlg.getByLabel("Album Size").selectOption("8x12");
+    await dlg.getByRole("tab", { name: /Album 1/ }).click();
+    await expect(dlg.getByLabel("Album Type")).toHaveValue("Premium Album");     // album 1 was not changed
+    await dlg.getByRole("button", { name: "Next" }).click();
+    await expect(dlg.getByText(/Album 2 · Photobook 8x12/)).toBeVisible();      // price breakup lists each album
+    await dlg.getByRole("button", { name: "Next" }).click();
+    await expect(dlg.getByText("Asha & Ravi").first()).toBeVisible();
+    await dlg.getByRole("button", { name: "Create Order" }).click();
+    await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
+    await expect(page.getByText("Print Specification · 2 albums")).toBeVisible();
+    await expect(page.getByText("Album 2 · Photobook")).toBeVisible();
+    await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
+  });
+
   test("a new customer + order persist, customers list included", async ({ page }) => {
     await page.goto("/orders");
     await page.getByRole("button", { name: "Create Order" }).first().click();

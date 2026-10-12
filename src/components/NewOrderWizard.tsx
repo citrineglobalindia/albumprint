@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, ChevronLeft, ChevronRight, X, UserPlus, Palette, Printer, PartyPopper } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, X, UserPlus, Palette, Printer, PartyPopper, Plus, Copy, Trash2 } from "lucide-react";
 import { cx, Field, inputCls, Toggle } from "./ui";
 import { Combobox } from "./controls";
 import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type Priority } from "../lib/data";
-import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, price, type Spec } from "../lib/pricing";
+import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, type AlbumSpec } from "../lib/pricing";
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
@@ -14,15 +14,15 @@ import { dbCreateCustomer, dbCreateOrder } from "../lib/db/orders";
 // SRS §4.3 (order fields), §5 (workflow routing), §6.1 (album spec), §3.2 (pricing).
 interface Draft {
   customerId: string; newCustomer: { studio: string; mobile: string } | null;
-  workflow: "Design + Printing" | "Printing"; orderDate: string; due: string; eventName: string; event: string; bride: string; groom: string; eventDate: string; priority: Priority; instructions: string;
-  size: string; orientation: string; sheets: number; binding: string; gsm: string; nameText: string; spec: Spec;
+  workflow: "Design + Printing" | "Printing"; orderDate: string; due: string; couple: string; eventName: string; event: string; eventDate: string; priority: Priority; instructions: string;
+  albums: AlbumSpec[]; images: number; discountPct: number;     // each album has its own specification; images + discount apply to the whole order
 }
 const iso = (n = 0) => { const d = new Date("2026-10-03"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const blank = (): Draft => ({
-  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), eventName: "", event: "Wedding", bride: "", groom: "", eventDate: "", priority: "Normal", instructions: "",
-  size: "12x36", orientation: "Landscape", sheets: 30, binding: "Lay-flat", gsm: "300", nameText: "",
-  spec: { albumType: "Premium Album", paper: "Matte", sheets: 30, copies: 1, cover: "Leatherette", lamination: "Matte", box: "None", finishes: [], designed: true, images: 300, discountPct: 0 },
+  customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", eventName: "", event: "Wedding", eventDate: "", priority: "Normal", instructions: "",
+  albums: [blankAlbum()], images: 300, discountPct: 0,
 });
+const COUPLE_EVENTS = (e: string) => e.includes("Wedding") || e === "Engagement" || e === "Reception";
 const STEPS = ["Customer & type", "Event & dates", "Album spec", "Pricing", "Review"];
 
 interface Ctx { open: (opts?: { customerId?: string }) => void }
@@ -48,9 +48,14 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   const [d, setD] = useState<Draft>(() => ({ ...blank(), customerId: seedCustomer ?? "" }));
   const [err, setErr] = useState<Record<string, string>>({});
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
-  const setSpec = (p: Partial<Spec>) => setD((x) => ({ ...x, spec: { ...x.spec, ...p } }));
+  const [cur, setCur] = useState(0);                       // album being edited on the "Album spec" step
+  const al = d.albums[Math.min(cur, d.albums.length - 1)]!;
+  const setAlbum = (patch: Partial<AlbumSpec>) => setD((x) => ({ ...x, albums: x.albums.map((a, i) => (i === cur ? { ...a, ...patch } : a)) }));
+  const addAlbum = (copyOf?: AlbumSpec) => { setD((x) => ({ ...x, albums: [...x.albums, copyOf ? { ...copyOf, finishes: [...copyOf.finishes] } : blankAlbum()] })); setCur(d.albums.length); };
+  const removeAlbum = (i: number) => { setD((x) => ({ ...x, albums: x.albums.filter((_, j) => j !== i) })); setCur(Math.max(0, i - 1)); };
   const designed = d.workflow === "Design + Printing";
-  const p = useMemo(() => price({ ...d.spec, designed, sheets: d.sheets }), [d.spec, d.sheets, designed]);
+  const p = useMemo(() => priceAlbums(d.albums, { designed, images: d.images, discountPct: d.discountPct }), [d.albums, d.images, d.discountPct, designed]);
+  const eventTitle = d.eventName.trim() || (d.couple.trim() ? `${d.couple.trim()} ${d.event}` : "");
   const cust = CUSTOMERS.find((c) => c.id === d.customerId);
   const custName = d.newCustomer ? d.newCustomer.studio : cust?.studio ?? "";
 
@@ -58,8 +63,8 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     const e: Record<string, string> = {};
     if (s === 0) { if (!d.customerId && !d.newCustomer) e.customer = "Choose a customer or add a new one"; if (d.newCustomer) { if (d.newCustomer.studio.trim().length < 2) e.studio = "Enter studio name"; if (!/^\+?[0-9 ]{10,14}$/.test(d.newCustomer.mobile.trim())) e.mobile = "Valid mobile required"; } }
     if (s === 1) { if (!d.due) e.due = "Required"; else if (d.due < d.orderDate) e.due = "Delivery date cannot be before order date"; }
-    if (s === 2) { if (d.sheets < 1) e.sheets = "Positive number"; if (d.spec.copies < 1) e.copies = "At least 1"; }
-    if (s === 3 && (d.spec.discountPct < 0 || d.spec.discountPct > 100)) e.discount = "0–100%";
+    if (s === 2) { const bad = d.albums.findIndex((a) => a.sheets < 1 || a.copies < 1); if (bad >= 0) { setCur(bad); if (d.albums[bad]!.sheets < 1) e.sheets = "Positive number"; if (d.albums[bad]!.copies < 1) e.copies = "At least 1"; } }
+    if (s === 3 && (d.discountPct < 0 || d.discountPct > 100)) e.discount = "0–100%";
     setErr(e); return Object.keys(e).length === 0;
   };
   const next = () => validate(step) && setStep(step + 1);
@@ -78,11 +83,9 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
           customerUid = c.uid;
         }
         if (!customerUid) { setSaving(false); show("Choose a customer"); return; }
-        const sp = d.spec;
         const order = await dbCreateOrder({
-          customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: d.eventName, eventType: d.event, bride: d.bride, groom: d.groom, eventDate: d.eventDate || undefined,
-          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions,
-          spec: { albumType: sp.albumType, albumSize: d.size, orientation: d.orientation, pages: d.sheets, copies: sp.copies, paperType: sp.paper, paperGsm: Number(d.gsm) || undefined, coverType: sp.cover, lamination: sp.lamination, binding: d.binding, boxType: sp.box, finishes: sp.finishes, namePrinting: d.nameText },
+          customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: eventTitle, eventType: d.event, couple: d.couple.trim() || undefined, eventDate: d.eventDate || undefined,
+          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: d.albums,
         });
         setSaving(false);
         if (!order) return;                           // the error was already shown by the data layer
@@ -97,11 +100,12 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
       CUSTOMERS.unshift(c);
     }
     const order: Order = {
-      id: `IDP${String(n).padStart(5, "0")}`, customer: custName, mobile: d.newCustomer?.mobile ?? cust?.mobile ?? "", event: d.event, workflow: d.workflow, size: d.size, pages: d.sheets,
+      id: `IDP${String(n).padStart(5, "0")}`, customer: custName, mobile: d.newCustomer?.mobile ?? cust?.mobile ?? "", event: d.event, workflow: d.workflow, size: d.albums[0]!.size, pages: d.albums[0]!.sheets,
+      couple: d.couple.trim() || undefined, albums: d.albums,
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: p.total, paid: 0, progress: 0,
     };
     ORDERS.unshift(order);
-    logAudit({ entity: "order", entityId: order.id, action: "create", detail: `${order.workflow} · ${d.spec.albumType} ${order.size} · ${inr(p.total)}${d.newCustomer ? " · new customer " + custName : ""}` });
+    logAudit({ entity: "order", entityId: order.id, action: "create", detail: `${order.workflow} · ${d.albums.length > 1 ? `${d.albums.length} albums` : `${d.albums[0]!.albumType} ${order.size}`} · ${inr(p.total)}${d.newCustomer ? " · new customer " + custName : ""}` });
     show(`Order ${order.id} created`);
     onClose(); nav(`/orders/${order.id}`);
   };
@@ -157,9 +161,9 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 
           {step === 1 && (
             <div className="grid gap-x-6 md:grid-cols-2">
-              <Field label="Event Name"><input className={inputCls} value={d.eventName} onChange={(e) => set("eventName", e.target.value)} placeholder="e.g. Rahul & Priya Wedding" /></Field>
+              {COUPLE_EVENTS(d.event) && <div className="md:col-span-2"><Field label="Couple Name" hint="Names of the couple, e.g. Rahul & Priya"><input className={inputCls} value={d.couple} onChange={(e) => set("couple", e.target.value)} placeholder="e.g. Rahul & Priya" /></Field></div>}
+              <Field label="Event Name" hint={!d.eventName && d.couple.trim() ? `Will be saved as “${eventTitle}”` : undefined}><input className={inputCls} value={d.eventName} onChange={(e) => set("eventName", e.target.value)} placeholder={d.couple.trim() ? eventTitle : "e.g. Rahul & Priya Wedding"} /></Field>
               <Field label="Event Type"><select className={inputCls} value={d.event} onChange={(e) => set("event", e.target.value)}>{EVENT_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field>
-              {d.event.includes("Wedding") || d.event === "Engagement" || d.event === "Reception" ? <><Field label="Bride Name"><input className={inputCls} value={d.bride} onChange={(e) => set("bride", e.target.value)} /></Field><Field label="Groom Name"><input className={inputCls} value={d.groom} onChange={(e) => set("groom", e.target.value)} /></Field></> : null}
               <Field label="Event Date"><input type="date" className={inputCls} value={d.eventDate} onChange={(e) => set("eventDate", e.target.value)} /></Field>
               <Field label="Priority" required><div className="flex gap-1.5">{PRIORITIES.filter((x) => x !== "Low").map((x) => <button key={x} onClick={() => set("priority", x)} className={cx("h-10 flex-1 rounded-lg border text-[13px] font-bold", d.priority === x ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{x}</button>)}</div></Field>
               <Field label="Order Date" required><input type="date" className={inputCls} value={d.orderDate} onChange={(e) => set("orderDate", e.target.value)} /></Field>
@@ -169,42 +173,74 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
           )}
 
           {step === 2 && (
-            <div className="grid gap-x-6 md:grid-cols-3">
-              <Field label="Album Type" required><select className={inputCls} value={d.spec.albumType} onChange={(e) => setSpec({ albumType: e.target.value })}>{Object.keys(ALBUM_TYPES).map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Album Size" required><select className={inputCls} value={d.size} onChange={(e) => set("size", e.target.value)}>{SIZES.map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Orientation" required><select className={inputCls} value={d.orientation} onChange={(e) => set("orientation", e.target.value)}>{["Landscape", "Portrait", "Square"].map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Pages / Sheets" required hint={err.sheets}><input type="number" min={1} className={inputCls} value={d.sheets} onChange={(e) => set("sheets", Number(e.target.value))} /></Field>
-              <Field label="Copies" required hint={err.copies}><input type="number" min={1} className={inputCls} value={d.spec.copies} onChange={(e) => setSpec({ copies: Number(e.target.value) })} /></Field>
-              <Field label="Binding" required><select className={inputCls} value={d.binding} onChange={(e) => set("binding", e.target.value)}>{BINDING.map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Paper Type" required><select className={inputCls} value={d.spec.paper} onChange={(e) => { setSpec({ paper: e.target.value }); set("gsm", String(PAPER[e.target.value]!.gsm[0])); }}>{Object.keys(PAPER).map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Paper GSM"><select className={inputCls} value={d.gsm} onChange={(e) => set("gsm", e.target.value)}>{PAPER[d.spec.paper]!.gsm.map((g) => <option key={g}>{g}</option>)}</select></Field>
-              <Field label="Cover Type" required><select className={inputCls} value={d.spec.cover} onChange={(e) => setSpec({ cover: e.target.value })}>{Object.keys(COVERS).map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Lamination"><select className={inputCls} value={d.spec.lamination} onChange={(e) => setSpec({ lamination: e.target.value })}>{Object.keys(LAMINATION).map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Box Required"><select className={inputCls} value={d.spec.box} onChange={(e) => setSpec({ box: e.target.value })}>{Object.keys(BOXES).map((x) => <option key={x}>{x}</option>)}</select></Field>
-              <Field label="Name Printing"><input className={inputCls} value={d.nameText} onChange={(e) => set("nameText", e.target.value)} placeholder="Text on cover" /></Field>
-              <div className="md:col-span-3"><div className="mb-1.5 text-[13px] font-semibold">Special finishes</div>
-                <div className="flex flex-wrap gap-2">{Object.keys(FINISHES).map((f) => { const on = d.spec.finishes.includes(f); return <button key={f} onClick={() => setSpec({ finishes: on ? d.spec.finishes.filter((x) => x !== f) : [...d.spec.finishes, f] })} className={cx("h-9 rounded-full border px-4 text-[13px] font-bold", on ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{on && "✓ "}{f} <span className="font-medium opacity-70">+{inr(FINISHES[f]!)}</span></button>; })}</div></div>
+            <div>
+              <div className="mb-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Albums on this order">
+                {d.albums.map((a, i) => (
+                  <button key={i} role="tab" aria-selected={i === cur} onClick={() => setCur(i)} className={cx("h-10 rounded-lg border px-4 text-[13px] font-bold", i === cur ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>
+                    Album {i + 1}<span className={cx("ml-2 font-medium", i === cur ? "opacity-80" : "text-sub")}>{a.albumType} · {a.size}{a.copies > 1 ? ` ×${a.copies}` : ""}</span>
+                  </button>
+                ))}
+                <button onClick={() => addAlbum()} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-dashed border-brand px-4 text-[13px] font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add album</button>
+              </div>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-extrabold">Album {cur + 1} specification</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => addAlbum(al)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><Copy className="size-3.5" />Duplicate</button>
+                  {d.albums.length > 1 && <button onClick={() => removeAlbum(cur)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="size-3.5" />Remove</button>}
+                </div>
+              </div>
+              <div className="grid gap-x-6 md:grid-cols-3">
+                <Field label="Album Type" required><select className={inputCls} value={al.albumType} onChange={(e) => setAlbum({ albumType: e.target.value })}>{Object.keys(ALBUM_TYPES).map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Album Size" required><select className={inputCls} value={al.size} onChange={(e) => setAlbum({ size: e.target.value })}>{SIZES.map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Orientation" required><select className={inputCls} value={al.orientation} onChange={(e) => setAlbum({ orientation: e.target.value })}>{["Landscape", "Portrait", "Square"].map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Pages / Sheets" required hint={err.sheets}><input type="number" min={1} className={inputCls} value={al.sheets} onChange={(e) => setAlbum({ sheets: Number(e.target.value) })} /></Field>
+                <Field label="Copies" required hint={err.copies}><input type="number" min={1} className={inputCls} value={al.copies} onChange={(e) => setAlbum({ copies: Number(e.target.value) })} /></Field>
+                <Field label="Binding" required><select className={inputCls} value={al.binding} onChange={(e) => setAlbum({ binding: e.target.value })}>{BINDING.map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Paper Type" required><select className={inputCls} value={al.paper} onChange={(e) => setAlbum({ paper: e.target.value, gsm: String(PAPER[e.target.value]!.gsm[0]) })}>{Object.keys(PAPER).map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Paper GSM"><select className={inputCls} value={al.gsm} onChange={(e) => setAlbum({ gsm: e.target.value })}>{PAPER[al.paper]!.gsm.map((g) => <option key={g}>{g}</option>)}</select></Field>
+                <Field label="Cover Type" required><select className={inputCls} value={al.cover} onChange={(e) => setAlbum({ cover: e.target.value })}>{Object.keys(COVERS).map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Lamination"><select className={inputCls} value={al.lamination} onChange={(e) => setAlbum({ lamination: e.target.value })}>{Object.keys(LAMINATION).map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Box Required"><select className={inputCls} value={al.box} onChange={(e) => setAlbum({ box: e.target.value })}>{Object.keys(BOXES).map((x) => <option key={x}>{x}</option>)}</select></Field>
+                <Field label="Name Printing"><input className={inputCls} value={al.nameText} onChange={(e) => setAlbum({ nameText: e.target.value })} placeholder="Text on cover" /></Field>
+                <div className="md:col-span-3"><div className="mb-1.5 text-[13px] font-semibold">Special finishes</div>
+                  <div className="flex flex-wrap gap-2">{Object.keys(FINISHES).map((f) => { const on = al.finishes.includes(f); return <button key={f} onClick={() => setAlbum({ finishes: on ? al.finishes.filter((x) => x !== f) : [...al.finishes, f] })} className={cx("h-9 rounded-full border px-4 text-[13px] font-bold", on ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{on && "✓ "}{f} <span className="font-medium opacity-70">+{inr(FINISHES[f]!)}</span></button>; })}</div></div>
+              </div>
             </div>
           )}
 
           {step === 3 && (
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
               <div>
-                {designed && <Field label="Source images to colour-grade" hint="Charged per image (SRS ALB-FR-0034)"><input type="number" min={0} className={inputCls} value={d.spec.images} onChange={(e) => setSpec({ images: Number(e.target.value) })} /></Field>}
-                <Field label="Discount %" hint={err.discount ?? (d.spec.discountPct > DISCOUNT_APPROVAL_PCT ? `Above ${DISCOUNT_APPROVAL_PCT}% — admin approval will be requested` : "Requires discount permission above 0%")}><input type="number" min={0} max={100} className={inputCls} value={d.spec.discountPct} onChange={(e) => setSpec({ discountPct: Number(e.target.value) })} /></Field>
+                {designed && <Field label="Source images to colour-grade" hint="Charged per image (SRS ALB-FR-0034)"><input type="number" min={0} className={inputCls} value={d.images} onChange={(e) => set("images", Number(e.target.value))} /></Field>}
+                <Field label="Discount %" hint={err.discount ?? (d.discountPct > DISCOUNT_APPROVAL_PCT ? `Above ${DISCOUNT_APPROVAL_PCT}% — admin approval will be requested` : "Requires discount permission above 0%")}><input type="number" min={0} max={100} className={inputCls} value={d.discountPct} onChange={(e) => set("discountPct", Number(e.target.value))} /></Field>
                 <Field label="Assign / owner"><select className={inputCls} defaultValue="Priya">{ASSIGNEES.map((a) => <option key={a}>{a}</option>)}</select></Field>
                 <label className="flex items-center gap-3 text-sm"><Toggle on={designed} onChange={(v) => set("workflow", v ? "Design + Printing" : "Printing")} />Include design & colour grading</label>
               </div>
-              <PriceCard p={p} designed={designed} />
+              <PriceCard p={p} designed={designed} albums={d.albums} />
             </div>
           )}
 
           {step === 4 && (
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                {[["Customer", custName], ["Order type", d.workflow], ["Event", `${d.event}${d.eventName ? ` · ${d.eventName}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Album", `${d.spec.albumType} · ${d.size} · ${d.orientation}`], ["Pages / copies", `${d.sheets} / ${d.spec.copies}`], ["Paper", `${d.spec.paper} ${d.gsm} GSM`], ["Cover / lamination", `${d.spec.cover} / ${d.spec.lamination}`], ["Binding", d.binding], ["Box", d.spec.box], ["Finishes", d.spec.finishes.join(", ") || "None"], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
-              </dl>
-              <div><PriceCard p={p} designed={designed} /><p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700"><PartyPopper className="size-4 shrink-0" />On create, the order gets an ID, enters the {designed ? "Colour Grading" : "File Verification"} queue and the customer is acknowledged.</p></div>
+              <div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  {[["Customer", custName], ["Order type", d.workflow], ["Couple", d.couple || "—"], ["Event", `${d.event}${eventTitle ? ` · ${eventTitle}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+                </dl>
+                <div className="mt-4 space-y-3">
+                  {d.albums.map((a, i) => (
+                    <div key={i} className="rounded-xl border border-line p-3 text-sm">
+                      <div className="mb-1 flex items-center justify-between"><b>Album {i + 1} · {a.albumType}</b><span className="text-xs font-bold text-brand">{inr(p.perAlbum[i] ?? 0)}</span></div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-sub">
+                        <span>{a.size} · {a.orientation}</span><span>{a.sheets} pages × {a.copies} {a.copies === 1 ? "copy" : "copies"}</span>
+                        <span>{a.paper} {a.gsm} GSM · {a.binding}</span><span>{a.cover} cover · {a.lamination} lamination</span>
+                        <span>Box: {a.box}</span><span>Finishes: {a.finishes.join(", ") || "None"}</span>
+                        {a.nameText && <span className="col-span-2">Name printing: {a.nameText}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div><PriceCard p={p} designed={designed} albums={d.albums} /><p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700"><PartyPopper className="size-4 shrink-0" />On create, the order gets an ID, enters the {designed ? "Colour Grading" : "File Verification"} queue and the customer is acknowledged.</p></div>
             </div>
           )}
         </div>
@@ -222,11 +258,12 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   );
 }
 
-function PriceCard({ p, designed }: { p: ReturnType<typeof price>; designed: boolean }) {
+function PriceCard({ p, designed, albums }: { p: ReturnType<typeof priceAlbums>; designed: boolean; albums: AlbumSpec[] }) {
   const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Cover, lamination, box & finishes", p.addons], ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm">
       <div className="mb-2 font-extrabold">Price breakup</div>
+      {albums.length > 1 && <div className="mb-2 border-b border-line pb-2">{albums.map((a, i) => <div key={i} className="flex justify-between py-0.5 text-xs"><span className="text-sub">Album {i + 1} · {a.albumType} {a.size}</span><span className="font-semibold">{inr(p.perAlbum[i] ?? 0)}</span></div>)}</div>}
       {rows.map(([k, v]) => <div key={k} className="flex justify-between py-1"><span className="text-sub">{k}</span><span className="font-semibold">{inr(v)}</span></div>)}
       <div className="mt-1 flex justify-between border-t border-line py-1.5"><span className="text-sub">Subtotal</span><b>{inr(p.sub)}</b></div>
       {p.discount > 0 && <div className="flex justify-between py-1 text-emerald-700"><span>Discount</span><b>−{inr(p.discount)}</b></div>}

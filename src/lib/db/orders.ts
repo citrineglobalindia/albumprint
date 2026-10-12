@@ -1,3 +1,4 @@
+import type { AlbumSpec } from "../pricing";
 import { ORDERS, CUSTOMERS, type Order, type Customer, type Priority, type StageKey, type PayStatus } from "../data";
 import { notify, progressFor } from "../store";
 import { backendOn, sb, q, registerHydrator, reportDbError } from "./core";
@@ -20,6 +21,16 @@ export function customerFromRow(r: Row): Customer {
     gstin: r.gstin ?? undefined, whatsapp: r.whatsapp ?? undefined };
 }
 
+const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+export function albumFromRow(a: Row): AlbumSpec {
+  return { albumType: a.album_type, size: a.album_size, orientation: cap(a.orientation), sheets: a.pages, copies: a.copies, binding: a.binding, paper: a.paper_type, gsm: a.paper_gsm ? String(a.paper_gsm) : "",
+    cover: a.cover_type, lamination: a.lamination ?? "None", box: a.box_type ?? "None", finishes: a.finishes ?? [], nameText: a.name_printing ?? "" };
+}
+const albumToRow = (orderId: string, position: number, a: AlbumSpec): Row => ({
+  order_id: orderId, position, album_type: a.albumType, album_size: a.size, orientation: a.orientation.toLowerCase(), pages: a.sheets, copies: a.copies, paper_type: a.paper, paper_gsm: Number(a.gsm) || null,
+  cover_type: a.cover, lamination: a.lamination || null, binding: a.binding, box_type: a.box && a.box !== "None" ? a.box : null, finishes: a.finishes, name_printing: a.nameText || null,
+});
+
 export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<string, string>): Order {
   const c = cust.get(r.customer_id);
   const spec: Row | undefined = Array.isArray(r.order_specs) ? r.order_specs[0] : r.order_specs ?? undefined;
@@ -31,6 +42,9 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
     pay: PAY[r.pay_status] ?? "Unpaid", total: Number(r.total), paid: Number(r.paid), progress: progressFor(stage),
     qc: r.qc_status === "pending" ? undefined : r.qc_status,
   };
+  if (r.couple_name) o.couple = r.couple_name;
+  const al: Row[] | undefined = r.order_albums;
+  if (al?.length) o.albums = [...al].sort((a, b) => a.position - b.position).map(albumFromRow);
   if (r.sla_paused_at) { o.slaPausedAt = r.sla_paused_at; o.slaPauseReason = r.sla_pause_reason ?? undefined; }
   if (r.stage === "closed") { o.closed = true; }
   if (r.stage === "cancelled") { o.hold = "Cancelled"; o.cancelReason = r.cancel_reason ?? undefined; o.progress = 0; }
@@ -46,7 +60,7 @@ async function hydrate() {
   const client = sb();
   const [custRows, ordRows, staffRows] = await Promise.all([
     q<Row[]>("Loading customers", client.rpc("list_customers") as never),
-    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages)").order("created_at", { ascending: false }) as never),
+    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*)").order("created_at", { ascending: false }) as never),
     q<Row[]>("Loading staff", client.from("profiles").select("id,full_name") as never),
   ]);
   const customers = (custRows ?? []).map(customerFromRow);
@@ -92,24 +106,25 @@ export async function dbUpdateCustomer(code: string, patch: Partial<NewCustomer>
 
 export interface NewOrder {
   customerUid: string; type: "design_printing" | "printing_only"; priority: Priority; eventName?: string; eventType?: string; bride?: string; groom?: string; eventDate?: string;
-  orderDate: string; dueDate: string; total: number; instructions?: string;
-  spec: { albumType: string; albumSize: string; orientation: string; pages: number; copies: number; paperType: string; paperGsm?: number; coverType: string; lamination?: string; binding: string; boxType?: string; finishes: string[]; namePrinting?: string };
+  orderDate: string; dueDate: string; total: number; instructions?: string; couple?: string;
+  albums: AlbumSpec[];                 // at least one; the first is also written to order_specs
 }
 export async function dbCreateOrder(n: NewOrder): Promise<Order | null> {
   const row = await q<Row>("Creating order", sb().from("orders").insert({
-    customer_id: n.customerUid, type: n.type, priority: priorityToDb(n.priority), event_name: n.eventName || null, event_type: n.eventType || null, bride: n.bride || null, groom: n.groom || null,
+    customer_id: n.customerUid, type: n.type, priority: priorityToDb(n.priority), event_name: n.eventName || null, event_type: n.eventType || null, bride: n.bride || null, groom: n.groom || null, couple_name: n.couple || null,
     event_date: n.eventDate || null, order_date: n.orderDate, due_date: n.dueDate, total: n.total, special_instructions: n.instructions || null, code: "pending",
   }).select().single() as never);
   if (!row) return null;
-  const s = n.spec;
+  const a = n.albums[0]!;
   const sp = await q("Saving album specification", sb().from("order_specs").insert({
-    order_id: row.id, album_type: s.albumType, album_size: s.albumSize, orientation: s.orientation.toLowerCase(), pages: s.pages, copies: s.copies, paper_type: s.paperType, paper_gsm: s.paperGsm ?? null,
-    cover_type: s.coverType, lamination: s.lamination ?? null, binding: s.binding, box_required: !!s.boxType && s.boxType !== "None", box_type: s.boxType && s.boxType !== "None" ? s.boxType : null,
-    uv_printing: s.finishes.includes("UV Printing"), foiling: s.finishes.includes("Foiling"), embossing: s.finishes.includes("Embossing"), name_printing: s.namePrinting || null,
+    order_id: row.id, album_type: a.albumType, album_size: a.size, orientation: a.orientation.toLowerCase(), pages: a.sheets, copies: a.copies, paper_type: a.paper, paper_gsm: Number(a.gsm) || null,
+    cover_type: a.cover, lamination: a.lamination || null, binding: a.binding, box_required: a.box !== "None", box_type: a.box !== "None" ? a.box : null,
+    uv_printing: a.finishes.includes("UV Printing"), foiling: a.finishes.includes("Foiling"), embossing: a.finishes.includes("Embossing"), name_printing: a.nameText || null,
   }) as never);
+  await q("Saving the albums", sb().from("order_albums").insert(n.albums.map((x, i) => albumToRow(row.id, i + 1, x))) as never);
   if (sp === null && false) return null;
   const cust = new Map(CUSTOMERS.filter((c) => c.uid).map((c) => [c.uid!, c]));
   const { data: me } = await sb().auth.getUser();
-  const order = orderFromRow({ ...row, order_specs: [{ album_size: s.albumSize, pages: s.pages }] }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
+  const order = orderFromRow({ ...row, order_specs: [{ album_size: a.size, pages: a.sheets }], order_albums: n.albums.map((x, i) => albumToRow(row.id, i + 1, x)), couple_name: n.couple }, cust, new Map(me.user ? [[me.user.id, "Me"]] : []));
   ORDERS.unshift(order); notify(); return order;
 }

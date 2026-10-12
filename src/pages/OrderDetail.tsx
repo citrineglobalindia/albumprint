@@ -153,7 +153,7 @@ export default function OrderDetail() {
         <div className="min-w-0 space-y-5">
           <Panel title="Order Details">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              {[["Order ID", o.id], ["Order Type", o.workflow], ["Event", o.event], ["Priority", <PriorityPill key="p" p={o.priority} />], ["Order Date", fmtDate(o.pendingAt)], ["Expected Delivery", fmtDate(o.due)], ["Assigned To", <span key="a" className="inline-flex items-center gap-1.5"><Avatar name={o.assignee} size={20} />{o.assignee}</span>], ["Progress", <ProgressBar key="g" value={o.progress} className="mt-2 w-24" />]].map(([k, v]) => (
+              {[["Order ID", o.id], ["Order Type", o.workflow], ["Event", o.event], ...(o.couple ? [["Couple", o.couple]] : []), ["Priority", <PriorityPill key="p" p={o.priority} />], ["Order Date", fmtDate(o.pendingAt)], ["Expected Delivery", fmtDate(o.due)], ["Assigned To", <span key="a" className="inline-flex items-center gap-1.5"><Avatar name={o.assignee} size={20} />{o.assignee}</span>], ["Progress", <ProgressBar key="g" value={o.progress} className="mt-2 w-24" />]].map(([k, v]) => (
                 <div key={String(k)}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
               ))}
             </dl>
@@ -162,12 +162,23 @@ export default function OrderDetail() {
             <div className="flex items-center gap-3"><Avatar name={o.customer} size={44} /><div><div className="font-bold">{o.customer}</div><div className="flex items-center gap-1.5 text-xs text-sub"><Phone className="size-3" aria-hidden />{o.mobile}</div></div></div>
             <div className="mt-3 flex gap-4 text-xs text-sub"><span className="flex items-center gap-1"><User className="size-3.5" aria-hidden />Studio client</span><span className="flex items-center gap-1"><CalendarDays className="size-3.5" aria-hidden />Since Jan 2024</span></div>
           </Panel>
-          <Panel title="Print Specification">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              {[["Album Size", o.size], ["Pages / Sheets", `${o.pages} / ${o.pages * 2}`], ["Orientation", "Landscape"], ["Copies", "2"], ["Paper", "Sapphire Matte 300 GSM"], ["Cover", "Acrylic Photo Cover"], ["Lamination", "Matte (Both Sides)"], ["Binding", "Lay-flat"], ["Box", "Premium Magnetic Box"], ["Finishing", "Spot UV on Cover"]].map(([k, v]) => (
-                <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
-              ))}
-            </dl>
+          <Panel title={o.albums && o.albums.length > 1 ? `Print Specification · ${o.albums.length} albums` : "Print Specification"} bodyClassName="space-y-4">
+            {o.albums?.length ? o.albums.map((a, i) => (
+              <div key={i} className={i > 0 ? "border-t border-line pt-4" : ""}>
+                {o.albums!.length > 1 && <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-brand">Album {i + 1} · {a.albumType}</div>}
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  {[["Album Size", a.size], ["Pages / Sheets", `${a.sheets} pages`], ["Orientation", a.orientation], ["Copies", String(a.copies)], ["Paper", `${a.paper}${a.gsm ? ` ${a.gsm} GSM` : ""}`], ["Cover", a.cover], ["Lamination", a.lamination], ["Binding", a.binding], ["Box", a.box], ["Finishing", a.finishes.join(", ") || "None"], ...(a.nameText ? [["Name printing", a.nameText]] : [])].map(([k, v]) => (
+                    <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
+                  ))}
+                </dl>
+              </div>
+            )) : (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[["Album Size", o.size], ["Pages / Sheets", `${o.pages} / ${o.pages * 2}`], ["Orientation", "Landscape"], ["Copies", "2"], ["Paper", "Sapphire Matte 300 GSM"], ["Cover", "Acrylic Photo Cover"], ["Lamination", "Matte (Both Sides)"], ["Binding", "Lay-flat"], ["Box", "Premium Magnetic Box"], ["Finishing", "Spot UV on Cover"]].map(([k, v]) => (
+                  <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
+                ))}
+              </dl>
+            )}
           </Panel>
         </div>
 
