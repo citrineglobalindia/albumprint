@@ -21,7 +21,7 @@ const session = (u) => {
   return { access_token: sign({ aud: "authenticated", role: "authenticated", sub: u.id, email: u.email, iat: now, exp: now + 3600 }), token_type: "bearer", expires_in: 3600, expires_at: now + 3600,
     refresh_token: sign({ typ: "refresh", sub: u.id, exp: now + 86400 * 30 }), user: userJson(u) };
 };
-const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS", "access-control-expose-headers": "*" };
+const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS", "access-control-expose-headers": "*" };
 const send = (res, code, body) => { res.writeHead(code, { "content-type": "application/json", ...cors }); res.end(body === undefined ? "" : JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { const c = []; req.on("data", (d) => c.push(d)); req.on("end", () => r(Buffer.concat(c))); });
 const bearerUser = async (req) => { const t = (req.headers.authorization ?? "").replace(/^Bearer /i, ""); const c = verify(t); if (!c?.sub) return null; return (await db.query("select id, email, created_at from auth.users where id = $1", [c.sub])).rows[0] ?? null; };
@@ -52,9 +52,55 @@ async function serveFile(req, res, bucket, name, download) {
   if (download !== null) h["content-disposition"] = `attachment; filename="${(download || name.split("/").pop()).replace(/"/g, "")}"`;
   res.writeHead(200, h); if (req.method === "HEAD") return res.end(); return res.end(await fs.readFile(fp));
 }
+
+// ───────── Resumable uploads (TUS 1.0.0) stand-in: /storage/v1/upload/resumable — same row-level-security rules as the plain upload.
+const TUS = new Map();                                                                          // upload id → { bucket, name, length, offset, tmp }
+const tusHeaders = (extra = {}) => ({ ...cors, "tus-resumable": "1.0.0", "access-control-expose-headers": "*", ...extra });
+async function tus(req, res, url, seg) {
+  const u = await bearerUser(req); if (!u) return sErr(res, 401, "Unauthorized", "Invalid JWT");
+  const id = seg[2];
+  if (req.method === "POST" && !id) {
+    const meta = Object.fromEntries(String(req.headers["upload-metadata"] ?? "").split(",").filter(Boolean).map((p) => { const [k, v = ""] = p.trim().split(" "); return [k, Buffer.from(v, "base64").toString()]; }));
+    const bucket = meta.bucketName, name = meta.objectName, length = Number(req.headers["upload-length"]);
+    if (!bucket || !name || !Number.isFinite(length)) return sErr(res, 400, "InvalidRequest", "Missing upload metadata");
+    const fp = diskPath(bucket, name); if (!fp) return sErr(res, 400, "InvalidKey", "Invalid object key");
+    if ((await db.query("select 1 from storage.objects where bucket_id = $1 and name = $2", [bucket, name])).rowCount > 0) return sErr(res, 409, "Duplicate", "The resource already exists");
+    try {
+      await asUser(u.id, async (c) => {
+        const lim = (await c.query("select file_size_limit from storage.buckets where id = $1", [bucket])).rows[0];
+        if (lim?.file_size_limit && length > Number(lim.file_size_limit)) { const e = new Error("The object exceeded the maximum allowed size"); e.http = 413; throw e; }
+        await c.query("insert into storage.objects(bucket_id, name, owner) values ($1, $2, auth.uid())", [bucket, name]);
+      });
+    } catch (e) {
+      if (e.http) return sErr(res, e.http, "Payload too large", e.message);
+      if (e.code === "42501" || /row-level security/.test(e.message)) return sErr(res, 403, "Unauthorized", "new row violates row-level security policy");
+      throw e;
+    }
+    const uid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const tmp = path.join(STORE, ".tus", uid); await fs.mkdir(path.dirname(tmp), { recursive: true }); await fs.writeFile(tmp, Buffer.alloc(0));
+    const st = { bucket, name, length, offset: 0, tmp }; TUS.set(uid, st);
+    const body = await readBody(req);
+    if (body.length) { await fs.appendFile(tmp, body); st.offset = body.length; }
+    if (st.offset === st.length) await tusFinish(uid, st);
+    res.writeHead(201, tusHeaders({ location: `http://localhost:${PORT}/storage/v1/upload/resumable/${uid}`, "upload-offset": st.offset })); return res.end();
+  }
+  const st = TUS.get(id); if (!st) return sErr(res, 404, "not_found", "Upload not found");
+  if (req.method === "HEAD") { res.writeHead(200, tusHeaders({ "upload-offset": st.offset, "upload-length": st.length, "cache-control": "no-store" })); return res.end(); }
+  if (req.method === "PATCH") {
+    if (Number(req.headers["upload-offset"]) !== st.offset) return sErr(res, 409, "Conflict", "Offset mismatch");
+    const body = await readBody(req); await fs.appendFile(st.tmp, body); st.offset += body.length;
+    if (st.offset === st.length) await tusFinish(id, st);
+    res.writeHead(204, tusHeaders({ "upload-offset": st.offset })); return res.end();
+  }
+  return sErr(res, 405, "MethodNotAllowed", "Method not allowed");
+}
+async function tusFinish(uid, st) {
+  const fp = diskPath(st.bucket, st.name); await fs.mkdir(path.dirname(fp), { recursive: true }); await fs.rename(st.tmp, fp); TUS.delete(uid);
+}
 async function storage(req, res, url) {
   const rest = url.pathname.slice("/storage/v1".length);
   const seg = rest.split("/").filter(Boolean).map(decodeURIComponent);                      // ["object", …]
+  if (seg[0] === "upload" && seg[1] === "resumable") return tus(req, res, url, seg);
   if (seg[0] === "object" && seg[1] === "sign" && req.method === "GET" && seg.length > 3) {   // signed download link: no Authorization header, the token is the credential
     const bucket = seg[2], name = seg.slice(3).join("/"); const c = verify(url.searchParams.get("token") ?? "");
     if (!c || c.url !== `${bucket}/${name}`) return sErr(res, 400, "InvalidJWT", "Invalid or expired signed URL");

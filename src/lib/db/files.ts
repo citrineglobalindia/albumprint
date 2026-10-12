@@ -45,13 +45,35 @@ export async function sha256(file: Blob): Promise<string | undefined> {
 
 export interface StoredFile { path: string; version: number; row: Row }
 /** Upload the bytes, then register the row. Retries with the next version if the object name is already taken. Throws on failure. */
-export async function uploadAndRegister(rec: FileRec, file: File | undefined): Promise<StoredFile> {
+/** Files above this size go up in resumable 6 MB chunks (Supabase's TUS endpoint): a dropped connection resumes instead of restarting. */
+export const RESUMABLE_FROM = 6 * 1024 * 1024;
+async function resumableUpload(path: string, file: File, onProgress?: (pct: number) => void): Promise<{ error?: { message: string; statusCode?: string } }> {
+  const [{ Upload }, session] = await Promise.all([import("tus-js-client"), sb().auth.getSession()]);
+  const token = session.data.session?.access_token; if (!token) return { error: { message: "You are signed out" } };
+  const base = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, "");
+  return new Promise((resolve) => {
+    const up = new Upload(file, {
+      endpoint: `${base}/storage/v1/upload/resumable`,
+      retryDelays: [0, 1000, 3000, 5000, 10000],
+      headers: { authorization: `Bearer ${token}`, "x-upsert": "false" },
+      uploadDataDuringCreation: true, removeFingerprintOnSuccess: true,
+      metadata: { bucketName: BUCKET, objectName: path, contentType: file.type || "application/octet-stream", cacheControl: "3600" },
+      chunkSize: RESUMABLE_FROM,                                    // Supabase requires exactly 6 MB chunks
+      onError: (e) => { const status = (e as { originalResponse?: { getStatus(): number } }).originalResponse?.getStatus(); resolve({ error: { message: status === 409 ? "The resource already exists" : String(e.message ?? e), statusCode: status ? String(status) : undefined } }); },
+      onProgress: (sent, total) => onProgress?.(Math.round((sent / total) * 100)),
+      onSuccess: () => resolve({}),
+    });
+    void up.findPreviousUploads().then((prev) => { if (prev[0]) up.resumeFromPreviousUpload(prev[0]); up.start(); });
+  });
+}
+
+export async function uploadAndRegister(rec: FileRec, file: File | undefined, onProgress?: (pct: number) => void): Promise<StoredFile> {
   const client = sb(); const orderUid = orderUidOf(rec.orderId); if (!orderUid) throw new Error("Order not found");
   const checksum = file ? await sha256(file) : undefined;
   let version = rec.version; let path = rec.path ?? storagePathFor(rec.orderId, rec.category, rec.name, version);
   if (file) {
     for (let attempt = 0; ; attempt++) {
-      const { error } = await client.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream", cacheControl: "3600" });
+      const { error } = file.size > RESUMABLE_FROM ? await resumableUpload(path, file, onProgress) : await client.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream", cacheControl: "3600" });
       if (!error) break;
       const dup = /already exists|Duplicate/i.test(error.message) || String((error as { statusCode?: string }).statusCode) === "409";
       if (!dup || attempt >= 8) throw error;

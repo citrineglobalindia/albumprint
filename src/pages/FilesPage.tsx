@@ -196,7 +196,7 @@ export default function FilesPage() {
                         <Td>{f.category}</Td>
                         <Td>v{f.version}{g.versions.length > 1 && <span className="text-xs text-sub"> ({g.versions.length} versions)</span>}</Td>
                         <Td>{fmtSize(f.size)}</Td>
-                        <Td>{f.pending ? <Pill tone="amber">Uploading…</Pill> : <Pill tone={STATE_TONE[f.state]} icon={f.state === "Locked" ? Lock : undefined}>{f.state}</Pill>}</Td>
+                        <Td>{f.pending ? <Pill tone="amber">Uploading{f.progress !== undefined ? ` ${f.progress}%` : "…"}</Pill> : <Pill tone={STATE_TONE[f.state]} icon={f.state === "Locked" ? Lock : undefined}>{f.state}</Pill>}</Td>
                         <Td className="whitespace-nowrap text-xs">{f.by}<span className="block text-sub">{fmtDate(f.at)}</span></Td>
                         <Td><span className="flex items-center gap-1">
                           <button aria-label={`Download ${f.name}`} onClick={() => download(f)} className="grid size-8 place-items-center rounded-lg text-sub hover:bg-brand-soft hover:text-brand"><Download className="size-4" /></button>

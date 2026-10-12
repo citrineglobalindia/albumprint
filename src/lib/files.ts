@@ -10,7 +10,7 @@ import { dbArchiveFile, dbLockFile, signedUrl, storagePathFor, uploadAndRegister
 // use short-lived signed URLs. Locking and archiving are enforced by the database (lock_final_print_file, immutability triggers).
 export type FileCategory = "Source Photos" | "Graded" | "Design Draft" | "Final Print" | "Cover" | "QC Evidence" | "Invoice" | "Other";
 export type FileState = "Draft" | "Submitted" | "Approved" | "Rejected" | "Locked";
-export interface FileRec { id: string; orderId: string; category: FileCategory; name: string; ext: string; size: number; version: number; state: FileState; archived?: boolean; by: string; at: string; checksum?: string; path?: string; pending?: boolean }
+export interface FileRec { progress?: number; id: string; orderId: string; category: FileCategory; name: string; ext: string; size: number; version: number; state: FileState; archived?: boolean; by: string; at: string; checksum?: string; path?: string; pending?: boolean }
 export const FILES: FileRec[] = persistArray<FileRec>("files", []);
 export const ALLOWED_EXT = ["jpg", "jpeg", "png", "tif", "tiff", "psd", "pdf", "zip", "ai", "indd", "cdr"];
 export const MAX_BYTES = 5 * 1024 ** 3;
@@ -31,8 +31,8 @@ export function addFile(orderId: string, category: FileCategory, name: string, s
   logAudit({ entity: "file", entityId: orderId, action: "upload", detail: `${category}: ${name} v${version}` });
   if (!backendOn) return { ok: true, file: rec };
   rec.path = storagePathFor(orderId, category, name, version); rec.pending = true;
-  const done = uploadAndRegister(rec, file).then((s) => {
-    rec.pending = false; rec.path = s.path; rec.version = s.version; rec.checksum = s.row.checksum ?? undefined; rec.at = s.row.uploaded_at ?? rec.at; notify(); return { ok: true as const };
+  const done = uploadAndRegister(rec, file, (pct) => { rec.progress = pct; notify(); }).then((s) => {
+    rec.pending = false; rec.progress = undefined; rec.path = s.path; rec.version = s.version; rec.checksum = s.row.checksum ?? undefined; rec.at = s.row.uploaded_at ?? rec.at; notify(); return { ok: true as const };
   }, (e) => {
     const i = FILES.indexOf(rec); if (i >= 0) FILES.splice(i, 1);
     reportDbError(`Uploading ${name}`, e); notify(); return { ok: false as const, error: String((e as { message?: string })?.message ?? e) };

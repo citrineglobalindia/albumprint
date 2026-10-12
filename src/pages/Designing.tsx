@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
+import { Upload, Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
 import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
 import { Combobox } from "../components/controls";
 import { Err, FieldBox, Kbd, Segmented, Banner, strOpts } from "../components/pageKit";
@@ -327,10 +327,17 @@ function DesignWorkspace({ order }: { order: Order }) {
   const lockForPrint = () => {
     if (!adminOnly("approve for print")) return;
     if (!proofApproved(order.id)) return err("Client approval is required before the print version can be locked");
+    const pf = FILES.find((x) => x.orderId === order.id && x.category === "Final Print" && !x.archived && x.state !== "Locked" && !x.pending);
+    if (!pf) return err("Upload the print-ready file first (PDF, TIFF, PSD or ZIP), then lock it");
     const r = moveStage(order.id, "final_approval"); if (!r.ok) return err(r.error);
-    const f = addFile(order.id, "Final Print", `${order.id}-final-print.pdf`, order.pages * 2.4 * 1024 ** 2 | 0);
-    if (!f.ok) return err(f.error);
-    lockFile(f.file.id); notify(); flushAll(); log("Final print version locked"); flash(`Print version locked (${f.file.name} v${f.file.version})`);
+    lockFile(pf.id); notify(); flushAll(); log("Final print version locked"); flash(`Print version locked (${pf.name} v${pf.version})`);
+  };
+  const uploadFinal = (list: FileList | null) => {
+    if (!list?.length) return;
+    let n = 0, e = "";
+    [...list].forEach((f) => { const r = addFile(order.id, "Final Print", f.name, f.size, f); if (r.ok) n++; else e ||= `${f.name}: ${r.error}`; });
+    notify(); flushAll();
+    if (e) err(n ? `${n} uploaded. ${e}` : e); else { log(`Final print file uploaded (${n})`); flash(`${n} print-ready file${n > 1 ? "s" : ""} uploaded`); }
   };
   const releaseToPrinting = () => {
     if (!adminOnly("release to printing")) return;
@@ -637,6 +644,14 @@ function DesignWorkspace({ order }: { order: Order }) {
             {stage === "client_review" && (
               <div className="mt-4 space-y-2">
                 <button disabled className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-300 text-sm font-bold text-white">{clientApproved ? "Client approved" : "Awaiting Client"}</button>
+                {isAdmin && (
+                  <div className="rounded-xl border border-line p-3" data-testid="final-print-files">
+                    <div className="mb-1 flex items-center justify-between"><b className="text-xs">Print-ready file</b>
+                      <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-brand hover:underline"><Upload className="size-3.5" />Upload<input type="file" aria-label="Upload final print file" className="sr-only" accept=".pdf,.tif,.tiff,.psd,.zip,.png,.jpg,.jpeg,.ai,.indd,.cdr" onChange={(e) => { uploadFinal(e.target.files); e.target.value = ""; }} /></label></div>
+                    {FILES.filter((x) => x.orderId === order.id && x.category === "Final Print" && !x.archived).map((x) => <div key={x.id} className="flex items-center justify-between gap-2 py-0.5 text-xs"><span className="truncate">{x.name} v{x.version}</span><span className="text-sub">{x.pending ? "uploading…" : x.state}</span></div>)}
+                    {!FILES.some((x) => x.orderId === order.id && x.category === "Final Print" && !x.archived) && <p className="text-xs text-sub">Upload the final layout exported from your design software. It is what gets locked and sent to the press.</p>}
+                  </div>
+                )}
                 {isAdmin && <button onClick={lockForPrint} disabled={!clientApproved} title={clientApproved ? "" : "Needs client approval"} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300"><Lock className="size-4" />Approve for print (lock)</button>}
               </div>
             )}
