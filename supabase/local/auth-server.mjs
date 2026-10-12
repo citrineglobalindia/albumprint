@@ -15,12 +15,21 @@ const db = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? "postgres
 const b64 = (b) => Buffer.from(b).toString("base64url");
 const sign = (payload) => { const h = b64(JSON.stringify({ alg: "HS256", typ: "JWT" })), p = b64(JSON.stringify(payload)); return `${h}.${p}.${crypto.createHmac("sha256", SECRET).update(`${h}.${p}`).digest("base64url")}`; };
 const verify = (t) => { try { const [h, p, s] = t.split("."); if (crypto.createHmac("sha256", SECRET).update(`${h}.${p}`).digest("base64url") !== s) return null; const d = JSON.parse(Buffer.from(p, "base64url")); return d.exp * 1000 > Date.now() ? d : null; } catch { return null; } };
-const userJson = (u) => ({ id: u.id, aud: "authenticated", role: "authenticated", email: u.email, email_confirmed_at: u.created_at, app_metadata: { provider: "email" }, user_metadata: {}, created_at: u.created_at });
-const session = (u) => {
+const userJson = (u, factors = []) => ({ id: u.id, aud: "authenticated", role: "authenticated", email: u.email, email_confirmed_at: u.created_at, app_metadata: { provider: "email" }, user_metadata: {}, created_at: u.created_at , factors });
+const factorsOf = async (uid) => (await db.query("select id, friendly_name, factor_type, status, created_at from auth.mfa_factors where user_id = $1 order by created_at", [uid])).rows.map((f) => ({ id: f.id, friendly_name: f.friendly_name, factor_type: f.factor_type, status: f.status, created_at: f.created_at, updated_at: f.created_at }));
+const session = async (u, aal = "aal1") => {
   const now = Math.floor(Date.now() / 1000);
-  return { access_token: sign({ aud: "authenticated", role: "authenticated", sub: u.id, email: u.email, iat: now, exp: now + 3600 }), token_type: "bearer", expires_in: 3600, expires_at: now + 3600,
-    refresh_token: sign({ typ: "refresh", sub: u.id, exp: now + 86400 * 30 }), user: userJson(u) };
+  const amr = aal === "aal2" ? [{ method: "totp", timestamp: now }, { method: "password", timestamp: now }] : [{ method: "password", timestamp: now }];
+  return { access_token: sign({ aud: "authenticated", role: "authenticated", sub: u.id, email: u.email, aal, amr, session_id: u.id, iat: now, exp: now + 3600 }), token_type: "bearer", expires_in: 3600, expires_at: now + 3600,
+    refresh_token: sign({ typ: "refresh", sub: u.id, aal, exp: now + 86400 * 30 }), user: userJson(u, await factorsOf(u.id)) };
 };
+// TOTP (RFC 6238) for the MFA stand-in
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const b32enc = (buf) => { let bits = "", out = ""; for (const x of buf) bits += x.toString(2).padStart(8, "0"); for (let i = 0; i < bits.length; i += 5) out += B32[parseInt(bits.slice(i, i + 5).padEnd(5, "0"), 2)]; return out; };
+const b32dec = (str) => { let bits = ""; for (const ch of str.replace(/=+$/, "")) bits += B32.indexOf(ch).toString(2).padStart(5, "0"); const out = []; for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(out); };
+const totp = (secret, t = Date.now()) => { const c = Buffer.alloc(8); c.writeBigUInt64BE(BigInt(Math.floor(t / 30000))); const h = crypto.createHmac("sha1", b32dec(secret)).update(c).digest(); const o = h[h.length - 1] & 15; return String(((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000)).padStart(6, "0"); };
+const totpOk = (secret, code) => [-1, 0, 1].some((d) => totp(secret, Date.now() + d * 30000) === String(code));
+const CHALLENGES = new Map();
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS", "access-control-expose-headers": "*" };
 const send = (res, code, body) => { res.writeHead(code, { "content-type": "application/json", ...cors }); res.end(body === undefined ? "" : JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { const c = []; req.on("data", (d) => c.push(d)); req.on("end", () => r(Buffer.concat(c))); });
@@ -170,11 +179,11 @@ http.createServer(async (req, res) => {
       if (url.searchParams.get("grant_type") === "password") {
         const { rows } = await db.query("select id, email, created_at from auth.users where lower(email) = lower($1) and encrypted_password = crypt($2, encrypted_password)", [body.email, body.password]);
         if (!rows[0]) return send(res, 400, { error: "invalid_grant", error_description: "Invalid login credentials", code: 400, msg: "Invalid login credentials" });
-        return send(res, 200, session(rows[0]));
+        return send(res, 200, await session(rows[0]));
       }
       if (url.searchParams.get("grant_type") === "refresh_token") {
         const c = verify(body.refresh_token ?? ""); const u = c && (await db.query("select id, email, created_at from auth.users where id = $1", [c.sub])).rows[0];
-        return u ? send(res, 200, session(u)) : send(res, 400, { error: "invalid_grant", error_description: "Invalid Refresh Token" });
+        return u ? send(res, 200, await session(u, c.aal ?? "aal1")) : send(res, 400, { error: "invalid_grant", error_description: "Invalid Refresh Token" });
       }
     }
     if (url.pathname === "/auth/v1/signup" && req.method === "POST") {
@@ -182,12 +191,38 @@ http.createServer(async (req, res) => {
       const ex = await db.query("select 1 from auth.users where lower(email) = lower($1)", [email]);
       if (ex.rowCount) return send(res, 422, { code: 422, error_code: "user_already_exists", msg: "User already registered" });
       const { rows } = await db.query("insert into auth.users(id, email, encrypted_password) values (gen_random_uuid(), lower($1), crypt($2, gen_salt('bf'))) returning id, email, created_at", [email, password]);
-      return send(res, 200, session(rows[0]));
+      return send(res, 200, await session(rows[0]));
     }
     if (url.pathname === "/auth/v1/user") {
       const u = await bearerUser(req); if (!u) return send(res, 401, { code: 401, msg: "invalid JWT" });
       if (req.method === "PUT") { const b = JSON.parse((await readBody(req)).toString()); if (b.password) await db.query("update auth.users set encrypted_password = crypt($1, gen_salt('bf')) where id = $2", [b.password, u.id]); }
-      return send(res, 200, userJson(u));
+      return send(res, 200, userJson(u, await factorsOf(u.id)));
+    }
+    if (url.pathname.startsWith("/auth/v1/factors")) {
+      const u = await bearerUser(req); if (!u) return send(res, 401, { code: 401, msg: "invalid JWT" });
+      const claims = verify((req.headers.authorization ?? "").replace(/^Bearer /i, "")) ?? {};
+      const parts = url.pathname.split("/").filter(Boolean);                                  // auth v1 factors [id] [challenge|verify]
+      if (parts.length === 3 && req.method === "POST") {
+        const b = JSON.parse((await readBody(req)).toString() || "{}"); const secret = b32enc(crypto.randomBytes(20));
+        const { rows } = await db.query("insert into auth.mfa_factors(user_id, friendly_name, secret, status) values ($1, $2, $3, 'unverified') returning id", [u.id, b.friendly_name ?? "totp", secret]);
+        const uri = `otpauth://totp/AlbumPro:${encodeURIComponent(u.email)}?secret=${secret}&issuer=AlbumPro`;
+        return send(res, 200, { id: rows[0].id, type: "totp", friendly_name: b.friendly_name, totp: { qr_code: `data:image/svg+xml;utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>')}`, secret, uri } });
+      }
+      const fid = parts[3]; const fr = (await db.query("select id, secret, status from auth.mfa_factors where id = $1 and user_id = $2", [fid, u.id])).rows[0];
+      if (!fr) return send(res, 404, { code: 404, error_code: "mfa_factor_not_found", msg: "MFA factor not found" });
+      if (parts[4] === "challenge" && req.method === "POST") { const id = crypto.randomUUID(); CHALLENGES.set(id, fid); return send(res, 200, { id, type: "totp", expires_at: Math.floor(Date.now() / 1000) + 300 }); }
+      if (parts[4] === "verify" && req.method === "POST") {
+        const b = JSON.parse((await readBody(req)).toString() || "{}");
+        if (CHALLENGES.get(b.challenge_id) !== fid) return send(res, 400, { code: 400, error_code: "mfa_challenge_expired", msg: "MFA challenge expired" });
+        if (!totpOk(fr.secret, b.code)) return send(res, 400, { code: 400, error_code: "mfa_verification_failed", msg: "Invalid TOTP code entered" });
+        await db.query("update auth.mfa_factors set status = 'verified' where id = $1", [fid]);
+        return send(res, 200, await session(u, "aal2"));
+      }
+      if (parts.length === 4 && req.method === "DELETE") {
+        if (fr.status === "verified" && claims.aal !== "aal2") return send(res, 401, { code: 401, error_code: "insufficient_aal", msg: "AAL2 session is required to unenroll a verified factor" });
+        await db.query("delete from auth.mfa_factors where id = $1", [fid]);
+        return send(res, 200, { id: fid });
+      }
     }
     if (url.pathname === "/auth/v1/logout") return send(res, 204);
     if (url.pathname === "/auth/v1/recover") return send(res, 200, {});

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase, backendOn } from "./supabase";
 import ChangePassword from "../pages/ChangePassword";
+import MfaChallenge from "../pages/MfaChallenge";
 import { Navigate, useLocation } from "react-router-dom";
 
 // SRS §1.2 role model. Demo-only auth: replace with real session/MFA service.
@@ -18,7 +19,8 @@ export const ROLES: Record<RoleKey, { label: string; user: string; email: string
 
 export interface AuthResult { ok: boolean; error?: string; needsConfirmation?: boolean }
 interface Auth {
-  role: RoleKey | null; user: string; email: string; loading: boolean; backend: boolean; mustChangePassword: boolean;
+  role: RoleKey | null; user: string; email: string; loading: boolean; backend: boolean; mustChangePassword: boolean; mfaPending: boolean;
+  verifyMfa: (code: string) => Promise<AuthResult>;
   finishPasswordChange: (newPassword: string) => Promise<AuthResult>;
   login: (r: RoleKey) => void;                                       // demo mode only
   signIn: (email: string, password: string) => Promise<AuthResult>;  // Supabase
@@ -42,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(backendOn);
   const [mustChange, setMustChange] = useState(false);
+  const [mfaFactor, setMfaFactor] = useState<string | null>(null);      // set while the password step is done but the authenticator code is not
 
   // Supabase: load the signed-in user's profile (role comes from the database, never from the browser).
   useEffect(() => {
@@ -50,6 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let alive = true;
     const load = async (uid: string | null) => {
       if (!uid) { if (alive) { setRole(null); setName(""); setEmail(""); mirror(null); setLoading(false); } return; }
+      // two-step login: with a verified authenticator factor, a password-only session must enter the code before anything loads
+      const aal = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal.data && aal.data.nextLevel === "aal2" && aal.data.currentLevel !== "aal2") {
+        const { data: f } = await sb.auth.mfa.listFactors();
+        const factor = f?.totp?.find((x) => x.status === "verified");
+        if (alive && factor) { setMfaFactor(factor.id); setRole(null); mirror(null); setLoading(false); return; }
+      }
+      if (alive) setMfaFactor(null);
       const { data } = await sb.from("profiles").select("full_name,email,role,active,must_change_password").eq("id", uid).maybeSingle();
       if (!alive) return;
       if (data && data.active && data.role in ROLES) {
@@ -91,21 +102,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { hydrateAll } = await import("./db"); await hydrateAll();
     return { ok: true };
   };
-  const logout = () => { mirror(null); setRole(null); if (supabase) void supabase.auth.signOut(); };
+  const verifyMfa: Auth["verifyMfa"] = async (code) => {
+    if (!supabase || !mfaFactor) return { ok: false, error: "No verification is pending" };
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: mfaFactor, code });
+    return error ? { ok: false, error: /invalid|expired/i.test(error.message) ? "That code is not valid. Check the app and try again." : error.message } : { ok: true };
+  };
+  const logout = () => { setMfaFactor(null); mirror(null); setRole(null); if (supabase) void supabase.auth.signOut(); };
 
-  return <Ctx.Provider value={{ role, user: backendOn ? name : role ? ROLES[role].user : "", email: backendOn ? email : role ? ROLES[role].email : "", loading, backend: backendOn, mustChangePassword: backendOn && mustChange, finishPasswordChange, login, signIn, signUp, resetPassword, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ role, user: backendOn ? name : role ? ROLES[role].user : "", email: backendOn ? email : role ? ROLES[role].email : "", loading, backend: backendOn, mustChangePassword: backendOn && mustChange, mfaPending: backendOn && !!mfaFactor, verifyMfa, finishPasswordChange, login, signIn, signUp, resetPassword, logout }}>{children}</Ctx.Provider>;
 }
 export const useAuth = () => useContext(Ctx);
 
 /** Redirects to /login when signed out, and to "/" when the role may not open the path. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { role, loading, mustChangePassword } = useAuth();
+  const { role, loading, mustChangePassword, mfaPending } = useAuth();
   const { pathname } = useLocation();
   if (loading) return <div className="grid min-h-screen place-items-center text-sm text-sub" role="status">Loading…</div>;
+  if (mfaPending) return <MfaChallenge />;
   if (!role) return <Navigate to="/login" replace state={{ from: pathname }} />;
   if (mustChangePassword) return <ChangePassword />;
   const base = "/" + (pathname.split("/")[1] ?? "");
-  const allowed = ROLES[role].nav.includes(base) || pathname.startsWith("/orders/") && ROLES[role].nav.includes("/orders");
+  const allowed = pathname === "/account" || ROLES[role].nav.includes(base) || pathname.startsWith("/orders/") && ROLES[role].nav.includes("/orders");
   if (!allowed && pathname !== "/") return <Navigate to="/" replace />;
   return <>{children}</>;
 }

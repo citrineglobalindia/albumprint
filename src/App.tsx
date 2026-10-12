@@ -20,6 +20,7 @@ const Reports = lazy(() => import("./pages/Reports"));
 const Masters = lazy(() => import("./pages/Masters"));
 const UsersRoles = lazy(() => import("./pages/UsersRoles"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
+const Account = lazy(() => import("./pages/Account"));
 const Login = lazy(() => import("./pages/Login"));
 const RoleHome = lazy(() => import("./pages/RoleHome"));
 const OrderDetail = lazy(() => import("./pages/OrderDetail"));
@@ -85,6 +86,7 @@ export default function App() {
             <Route path="masters" element={page(<Masters />)} />
             <Route path="users" element={page(<UsersRoles />)} />
             <Route path="settings" element={page(<SettingsPage />)} />
+            <Route path="account" element={page(<Account />)} />
             <Route path="*" element={<div className="p-10 text-sub">Page not found</div>} />
           </Route>
         </Routes>

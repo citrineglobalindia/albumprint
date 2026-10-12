@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Aperture, Eye, EyeOff, Lock, Mail, ArrowLeft, ShieldAlert } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import MfaChallenge from "./MfaChallenge";
 import { cx, inputCls } from "../components/ui";
 
 type Mode = "signin" | "signup" | "forgot" | "info";
 
 /** Real sign-in against Supabase. Only emails an admin has invited become staff (see supabase/migrations/0007). */
 export default function BackendLogin() {
-  const { role, loading, signIn, signUp, resetPassword } = useAuth();
+  const { role, loading, mfaPending, signIn, signUp, resetPassword } = useAuth();
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -21,6 +22,7 @@ export default function BackendLogin() {
   const [noAccess, setNoAccess] = useState(false);
 
   if (role) return <Navigate to={from} replace />;
+  if (mfaPending) return <MfaChallenge />;           // password accepted; the authenticator code is the second step
 
   const go = async () => {
     setErr(""); setNoAccess(false);

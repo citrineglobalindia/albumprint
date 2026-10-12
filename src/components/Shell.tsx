@@ -266,6 +266,7 @@ function Topbar({ openPalette, onMenu, menuOpen }: { openPalette: () => void; on
             <div role="menu" className="absolute right-0 top-12 z-40 w-60 rounded-xl border border-line bg-white p-1.5 shadow-xl">
               <div className="px-3 py-2 text-xs text-sub">{ROLES[role!].email}<br />{ROLES[role!].dept}</div>
               <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"><MonitorSmartphone className="mt-0.5 size-4 text-sub" /><span><b className="block text-[13px]">Active session</b>Chrome · this device · just now</span></div>
+              <button role="menuitem" onClick={() => { setOpen(false); nav("/account"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft"><UserCog className="size-4" />My account &amp; two-step login</button>
               <button role="menuitem" onClick={() => { logout(); nav("/login"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold hover:bg-brand-soft"><LogOut className="size-4" />Logout</button>
               <button role="menuitem" onClick={() => { logout(); nav("/login"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold text-rose-600 hover:bg-rose-50"><LogOut className="size-4" />Logout all sessions</button>
             </div>

@@ -832,6 +832,12 @@ function UsersRolesDb() {
     confirm({ title: next ? "Activate user" : "Deactivate user", message: next ? `Let ${u.name} sign in again?` : `${u.name} will be blocked from the app on their next sign-in or page load.`, confirmLabel: next ? "Activate" : "Deactivate", danger: !next },
       () => { void patchUser(u, { active: next }, `${u.name} ${next ? "activated" : "deactivated"}`); });
   };
+  const resetTwoStep = (u: DbUser) => confirm({ title: "Reset two-step login", message: `${u.name} will sign in with just their password and can set up their authenticator app again. Use this when they lose their phone.`, confirmLabel: "Reset", danger: true }, () => {
+    void (async () => {
+      const { data, error } = await supabase!.rpc("admin_reset_mfa", { p_user: u.id });
+      show(error ? `Could not reset: ${error.message}` : Number(data) > 0 ? `Two-step login reset for ${u.name}` : `${u.name} has no two-step login to reset`);
+    })();
+  });
   const signupLink = () => `${location.origin}/login`;
   const resend = async (i: DbInvite) => {
     const err = await dbResendInvite(i.email, i.resends);
@@ -900,6 +906,7 @@ function UsersRolesDb() {
                       <Td>{fmtDate(u.created)}</Td>
                       <Td><span className="flex gap-2">
                         <button aria-label={`Edit ${u.name}`} onClick={() => openEdit(u)} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">Edit</button>
+                        <button aria-label={`Reset two-step login for ${u.name}`} onClick={() => resetTwoStep(u)} className="h-8 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-brand-soft">Reset 2-step</button>
                         <button aria-label={`${u.active ? "Deactivate" : "Activate"} ${u.name}`} onClick={() => toggleActive(u)} className={cx("h-8 rounded-lg border px-3 text-xs font-bold", u.active ? "border-rose-200 text-rose-600 hover:bg-rose-50" : "border-line hover:bg-brand-soft")}>{u.active ? "Deactivate" : "Activate"}</button>
                       </span></Td>
                     </tr>
