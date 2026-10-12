@@ -34,19 +34,20 @@ test.describe("orders", () => {
     await dlg.getByRole("button", { name: "Next" }).click();
     // album 1 stays as the default; album 2 is a different spec
     await dlg.getByRole("button", { name: "Add album" }).click();
-    await expect(dlg.getByRole("tab", { name: /Album 2/ })).toHaveAttribute("aria-selected", "true");
+    await expect(dlg.getByRole("tab", { name: /^Album 2/ })).toHaveAttribute("aria-selected", "true");
+    await dlg.getByLabel("Album Name").fill("Engagement Album");
     await dlg.getByLabel("Album Type").selectOption("Photobook");
     await dlg.getByLabel("Album Size").selectOption("8x12");
-    await dlg.getByRole("tab", { name: /Album 1/ }).click();
+    await dlg.getByRole("tab", { name: /Asha & Ravi Wedding Album/ }).click();
     await expect(dlg.getByLabel("Album Type")).toHaveValue("Premium Album");     // album 1 was not changed
     await dlg.getByRole("button", { name: "Next" }).click();
-    await expect(dlg.getByText(/Album 2 · Photobook 8x12/)).toBeVisible();      // price breakup lists each album
+    await expect(dlg.getByText(/Engagement Album · 8x12/)).toBeVisible();      // price breakup lists each album
     await dlg.getByRole("button", { name: "Next" }).click();
     await expect(dlg.getByText("Asha & Ravi").first()).toBeVisible();
     await dlg.getByRole("button", { name: "Create Order" }).click();
     await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
     await expect(page.getByText("Print Specification · 2 albums")).toBeVisible();
-    await expect(page.getByText("Album 2 · Photobook")).toBeVisible();
+    await expect(page.getByText("Engagement Album · Photobook")).toBeVisible();
     await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
   });
 

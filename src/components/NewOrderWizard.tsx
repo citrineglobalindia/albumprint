@@ -4,7 +4,7 @@ import { Check, ChevronLeft, ChevronRight, X, UserPlus, Palette, Printer, PartyP
 import { cx, Field, inputCls, Toggle } from "./ui";
 import { Combobox } from "./controls";
 import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type Priority } from "../lib/data";
-import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, type AlbumSpec } from "../lib/pricing";
+import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, type AlbumSpec } from "../lib/pricing";
 import { inr } from "../lib/format";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
@@ -55,6 +55,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   const removeAlbum = (i: number) => { setD((x) => ({ ...x, albums: x.albums.filter((_, j) => j !== i) })); setCur(Math.max(0, i - 1)); };
   const designed = d.workflow === "Design + Printing";
   const p = useMemo(() => priceAlbums(d.albums, { designed, images: d.images, discountPct: d.discountPct }), [d.albums, d.images, d.discountPct, designed]);
+  const nameOf = (a: AlbumSpec, i: number) => albumName(a, i, d.couple, d.event);
   const eventTitle = d.eventName.trim() || (d.couple.trim() ? `${d.couple.trim()} ${d.event}` : "");
   const cust = CUSTOMERS.find((c) => c.id === d.customerId);
   const custName = d.newCustomer ? d.newCustomer.studio : cust?.studio ?? "";
@@ -72,6 +73,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   const [saving, setSaving] = useState(false);
   const create = async () => {
     if (![0, 1, 2, 3].every(validate)) { setStep(0); return; }
+    const named = d.albums.map((a, i) => ({ ...a, title: nameOf(a, i) }));     // every album is saved with its name
 
     if (backendOn) {                                  // database mode: the server assigns the order number; nothing is shown until it is saved
       setSaving(true);
@@ -85,7 +87,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
         if (!customerUid) { setSaving(false); show("Choose a customer"); return; }
         const order = await dbCreateOrder({
           customerUid, type: designed ? "design_printing" : "printing_only", priority: d.priority, eventName: eventTitle, eventType: d.event, couple: d.couple.trim() || undefined, eventDate: d.eventDate || undefined,
-          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: d.albums,
+          orderDate: d.orderDate, dueDate: d.due, total: p.total, instructions: d.instructions, albums: named,
         });
         setSaving(false);
         if (!order) return;                           // the error was already shown by the data layer
@@ -101,7 +103,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     }
     const order: Order = {
       id: `IDP${String(n).padStart(5, "0")}`, customer: custName, mobile: d.newCustomer?.mobile ?? cust?.mobile ?? "", event: d.event, workflow: d.workflow, size: d.albums[0]!.size, pages: d.albums[0]!.sheets,
-      couple: d.couple.trim() || undefined, albums: d.albums,
+      couple: d.couple.trim() || undefined, albums: named,
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: p.total, paid: 0, progress: 0,
     };
     ORDERS.unshift(order);
@@ -177,19 +179,20 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
               <div className="mb-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Albums on this order">
                 {d.albums.map((a, i) => (
                   <button key={i} role="tab" aria-selected={i === cur} onClick={() => setCur(i)} className={cx("h-10 rounded-lg border px-4 text-[13px] font-bold", i === cur ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>
-                    Album {i + 1}<span className={cx("ml-2 font-medium", i === cur ? "opacity-80" : "text-sub")}>{a.albumType} · {a.size}{a.copies > 1 ? ` ×${a.copies}` : ""}</span>
+                    {nameOf(a, i)}<span className={cx("ml-2 font-medium", i === cur ? "opacity-80" : "text-sub")}>{a.albumType} · {a.size}{a.copies > 1 ? ` ×${a.copies}` : ""}</span>
                   </button>
                 ))}
                 <button onClick={() => addAlbum()} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-dashed border-brand px-4 text-[13px] font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add album</button>
               </div>
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-extrabold">Album {cur + 1} specification</h3>
+                <h3 className="text-sm font-extrabold">Album {cur + 1} of {d.albums.length}</h3>
                 <div className="flex gap-2">
                   <button onClick={() => addAlbum(al)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><Copy className="size-3.5" />Duplicate</button>
                   {d.albums.length > 1 && <button onClick={() => removeAlbum(cur)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="size-3.5" />Remove</button>}
                 </div>
               </div>
               <div className="grid gap-x-6 md:grid-cols-3">
+                <div className="md:col-span-3"><Field label="Album Name" hint="Shown on the order, proofs and production, e.g. “Engagement Album”"><input className={inputCls} value={al.title} onChange={(e) => setAlbum({ title: e.target.value })} placeholder={cur === 0 && d.couple.trim() ? nameOf({ ...al, title: "" }, 0) : "e.g. Engagement Album"} /></Field></div>
                 <Field label="Album Type" required><select className={inputCls} value={al.albumType} onChange={(e) => setAlbum({ albumType: e.target.value })}>{Object.keys(ALBUM_TYPES).map((x) => <option key={x}>{x}</option>)}</select></Field>
                 <Field label="Album Size" required><select className={inputCls} value={al.size} onChange={(e) => setAlbum({ size: e.target.value })}>{SIZES.map((x) => <option key={x}>{x}</option>)}</select></Field>
                 <Field label="Orientation" required><select className={inputCls} value={al.orientation} onChange={(e) => setAlbum({ orientation: e.target.value })}>{["Landscape", "Portrait", "Square"].map((x) => <option key={x}>{x}</option>)}</select></Field>
@@ -216,7 +219,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                 <Field label="Assign / owner"><select className={inputCls} defaultValue="Priya">{ASSIGNEES.map((a) => <option key={a}>{a}</option>)}</select></Field>
                 <label className="flex items-center gap-3 text-sm"><Toggle on={designed} onChange={(v) => set("workflow", v ? "Design + Printing" : "Printing")} />Include design & colour grading</label>
               </div>
-              <PriceCard p={p} designed={designed} albums={d.albums} />
+              <PriceCard p={p} designed={designed} albums={d.albums} names={d.albums.map(nameOf)} />
             </div>
           )}
 
@@ -229,7 +232,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                 <div className="mt-4 space-y-3">
                   {d.albums.map((a, i) => (
                     <div key={i} className="rounded-xl border border-line p-3 text-sm">
-                      <div className="mb-1 flex items-center justify-between"><b>Album {i + 1} · {a.albumType}</b><span className="text-xs font-bold text-brand">{inr(p.perAlbum[i] ?? 0)}</span></div>
+                      <div className="mb-1 flex items-center justify-between"><b>{nameOf(a, i)} · {a.albumType}</b><span className="text-xs font-bold text-brand">{inr(p.perAlbum[i] ?? 0)}</span></div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-sub">
                         <span>{a.size} · {a.orientation}</span><span>{a.sheets} pages × {a.copies} {a.copies === 1 ? "copy" : "copies"}</span>
                         <span>{a.paper} {a.gsm} GSM · {a.binding}</span><span>{a.cover} cover · {a.lamination} lamination</span>
@@ -240,7 +243,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                   ))}
                 </div>
               </div>
-              <div><PriceCard p={p} designed={designed} albums={d.albums} /><p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700"><PartyPopper className="size-4 shrink-0" />On create, the order gets an ID, enters the {designed ? "Colour Grading" : "File Verification"} queue and the customer is acknowledged.</p></div>
+              <div><PriceCard p={p} designed={designed} albums={d.albums} names={d.albums.map(nameOf)} /><p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700"><PartyPopper className="size-4 shrink-0" />On create, the order gets an ID, enters the {designed ? "Colour Grading" : "File Verification"} queue and the customer is acknowledged.</p></div>
             </div>
           )}
         </div>
@@ -258,12 +261,12 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   );
 }
 
-function PriceCard({ p, designed, albums }: { p: ReturnType<typeof priceAlbums>; designed: boolean; albums: AlbumSpec[] }) {
+function PriceCard({ p, designed, albums, names }: { p: ReturnType<typeof priceAlbums>; designed: boolean; albums: AlbumSpec[]; names: string[] }) {
   const rows: [string, number][] = [["Base album", p.base], ["Sheets / pages", p.sheets], ["Cover, lamination, box & finishes", p.addons], ...(designed ? ([["Design charge", p.design], ["Colour grading", p.grading]] as [string, number][]) : [])];
   return (
     <div className="rounded-2xl border border-line bg-slate-50 p-4 text-sm">
       <div className="mb-2 font-extrabold">Price breakup</div>
-      {albums.length > 1 && <div className="mb-2 border-b border-line pb-2">{albums.map((a, i) => <div key={i} className="flex justify-between py-0.5 text-xs"><span className="text-sub">Album {i + 1} · {a.albumType} {a.size}</span><span className="font-semibold">{inr(p.perAlbum[i] ?? 0)}</span></div>)}</div>}
+      {albums.length > 1 && <div className="mb-2 border-b border-line pb-2">{albums.map((a, i) => <div key={i} className="flex justify-between py-0.5 text-xs"><span className="text-sub">{names[i]} · {a.size}</span><span className="font-semibold">{inr(p.perAlbum[i] ?? 0)}</span></div>)}</div>}
       {rows.map(([k, v]) => <div key={k} className="flex justify-between py-1"><span className="text-sub">{k}</span><span className="font-semibold">{inr(v)}</span></div>)}
       <div className="mt-1 flex justify-between border-t border-line py-1.5"><span className="text-sub">Subtotal</span><b>{inr(p.sub)}</b></div>
       {p.discount > 0 && <div className="flex justify-between py-1 text-emerald-700"><span>Discount</span><b>−{inr(p.discount)}</b></div>}

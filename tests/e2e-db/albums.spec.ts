@@ -16,6 +16,7 @@ test("reception creates an order with two albums and the couple's name", async (
   await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
   await dlg.getByRole("button", { name: "Next" }).click();
   await dlg.getByRole("button", { name: "Add album" }).click();
+  await dlg.getByLabel("Album Name").fill("Engagement Album");
   await dlg.getByLabel("Album Type").selectOption("Photobook");
   await dlg.getByLabel("Album Size").selectOption("8x12");
   await dlg.getByRole("button", { name: "Next" }).click();
@@ -28,9 +29,9 @@ test("reception creates an order with two albums and the couple's name", async (
   const o = sql(`select id from orders where code = '${code}'`);
   expect(sql(`select couple_name from orders where id = '${o}'`)).toBe("Asha & Ravi");
   expect(sql(`select count(*) from order_specs where order_id = '${o}'`)).toBe("1");
-  expect(sql(`select string_agg(position || ':' || album_type || ':' || album_size, ',' order by position) from order_albums where order_id = '${o}'`)).toBe("1:Premium Album:12x36,2:Photobook:8x12");
+  expect(sql(`select string_agg(position || ':' || title || ':' || album_size, ',' order by position) from order_albums where order_id = '${o}'`)).toBe("1:Asha & Ravi Wedding Album:12x36,2:Engagement Album:8x12");
 
   await page.reload();                                         // albums come back from the database after a reload
   await expect(page.getByText("Print Specification · 2 albums")).toBeVisible();
-  await expect(page.getByText("Album 2 · Photobook")).toBeVisible();
+  await expect(page.getByText("Engagement Album · Photobook")).toBeVisible();
 });

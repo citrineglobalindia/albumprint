@@ -23,11 +23,11 @@ export function customerFromRow(r: Row): Customer {
 
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 export function albumFromRow(a: Row): AlbumSpec {
-  return { albumType: a.album_type, size: a.album_size, orientation: cap(a.orientation), sheets: a.pages, copies: a.copies, binding: a.binding, paper: a.paper_type, gsm: a.paper_gsm ? String(a.paper_gsm) : "",
+  return { title: a.title ?? "", albumType: a.album_type, size: a.album_size, orientation: cap(a.orientation), sheets: a.pages, copies: a.copies, binding: a.binding, paper: a.paper_type, gsm: a.paper_gsm ? String(a.paper_gsm) : "",
     cover: a.cover_type, lamination: a.lamination ?? "None", box: a.box_type ?? "None", finishes: a.finishes ?? [], nameText: a.name_printing ?? "" };
 }
 const albumToRow = (orderId: string, position: number, a: AlbumSpec): Row => ({
-  order_id: orderId, position, album_type: a.albumType, album_size: a.size, orientation: a.orientation.toLowerCase(), pages: a.sheets, copies: a.copies, paper_type: a.paper, paper_gsm: Number(a.gsm) || null,
+  order_id: orderId, position, title: a.title.trim() || null, album_type: a.albumType, album_size: a.size, orientation: a.orientation.toLowerCase(), pages: a.sheets, copies: a.copies, paper_type: a.paper, paper_gsm: Number(a.gsm) || null,
   cover_type: a.cover, lamination: a.lamination || null, binding: a.binding, box_type: a.box && a.box !== "None" ? a.box : null, finishes: a.finishes, name_printing: a.nameText || null,
 });
 
