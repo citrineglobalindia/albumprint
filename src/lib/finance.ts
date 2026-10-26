@@ -1,3 +1,4 @@
+import { notifyPayment } from "./events";
 import { persistArray } from "./persist";
 import { ORDERS, type Order } from "./data";
 import { currentActor, logAudit } from "./audit";
@@ -133,7 +134,7 @@ export function recordPayment(orderId: string, d: { amount: number; mode: Mode; 
   }
   o.paid += d.amount; syncPay(o);
   const p: Payment = { id: `P${Date.now().toString(36)}`, orderId, kind: "payment", date: d.date, mode: d.mode, ref: d.ref.trim(), amount: d.amount, receipt: nextReceipt(), note: d.note, by: actor().name, byRole: String(actor().role) };
-  PAYMENTS.unshift(p);
+  PAYMENTS.unshift(p); notifyPayment(o, d.amount);
   logAudit({ entity: "payment", entityId: orderId, action: "receive", detail: `₹${d.amount} via ${d.mode} · ${p.receipt}`, from: before, to: o.pay }); notify();
   return ok(`Received ₹${d.amount.toLocaleString("en-IN")} — receipt ${p.receipt}${o.paid > o.total ? ` (₹${(o.paid - o.total).toLocaleString("en-IN")} held as credit)` : ""}`);
 }

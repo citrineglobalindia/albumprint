@@ -11,7 +11,8 @@ import {
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
 import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
-import { ORDERS, CUSTOMERS, STAGES, ASSIGNEES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
+import { assignees } from "../lib/staffList";
+import { ORDERS, CUSTOMERS, STAGES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
 import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
 import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
 import { setHold as holdOrder, cancelOrder, type Result } from "../lib/workflow";
@@ -187,7 +188,7 @@ export default function Orders() {
           <MultiSelect className="w-32" label="Album Size" options={ALBUM_SIZES} value={size} onChange={f(setSize)} />
           <MultiSelect className="w-28" label="Priority" options={PRIORITIES} value={prio} onChange={f(setPrio)} />
           <MultiSelect className="w-32" label="Payment" options={PAY} value={pay} onChange={f(setPay)} />
-          <MultiSelect className="w-32" label="Assignee" options={ASSIGNEES} value={asg} onChange={f(setAsg)} />
+          <MultiSelect className="w-32" label="Assignee" options={assignees()} value={asg} onChange={f(setAsg)} />
           <MultiSelect className="w-28" label="Event" options={EVENTS} value={evt} onChange={f(setEvt)} />
           <button aria-pressed={late} onClick={() => { setLate(!late); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", late ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}><AlarmClock className="size-4" />Overdue</button>
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
@@ -204,7 +205,7 @@ export default function Orders() {
             <OutlineButton onClick={bulkResume}>Resume</OutlineButton>
             {isAdmin && <OutlineButton onClick={bulkCancel}>Cancel</OutlineButton>}
             <OutlineButton onClick={() => bulkEdit({ priority: "High" }, "priority", "Priority set to High")}>Set High priority</OutlineButton>
-            <div className="w-44"><Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulkEdit({ assignee: v }, "reassign", `Assigned to ${v}`)} /></div>
+            <div className="w-44"><Combobox options={assignees().map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulkEdit({ assignee: v }, "reassign", `Assigned to ${v}`)} /></div>
             <button onClick={() => setSel(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
           </div>
         )}
@@ -241,7 +242,7 @@ export default function Orders() {
                   {show_("assignee") && (
                     <Td>
                       <InlinePop title="Reassign to" label={`Reassign ${o.id}`} trigger={<span className="inline-flex items-center gap-2"><Avatar name={o.assignee} size={24} />{o.assignee}</span>}>
-                        {(close) => <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={o.assignee} onChange={(v) => { editOrder(o.id, { assignee: v }, "reassign"); show(`${o.id} reassigned to ${v}`); close(); }} />}
+                        {(close) => <Combobox options={assignees().map((a) => ({ value: a, label: a }))} value={o.assignee} onChange={(v) => { editOrder(o.id, { assignee: v }, "reassign"); show(`${o.id} reassigned to ${v}`); close(); }} />}
                       </InlinePop>
                     </Td>
                   )}
@@ -303,7 +304,7 @@ export default function Orders() {
               </div>
               <div>
                 <span className="mb-1 block text-xs font-semibold text-sub">Reassign</span>
-                <Combobox options={ASSIGNEES.map((a) => ({ value: a, label: a }))} value={d.assignee} onChange={(v) => { editOrder(d.id, { assignee: v }, "reassign"); show(`${d.id} reassigned to ${v}`); }} />
+                <Combobox options={assignees().map((a) => ({ value: a, label: a }))} value={d.assignee} onChange={(v) => { editOrder(d.id, { assignee: v }, "reassign"); show(`${d.id} reassigned to ${v}`); }} />
               </div>
               <div className="flex gap-2">
                 {d.hold === "On Hold" ? <OutlineButton icon={PlayCircle} onClick={() => resumeOneToast(d)}>Resume</OutlineButton> : !d.hold ? <OutlineButton icon={PauseCircle} onClick={() => holdOne(d)}>Put on hold</OutlineButton> : null}

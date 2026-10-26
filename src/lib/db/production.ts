@@ -15,6 +15,8 @@ type Res = { error: { message: string } | null };
 let STAFF: { id: string; name: string; role: string }[] = [];
 export const staffName = (id?: string | null) => (id ? STAFF.find((s) => s.id === id)?.name : undefined);
 export const staffId = (name?: string) => (name ? STAFF.find((s) => s.name === name)?.id : undefined);
+/** Active staff display names (database mode), for assignee pickers. */
+export const staffDirectory = () => STAFF.map((s) => s.name);
 
 /* ───────── label ⇄ database value ───────── */
 const slug = (s: string) => s.toLowerCase().replace(/[ -]+/g, "_");

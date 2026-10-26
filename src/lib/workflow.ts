@@ -1,3 +1,4 @@
+import { notifyStage } from "./events";
 import { ORDERS, STAGES, stageLabel, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
 import { hasPrintReadyFile } from "./files";
@@ -70,6 +71,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   if (to === "qc") o.qc = "pending";
   notify();
   dbAdvance(o.uid, to, reason || undefined, !!opts.override, () => { o.stage = from; o.progress = prev.progress; o.qc = prev.qc; notify(); });
+  notifyStage(o, from, to);
   logAudit({ entity: "order", entityId: o.id, action: overridden ? "stage_override" : "stage_change", from: stageLabel(from), to: stageLabel(to), reason: reason || undefined, override: overridden || undefined });
   return { ok: true, order: o };
 }

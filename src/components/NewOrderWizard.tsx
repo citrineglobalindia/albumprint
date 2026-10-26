@@ -7,6 +7,7 @@ import { CATALOG, catalogCategories, subNameOf } from "../lib/catalog";
 import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type OrderItem, type Priority } from "../lib/data";
 import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, WORK_GROUPS, type AlbumSpec } from "../lib/pricing";
 import { inr, cleanMobile, mobileError } from "../lib/format";
+import { notifyOrderCreated } from "../lib/events";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
 import { backendOn } from "../lib/supabase";
@@ -104,7 +105,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
       couple: d.couple.trim() || undefined, workGroup: d.workGroup || undefined, albums: named,
       stage: "new_order", priority: d.priority, pendingAt: d.orderDate, assignee: "Priya", due: d.due, pay: "Unpaid", total: 0, paid: 0, progress: 0,
     };
-    ORDERS.unshift(order);
+    ORDERS.unshift(order); notifyOrderCreated(order);
     logAudit({ entity: "order", entityId: order.id, action: "create", detail: `${order.workflow} · ${d.albums.length > 1 ? `${d.albums.length} albums` : `${d.albums[0]!.albumType} ${order.size}`} · costing pending${d.newCustomer ? " · new customer " + custName : ""}` });
     show(`Order ${order.id} created`);
     onClose(); nav(`/orders/${order.id}`);

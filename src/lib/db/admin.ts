@@ -177,7 +177,14 @@ async function hydrateNotifications(quiet = false) {
 let poll: number | undefined;
 function startNotifPoll() {
   if (poll || typeof window === "undefined") return;
-  poll = window.setInterval(async () => { const { data } = await sb().auth.getSession(); if (data.session) void hydrateNotifications(true); }, 60_000);
+  const refresh = async () => { const { data } = await sb().auth.getSession(); if (data.session) void hydrateNotifications(true); };
+  poll = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 30_000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void refresh(); });   // catch up the moment the tab is opened again
+}
+/** Control Center: send a nudge to whoever holds an order (the database delivers it to their bell). */
+export async function dbNudgeAssignee(orderUid: string, title: string, body: string): Promise<string | null> {
+  const { error } = await sb().rpc("notify_assignee", { p_order: orderUid, p_title: title, p_body: body });
+  return error ? error.message : null;
 }
 if (backendOn) bindNotifSync({ read(ids) { void Promise.resolve(sb().from("notifications").update({ read_at: new Date().toISOString() }).in("id", ids)).then(({ error }) => { if (error) reportDbError("Marking notifications read", error); }); } });
 

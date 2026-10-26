@@ -9,7 +9,7 @@ import { cx } from "./ui";
 import { Avatar } from "./ui";
 import { ORDERS, CUSTOMERS } from "../lib/data";
 import { useAuth, ROLES } from "../lib/auth";
-import { notifStore, useNotifs } from "../lib/notifStore";
+import { notifStore, onNotifArrive, useNotifs } from "../lib/notifStore";
 import { useNewOrder } from "./NewOrderWizard";
 import A11yLayer from "./A11yLayer";
 import { useToast } from "./Toast";
@@ -296,7 +296,8 @@ export default function Shell() {
   const loc = useLocation();
   const newOrder = useNewOrder();
   const [dbToast, showDbToast] = useToast();
-  useEffect(() => onDbError(showDbToast), [showDbToast]);   // background database errors become visible messages
+  useEffect(() => onDbError(showDbToast), [showDbToast]);
+  useEffect(() => onNotifArrive((n) => showDbToast(n.length === 1 ? `New notification: ${n[0]!.title}` : `${n.length} new notifications`)), [showDbToast]);   // something just arrived for you   // background database errors become visible messages
   const pending = useRef<number | undefined>(undefined);
   const gMode = useRef(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]);

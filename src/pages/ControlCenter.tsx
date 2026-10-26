@@ -9,12 +9,14 @@ import { ActivityFeed, AlertsPanel, HealthSummary, ModuleBoard, PipelineFunnel, 
 import { alertsOf, computeModules, dailySeries, overallScore } from "../lib/control";
 import { backendOn, hydrateAll } from "../lib/db";
 import { DB_ERRORS } from "../lib/db/core";
-import { dbListComm } from "../lib/db/admin";
+import { dbListComm, dbNudgeAssignee } from "../lib/db/admin";
+import { dbSetAssignee, dbSetPriority } from "../lib/db/workflowDb";
 import { ensureMonth, istDate, monthOf } from "../lib/attendance";
 import { Combobox, DateRangePicker, inRange, presetRange, type DateRange } from "../components/controls";
 import { Banner, orderOpt } from "../components/pageKit";
 import { useToast } from "../components/Toast";
-import { ORDERS, STAFF, STAGES, ASSIGNEES, PRIORITIES, stageLabel, stageTone, type Order, type Priority, type StageKey, type Tone } from "../lib/data";
+import { assignees } from "../lib/staffList";
+import { ORDERS, STAFF, STAGES, PRIORITIES, stageLabel, stageTone, type Order, type Priority, type StageKey, type Tone } from "../lib/data";
 import { inr, isOverdue } from "../lib/format";
 import { TODAY_ISO } from "../components/pageKit";
 import { useStore, patchOrder } from "../lib/store";
@@ -76,7 +78,7 @@ const STATUS_TONE: Record<string, Tone> = { ok: "green", at_risk: "amber", breac
 const STATUS_LABEL: Record<string, string> = { ok: "On track", at_risk: "At risk", breached: "Breached", paused: "Paused" };
 const SEV: Record<string, number> = { breached: 0, at_risk: 1, paused: 3, ok: 4 };
 const stageQ = (...k: StageKey[]) => `/orders?stage=${k.join(",")}`;
-const staffNames = [...new Set([...ASSIGNEES, ...STAFF.filter((s) => s.status === "Active").map((s) => s.name)])];
+const staffNames = () => [...new Set([...assignees(), ...(backendOn ? [] : STAFF.filter((s) => s.status === "Active").map((s) => s.name))])];
 
 interface Tile { key: string; label: string; value: string | number; hint: string; icon: typeof ClipboardList; tone: Tone; to: string }
 
@@ -173,13 +175,14 @@ export default function ControlCenter() {
   const manage = (id: string) => { setSelId(id); goTab("controls", "order-controls"); };
   const reassign = (o: Order) => setDlg({
     title: "Reassign job", subtitle: `${o.id} currently with ${o.assignee}`, confirm: "Reassign",
-    extra: { label: "New assignee", options: staffNames.filter((n) => n !== o.assignee).map((n) => ({ value: n, label: n, sub: STAFF.find((s) => s.name.startsWith(n))?.role })), initial: "" },
+    extra: { label: "New assignee", options: staffNames().filter((n) => n !== o.assignee).map((n) => ({ value: n, label: n, sub: STAFF.find((s) => s.name.startsWith(n))?.role })), initial: "" },
     run: (reason, to) => {
       if (!to) return "Choose who to reassign to";
       const from = o.assignee;
+      if (!dbSetAssignee(o.uid, to, () => patchOrder(o.id, { assignee: from }))) return `${to} has no staff account in the database`;
       patchOrder(o.id, { assignee: to });
       logAudit({ entity: "order", entityId: o.id, action: "reassign", from, to, reason });
-      notifStore.push({ title: "Job reassigned to you", body: `${o.id} (${o.customer}) moved from ${from}. Reason: ${reason}`, time: "just now", to: `/orders/${o.id}` });
+      if (!backendOn) notifStore.push({ title: "Job reassigned to you", body: `${o.id} (${o.customer}) moved from ${from}. Reason: ${reason}`, time: "just now", to: `/orders/${o.id}`, roles: ["admin", "reception", "colour", "designer", "printing", "qc", "accounts"].filter((r) => r !== "admin") });
       show(`${o.id} reassigned to ${to}`);
     },
   });
@@ -189,6 +192,7 @@ export default function ControlCenter() {
     run: (reason, p) => {
       if (!p) return "Choose a priority";
       const from = o.priority;
+      dbSetPriority(o.uid, p, () => patchOrder(o.id, { priority: from }));
       patchOrder(o.id, { priority: p as Priority });
       logAudit({ entity: "order", entityId: o.id, action: "priority_change", from, to: p, reason: reason || undefined });
       show(`${o.id} priority ${from} → ${p}`);
@@ -218,12 +222,18 @@ export default function ControlCenter() {
     const at = new Date().toISOString();
     const next = { ...escalated, [o.id]: at }; setEscalated(next); saveJson("escalated", next);
     logAudit({ entity: "order", entityId: o.id, action: "sla_escalate", detail: `${s.dept}: ${fmtHours(s.hoursLeft)}`, reason: `SLA ${s.status === "breached" ? "breached" : "at risk"} at ${stageLabel(o.stage)}` });
-    notifStore.push({ title: s.status === "breached" ? "SLA breach escalated" : "SLA at risk", body: `${o.id} (${o.customer}) · ${stageLabel(o.stage)} · ${fmtHours(s.hoursLeft)}`, time: "just now", to: `/orders/${o.id}` });
+    if (!backendOn) notifStore.push({ title: s.status === "breached" ? "SLA breach escalated" : "SLA at risk", body: `${o.id} (${o.customer}) · ${stageLabel(o.stage)} · ${fmtHours(s.hoursLeft)}`, time: "just now", to: `/orders/${o.id}`, roles: ["admin"] });
     show(`${o.id} escalated to admin`);
   };
   const nudge = (o: Order, s: SlaState) => {
     logAudit({ entity: "order", entityId: o.id, action: "sla_nudge", detail: `Nudged ${o.assignee}`, reason: `${stageLabel(o.stage)} ${fmtHours(s.hoursLeft)}` });
-    notifStore.push({ title: `Nudge for ${o.assignee}`, body: `${o.id} is ${s.status === "breached" ? "past" : "close to"} its SLA at ${stageLabel(o.stage)} (${fmtHours(s.hoursLeft)})`, time: "just now", to: `/orders/${o.id}` });
+    const body = `${o.id} is ${s.status === "breached" ? "past" : "close to"} its SLA at ${stageLabel(o.stage)} (${fmtHours(s.hoursLeft)})`;
+    if (backendOn) {
+      if (!o.uid) { show("This order has not been saved yet"); return; }
+      void dbNudgeAssignee(o.uid, `Nudge: ${o.id} needs attention`, body).then((e) => show(e ?? `Nudge sent to ${o.assignee}`));
+      return;
+    }
+    notifStore.push({ title: `Nudge for ${o.assignee}`, body, time: "just now", to: `/orders/${o.id}`, roles: [...new Set(["admin", ...Object.entries({ colour: ["Colour Grading"], designer: ["Designing"], printing: ["Printing"], qc: ["Quality Control"] }).filter(([, d]) => d.includes(s.dept)).map(([r]) => r)])] });
     show(`Nudge sent to ${o.assignee}`);
   };
 

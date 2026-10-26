@@ -1,3 +1,4 @@
+import { notifyQcFailed } from "./events";
 import { persistArray } from "./persist";
 import { ORDERS, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
@@ -394,6 +395,7 @@ export function decideInspection(orderId: string, d: { outcome: "pass" | "rework
     logAudit({ entity: "qc", entityId: orderId, action: "rework_task", detail: `${dept}: ${reason}` }); notify();
     return ok(`Recorded — a rework task for admin was created (return to ${dept} needs an admin override)`);
   }
+  notifyQcFailed(o, defects);
   logAudit({ entity: "qc", entityId: orderId, action: d.outcome, detail: `round ${i.round} → ${dept}; ${defects.join(", ")}`, reason }); notify();
   return ok(`${orderId} ${d.outcome === "fail" ? "failed QC" : "sent to rework"} — returned to ${dept}`);
 }
