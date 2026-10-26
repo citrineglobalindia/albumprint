@@ -1,10 +1,16 @@
 import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlarmClock, AlertTriangle, ArrowRightLeft, Ban, BellRing, Check, CheckCircle2, ClipboardList, Clock, CreditCard, Factory, IndianRupee, Lock, LockOpen, MessageSquareWarning,
+  RefreshCw, AlarmClock, AlertTriangle, ArrowRightLeft, Ban, BellRing, Check, CheckCircle2, ClipboardList, Clock, CreditCard, Factory, IndianRupee, Lock, LockOpen, MessageSquareWarning,
   Palette, PauseCircle, PlayCircle, Printer, ShieldAlert, ShieldCheck, Truck, UserCog, LayoutTemplate, Users, X, Flag, Gauge, Siren, Send, ListOrdered, Wrench,
 } from "lucide-react";
-import { Avatar, Pill, PageHeader, Panel, PriorityPill, TONE, cx, inputCls, Th, Td, tableCls, trCls } from "../components/ui";
+import { Avatar, LineTabs, Pill, PageHeader, Panel, PriorityPill, TONE, cx, inputCls, Th, Td, tableCls, trCls } from "../components/ui";
+import { ActivityFeed, AlertsPanel, HealthSummary, ModuleBoard, PipelineFunnel, TrendCards, WorkloadPanel } from "../components/ControlPanels";
+import { alertsOf, computeModules, dailySeries, overallScore } from "../lib/control";
+import { backendOn, hydrateAll } from "../lib/db";
+import { DB_ERRORS } from "../lib/db/core";
+import { dbListComm } from "../lib/db/admin";
+import { ensureMonth, istDate, monthOf } from "../lib/attendance";
 import { Combobox, DateRangePicker, inRange, presetRange, type DateRange } from "../components/controls";
 import { Banner, orderOpt } from "../components/pageKit";
 import { useToast } from "../components/Toast";
@@ -86,6 +92,24 @@ export default function ControlCenter() {
   const [escalated, setEscalated] = useState<Record<string, string>>(() => loadJson("escalated", {}));
   const me = currentActor();
   const isAdmin = me.role === "admin";
+  type CTab = "overview" | "modules" | "sla" | "people" | "controls";
+  const [tab, setTab] = useState<CTab>("overview");
+  const [commQueued, setCommQueued] = useState(0);
+  const [stamp, setStamp] = useState(() => new Date());
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      if (backendOn) { await hydrateAll(); await ensureMonth(monthOf(istDate(new Date())), true); setCommQueued((await dbListComm()).filter((m) => m.status === "queued").length); }
+    } finally { setStamp(new Date()); setBusy(false); bump(); }
+  };
+  useEffect(() => { if (backendOn) { void ensureMonth(monthOf(istDate(new Date()))).then(() => bump()); void dbListComm().then((r) => setCommQueued(r.filter((m) => m.status === "queued").length)); } }, []);
+  useEffect(() => { const t = window.setInterval(() => { setStamp(new Date()); bump(); }, 30000); return () => window.clearInterval(t); }, []);
+  const hourAgo = Date.now() - 3600e3;
+  const cards = computeModules({ backend: backendOn, commQueued, commConnected: false, dbErrors: DB_ERRORS.filter((e) => new Date(e.at).getTime() > hourAgo).length });
+  const overall = overallScore(cards), alerts = alertsOf(cards);
+  const series = dailySeries(14);
+  const goTab = (t: CTab, anchor?: string) => { setTab(t); if (anchor) window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); };
 
   const res = (r: Result, ok: string) => { if (r.ok) { show(ok); return undefined; } return r.error; };
 
@@ -146,7 +170,7 @@ export default function ControlCenter() {
 
   /* ---- order controls ---- */
   const sel = ORDERS.find((o) => o.id === selId);
-  const manage = (id: string) => { setSelId(id); document.getElementById("order-controls")?.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  const manage = (id: string) => { setSelId(id); goTab("controls", "order-controls"); };
   const reassign = (o: Order) => setDlg({
     title: "Reassign job", subtitle: `${o.id} currently with ${o.assignee}`, confirm: "Reassign",
     extra: { label: "New assignee", options: staffNames.filter((n) => n !== o.assignee).map((n) => ({ value: n, label: n, sub: STAFF.find((s) => s.name.startsWith(n))?.role })), initial: "" },
@@ -217,10 +241,23 @@ export default function ControlCenter() {
       {toast}
       {dlg && <ReasonDialog d={dlg} onClose={() => setDlg(null)} />}
       <PageHeader title="Admin Control Center" subtitle="Live KPIs, approvals, SLA escalations and administrative overrides">
+        <span className="text-xs text-sub" data-testid="updated-at">Updated {stamp.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+        <button onClick={() => void refresh()} disabled={busy} aria-label="Refresh" className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-bold hover:bg-brand-soft disabled:opacity-60"><RefreshCw className={cx("size-4", busy && "animate-spin")} />Refresh</button>
         <DateRangePicker value={range} onChange={setRange} />
       </PageHeader>
       {!isAdmin && <div className="mb-4"><Banner tone="amber">You are signed in as {me.role}. Approval, override, cancel and close actions require the Admin role and will be refused.</Banner></div>}
 
+      <LineTabs className="mb-5" value={tab} onChange={setTab} tabs={[
+        { key: "overview", label: "Overview" }, { key: "modules", label: "Modules", count: cards.filter((c) => c.health !== "ok").length || undefined },
+        { key: "sla", label: "Approvals & SLA", count: (inbox.length + queue.length) || undefined }, { key: "people", label: "Workload & activity" }, { key: "controls", label: "Order controls" },
+      ]} />
+
+      {tab === "overview" && (
+        <>
+          <div className="mb-5 grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+            <div className="space-y-5"><HealthSummary {...overall} /><PipelineFunnel /></div>
+            <AlertsPanel alerts={alerts} />
+          </div>
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7" data-testid="kpi-grid">
         {tiles.map((t) => {
           const body = (
@@ -233,11 +270,19 @@ export default function ControlCenter() {
           );
           const cls = "block rounded-2xl border border-line bg-white p-3.5 shadow-[0_1px_2px_rgba(20,30,90,0.04)] transition hover:border-brand hover:shadow-md";
           return t.to.startsWith("#")
-            ? <a key={t.key} href={t.to} className={cls} onClick={(e) => { e.preventDefault(); document.getElementById("escalations")?.scrollIntoView({ behavior: "smooth" }); }}>{body}</a>
+            ? <a key={t.key} href={t.to} className={cls} onClick={(e) => { e.preventDefault(); goTab("sla", "escalations"); }}>{body}</a>
             : <Link key={t.key} to={t.to} className={cls}>{body}</Link>;
         })}
       </div>
 
+          <div className="mb-5"><TrendCards s={series} /></div>
+        </>
+      )}
+
+      {tab === "modules" && <ModuleBoard cards={cards} />}
+
+      {tab === "sla" && (
+        <>
       <Panel title="Department SLA heat" subtitle="Active orders by SLA state, per department (click to filter the escalation queue)" className="mb-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="heat-strip">
           {heat.map((h) => (
@@ -307,6 +352,13 @@ export default function ControlCenter() {
         </Panel>
       </div>
 
+        </>
+      )}
+
+      {tab === "people" && <div className="space-y-5"><WorkloadPanel /><ActivityFeed /></div>}
+
+      {tab === "controls" && (
+        <>
       <div id="order-controls" className="scroll-mt-4">
         <Panel title="Order controls" subtitle="Reassign, re-prioritise, hold, cancel, close/reopen, pause SLA or force a stage move (all audited)" action={<UserCog className="size-5 text-sub" />}>
           <div className="max-w-md"><Combobox options={opts} value={selId} onChange={setSelId} placeholder="Select an order to manage…" /></div>
@@ -335,6 +387,8 @@ export default function ControlCenter() {
           ) : <p className="mt-4 text-sm text-sub">Pick an order above, or use “Manage” in the escalation queue.</p>}
         </Panel>
       </div>
+        </>
+      )}
     </div>
   );
 }

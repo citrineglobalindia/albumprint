@@ -8,9 +8,12 @@ export const sb = () => { if (!supabase) throw new Error("Backend is not configu
 type Sub = (message: string) => void;
 const errSubs = new Set<Sub>();
 export const onDbError = (f: Sub) => { errSubs.add(f); return () => { errSubs.delete(f); }; };
+/** Recent background errors (newest first) so the Control Center can show the system's health. */
+export const DB_ERRORS: { at: string; msg: string }[] = [];
 export const reportDbError = (what: string, e: unknown) => {
   const msg = typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e);
   console.error(`[db] ${what}:`, e);
+  DB_ERRORS.unshift({ at: new Date().toISOString(), msg: `${what}: ${msg}` }); DB_ERRORS.length = Math.min(DB_ERRORS.length, 50);
   errSubs.forEach((f) => f(`${what}: ${msg}`));
 };
 
