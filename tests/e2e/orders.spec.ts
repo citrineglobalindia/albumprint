@@ -52,6 +52,24 @@ test.describe("orders", () => {
     await expect(page.getByText("Photo Book").first()).toBeVisible();
   });
 
+  test("mobile numbers are limited to 10 digits and must start with 6-9", async ({ page }) => {
+    await page.goto("/orders");
+    await page.getByRole("button", { name: "Create Order" }).first().click();
+    const dlg = page.getByRole("dialog", { name: "New Order" });
+    await dlg.getByRole("button", { name: /^Customer/ }).click();
+    await page.getByRole("button", { name: "Add new customer", exact: true }).click();
+    await dlg.getByPlaceholder("Studio / customer name").fill("Mobile Rule Studio");
+    const mobile = dlg.getByPlaceholder("Mobile number");
+    await mobile.fill("98989898989898");
+    await expect(mobile).toHaveValue("9898989898");                                   // letters stripped, capped at 10
+    await mobile.fill("5123456789");
+    await dlg.getByRole("button", { name: "Next" }).click();
+    await expect(dlg.getByText("Mobile number must start with 6, 7, 8 or 9")).toBeVisible();
+    await mobile.fill("6123456789");
+    await dlg.getByRole("button", { name: "Next" }).click();
+    await expect(dlg.getByText("Mobile number must start with")).toHaveCount(0);
+  });
+
   test("a new customer + order persist, customers list included", async ({ page }) => {
     await page.goto("/orders");
     await page.getByRole("button", { name: "Create Order" }).first().click();

@@ -12,7 +12,7 @@ import { useNewOrder } from "../components/NewOrderWizard";
 import { backendOn } from "../lib/supabase";
 import { dbCreateCustomer, dbUpdateCustomer } from "../lib/db/orders";
 import { CUSTOMERS, ORDERS, stageLabel, stageTone, type Customer } from "../lib/data";
-import { inr, fmtDate, TODAY } from "../lib/format";
+import { inr, fmtDate, TODAY, cleanMobile, mobileError } from "../lib/format";
 import { useStore, notify, useSlashFocus, packRange, unpackRange } from "../lib/store";
 
 type Tab = "all" | "active" | "vip" | "new" | "inactive";
@@ -94,7 +94,7 @@ export default function Customers() {
   useSlashFocus(searchWrap);
 
   const closeForm = () => { setAdding(false); setEditId(null); setErrs({}); setF(EMPTY); };
-  const openEdit = (c: Customer) => { setF({ ...EMPTY, name: c.name, studio: c.studio, mobile: c.mobile, email: c.email, city: c.city, state: c.state, gstin: c.gstin ?? "", address: c.address ?? "", pin: c.pin ?? "", whatsapp: c.whatsapp ?? "", notes: c.notes ?? "", tags: [...c.tags] }); setErrs({}); setEditId(c.id); };
+  const openEdit = (c: Customer) => { setF({ ...EMPTY, name: c.name, studio: c.studio, mobile: digits(c.mobile).slice(-10), email: c.email, city: c.city, state: c.state, gstin: c.gstin ?? "", address: c.address ?? "", pin: c.pin ?? "", whatsapp: c.whatsapp ?? "", notes: c.notes ?? "", tags: [...c.tags] }); setErrs({}); setEditId(c.id); };
 
   // live form intelligence
   const dup = useMemo(() => { const d = digits(f.mobile).slice(-10); return d.length >= 10 ? CUSTOMERS.find((c) => c.id !== editId && digits(c.mobile).slice(-10) === d) ?? null : null; }, [f.mobile, editId]);
@@ -113,7 +113,7 @@ export default function Customers() {
   const save = async (thenOrder = false) => {
     const e: Record<string, string> = {};
     if (f.studio.trim().length < 2) e.studio = "Enter 2–150 characters";
-    if (!/^\+?[0-9 ]{10,14}$/.test(f.mobile.trim())) e.mobile = "Enter a valid 10-digit mobile number";
+    if (mobileError(f.mobile)) e.mobile = mobileError(f.mobile)!;
     else if (dup) e.mobile = `Duplicate — ${dup.studio} already uses this mobile`;
     if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) e.email = "Invalid email address";
     if (gstErr) e.gstin = gstErr;
@@ -360,7 +360,7 @@ export default function Customers() {
         <Field label="Customer / Studio Name" required><input aria-label="Studio name" className={cx(inputCls, errs.studio && "border-rose-400")} value={f.studio} onChange={(e) => setF({ ...f, studio: e.target.value })} /><Err>{errs.studio}</Err></Field>
         <Field label="Contact Person"><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Mobile Number" required>
-          <input aria-label="Mobile number" inputMode="tel" className={cx(inputCls, (errs.mobile || dup) && "border-rose-400")} value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value })} placeholder="98765 43210" />
+          <input aria-label="Mobile number" inputMode="numeric" maxLength={10} className={cx(inputCls, (errs.mobile || dup) && "border-rose-400")} value={f.mobile} onChange={(e) => setF({ ...f, mobile: cleanMobile(e.target.value) })} placeholder="98765 43210" />
           {dup && (
             <p data-testid="dup-warning" className="mt-1.5 flex flex-wrap items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800">
               <AlertCircle className="size-3.5" />A customer with this mobile exists — <button type="button" className="font-extrabold text-brand underline" onClick={() => { setActiveId(dup.id); setDtab("history"); setTab("all"); reset(); closeForm(); }}>open {dup.studio}</button>

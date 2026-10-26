@@ -6,7 +6,7 @@ import { Combobox } from "./controls";
 import { CATALOG, catalogCategories, subNameOf } from "../lib/catalog";
 import { CUSTOMERS, ORDERS, ASSIGNEES, PRIORITIES, type Customer, type Order, type OrderItem, type Priority } from "../lib/data";
 import { ALBUM_TYPES, BINDING, BOXES, COVERS, EVENT_TYPES, FINISHES, LAMINATION, PAPER, SIZES, DISCOUNT_APPROVAL_PCT, GST_RATE, blankAlbum, priceAlbums, albumName, WORK_GROUPS, type AlbumSpec } from "../lib/pricing";
-import { inr } from "../lib/format";
+import { inr, cleanMobile, mobileError } from "../lib/format";
 import { useToast } from "./Toast";
 import { logAudit } from "../lib/audit";
 import { backendOn } from "../lib/supabase";
@@ -62,7 +62,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 
   const validate = (s: number) => {
     const e: Record<string, string> = {};
-    if (s === 0) { if (!d.customerId && !d.newCustomer) e.customer = "Choose a customer or add a new one"; if (d.newCustomer) { if (d.newCustomer.studio.trim().length < 2) e.studio = "Enter studio name"; if (!/^\+?[0-9 ]{10,14}$/.test(d.newCustomer.mobile.trim())) e.mobile = "Valid mobile required"; } }
+    if (s === 0) { if (!d.customerId && !d.newCustomer) e.customer = "Choose a customer or add a new one"; if (d.newCustomer) { if (d.newCustomer.studio.trim().length < 2) e.studio = "Enter studio name"; { const m = mobileError(d.newCustomer.mobile); if (m) e.mobile = m; } } }
     if (s === 1) { if (!d.due) e.due = "Required"; else if (d.due < d.orderDate) e.due = "Delivery date cannot be before order date"; }
     if (s === 2) { const bad = d.albums.findIndex((a) => a.sheets < 1 || a.copies < 1); if (bad >= 0) { setCur(bad); if (d.albums[bad]!.sheets < 1) e.sheets = "Positive number"; if (d.albums[bad]!.copies < 1) e.copies = "At least 1"; } }
     setErr(e); return Object.keys(e).length === 0;
@@ -137,7 +137,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                     <div className="space-y-2 rounded-xl border border-brand/30 bg-brand-soft/40 p-3">
                       <div className="flex items-center justify-between text-xs font-bold text-brand"><span className="flex items-center gap-1"><UserPlus className="size-3.5" />New customer</span><button onClick={() => set("newCustomer", null)}>Use existing</button></div>
                       <input className={cx(inputCls, err.studio && "border-rose-400")} placeholder="Studio / customer name" value={d.newCustomer.studio} onChange={(e) => set("newCustomer", { ...d.newCustomer!, studio: e.target.value })} />
-                      <input className={cx(inputCls, err.mobile && "border-rose-400")} placeholder="Mobile number" value={d.newCustomer.mobile} onChange={(e) => set("newCustomer", { ...d.newCustomer!, mobile: e.target.value })} />
+                      <input className={cx(inputCls, err.mobile && "border-rose-400")} placeholder="Mobile number" inputMode="numeric" maxLength={10} value={d.newCustomer.mobile} onChange={(e) => set("newCustomer", { ...d.newCustomer!, mobile: cleanMobile(e.target.value) })} />
                       {(err.studio || err.mobile) && <p className="text-xs text-rose-600">{err.studio ?? err.mobile}</p>}
                     </div>
                   ) : (
