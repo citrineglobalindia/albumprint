@@ -7,6 +7,7 @@ const Shell = lazy(() => import("./components/Shell"));
 const NewOrderProvider = lazy(() => import("./components/NewOrderWizard").then((m) => ({ default: m.NewOrderProvider })));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Orders = lazy(() => import("./pages/Orders"));
+const Attendance = lazy(() => import("./pages/Attendance"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
 const ColourGrading = lazy(() => import("./pages/ColourGrading"));
@@ -67,6 +68,7 @@ export default function App() {
           <Route element={<Protected />}>
             <Route index element={<Home />} />
             <Route path="orders/:id" element={page(<OrderDetail />)} />
+            <Route path="attendance" element={page(<Attendance />)} />
             <Route path="notifications" element={page(<Notifications />)} />
             <Route path="control" element={page(<ControlCenter />)} />
             <Route path="audit" element={page(<AuditLog />)} />

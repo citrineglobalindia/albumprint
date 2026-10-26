@@ -5,7 +5,7 @@ export const BACKUP_TABLES = [
   "profiles", "role_permissions", "settings", "masters", "products", "catalog_items", "catalog_costs", "sla_rules", "notification_templates", "report_schedules",
   "customers", "orders", "order_specs", "order_albums", "order_items", "order_costing", "album_lines", "album_line_costs",
   "order_files", "tasks", "corrections", "proofs", "proof_comments", "print_jobs", "print_stage_log", "print_exceptions", "print_vendor_jobs", "qc_inspections", "rework_tasks", "deliveries", "production_events",
-  "invoices", "invoice_lines", "payments", "comm_log", "staff_invites", "audit_log",
+  "invoices", "invoice_lines", "payments", "comm_log", "staff_invites", "attendance_settings", "attendance_events", "attendance_leaves", "audit_log",
 ] as const;
 const PAGE = 1000;
 // proofs hides its link-token hash from staff, so the readable columns are listed explicitly (the nightly database dump has everything)

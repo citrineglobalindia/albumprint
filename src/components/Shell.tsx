@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
   CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X,
+  AlarmClockCheck,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
@@ -30,6 +31,7 @@ export const NAV = [
   { to: "/masters", label: "Masters", icon: Boxes },
   { to: "/users", label: "Users & Roles", icon: UserCog },
   { to: "/control", label: "Control Center", icon: Gauge },
+  { to: "/attendance", label: "Attendance", icon: AlarmClockCheck },
   { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/notifications", label: "Notifications", icon: MessagesSquare },
   { to: "/audit", label: "Audit Log", icon: ScrollText },
