@@ -63,7 +63,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
     const e: Record<string, string> = {};
     if (s === 0) { if (!d.customerId && !d.newCustomer) e.customer = "Choose a customer or add a new one"; if (d.newCustomer) { if (d.newCustomer.studio.trim().length < 2) e.studio = "Enter studio name"; { const m = mobileError(d.newCustomer.mobile); if (m) e.mobile = m; } } }
     if (s === 1) { if (!d.due) e.due = "Required"; else if (d.due < d.orderDate) e.due = "Delivery date cannot be before order date"; }
-    if (s === 2) { const bad = d.albums.findIndex((a) => a.sheets < 1 || a.copies < 1); if (bad >= 0) { setCur(bad); if (d.albums[bad]!.sheets < 1) e.sheets = "Positive number"; if (d.albums[bad]!.copies < 1) e.copies = "At least 1"; } }
+    if (s === 2) { const bad = d.albums.findIndex((a) => a.sheets < 1); if (bad >= 0) { setCur(bad); if (d.albums[bad]!.sheets < 1) e.sheets = "Positive number"; } }
     setErr(e); return Object.keys(e).length === 0;
   };
   const next = () => validate(step) && setStep(step + 1);
@@ -176,7 +176,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
               <div className="mb-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Albums on this order">
                 {d.albums.map((a, i) => (
                   <button key={i} role="tab" aria-selected={i === cur} onClick={() => setCur(i)} className={cx("h-10 rounded-lg border px-4 text-[13px] font-bold", i === cur ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>
-                    {nameOf(a, i)}<span className={cx("ml-2 font-medium", i === cur ? "opacity-80" : "text-sub")}>{a.albumType} · {a.size}{a.copies > 1 ? ` ×${a.copies}` : ""}</span>
+                    {nameOf(a, i)}<span className={cx("ml-2 font-medium", i === cur ? "opacity-80" : "text-sub")}>{a.albumType} · {a.size}</span>
                   </button>
                 ))}
                 <button onClick={() => addAlbum()} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-dashed border-brand px-4 text-[13px] font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add album</button>
@@ -194,7 +194,6 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                 <Field label="Album Size" required><select className={inputCls} value={al.size} onChange={(e) => setAlbum({ size: e.target.value })}>{SIZES.map((x) => <option key={x}>{x}</option>)}</select></Field>
                 <Field label="Orientation" required><select className={inputCls} value={al.orientation} onChange={(e) => setAlbum({ orientation: e.target.value })}>{["Landscape", "Portrait", "Square"].map((x) => <option key={x}>{x}</option>)}</select></Field>
                 <Field label="No. of Sheets" required hint={err.sheets || "The admin splits these sheets into priced items afterwards"}><input type="number" min={1} className={inputCls} value={al.sheets} onChange={(e) => setAlbum({ sheets: Number(e.target.value) })} /></Field>
-                <Field label="Copies" required hint={err.copies}><input type="number" min={1} className={inputCls} value={al.copies} onChange={(e) => setAlbum({ copies: Number(e.target.value) })} /></Field>
                 <details className="md:col-span-3 mb-4 rounded-xl border border-line px-4 py-3"><summary className="cursor-pointer text-sm font-bold text-brand">More specification (optional)</summary><div className="mt-3 grid gap-x-6 md:grid-cols-3">
                 <Field label="Binding" required><select className={inputCls} value={al.binding} onChange={(e) => setAlbum({ binding: e.target.value })}>{BINDING.map((x) => <option key={x}>{x}</option>)}</select></Field>
                 <Field label="Paper Type" required><select className={inputCls} value={al.paper} onChange={(e) => setAlbum({ paper: e.target.value, gsm: String(PAPER[e.target.value]!.gsm[0]) })}>{Object.keys(PAPER).map((x) => <option key={x}>{x}</option>)}</select></Field>
@@ -221,7 +220,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
                     <div key={i} className="rounded-xl border border-line p-3 text-sm">
                       <div className="mb-1 flex items-center justify-between"><b>{nameOf(a, i)} · {a.albumType}</b></div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-sub">
-                        <span>{a.size} · {a.orientation}</span><span>{a.sheets} pages × {a.copies} {a.copies === 1 ? "copy" : "copies"}</span>
+                        <span>{a.size} · {a.orientation}</span><span>{a.sheets} sheets</span>
                         <span>{a.paper} {a.gsm} GSM · {a.binding}</span><span>{a.cover} cover · {a.lamination} lamination</span>
                         <span>Box: {a.box}</span><span>Finishes: {a.finishes.join(", ") || "None"}</span>
                         {a.nameText && <span className="col-span-2">Name printing: {a.nameText}</span>}
