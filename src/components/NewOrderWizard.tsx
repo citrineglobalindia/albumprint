@@ -23,7 +23,6 @@ const blank = (): Draft => ({
   customerId: "", newCustomer: null, workflow: "Design + Printing", orderDate: iso(), due: iso(14), couple: "", workGroup: "", eventName: "", event: EVENT_TYPES.includes("Wedding") ? "Wedding" : EVENT_TYPES[0] ?? "Wedding", eventDate: "", priority: "Normal", instructions: "",
   albums: [blankAlbum()],
 });
-const COUPLE_EVENTS = (e: string) => e.includes("Wedding") || e === "Engagement" || e === "Reception";
 const STEPS = ["Customer & type", "Event & dates", "Albums", "Review"];
 
 interface Ctx { open: (opts?: { customerId?: string }) => void }
@@ -56,7 +55,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
   const removeAlbum = (i: number) => { setD((x) => ({ ...x, albums: x.albums.filter((_, j) => j !== i) })); setCur(Math.max(0, i - 1)); };
   const designed = d.workflow === "Design + Printing";
   const nameOf = (a: AlbumSpec, i: number) => albumName(a, i, d.couple, d.event);
-  const eventTitle = d.eventName.trim() || (d.couple.trim() ? `${d.couple.trim()} ${d.event}` : "");
+  const eventTitle = (d.couple.trim() ? `${d.couple.trim()} ${d.event}` : "");
   const cust = CUSTOMERS.find((c) => c.id === d.customerId);
   const custName = d.newCustomer ? d.newCustomer.studio : cust?.studio ?? "";
 
@@ -162,9 +161,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
 
           {step === 1 && (
             <div className="grid gap-x-6 md:grid-cols-2">
-              {COUPLE_EVENTS(d.event) && <div className="md:col-span-2"><Field label="Couple Name" hint="Names of the couple, e.g. Rahul & Priya"><input className={inputCls} value={d.couple} onChange={(e) => set("couple", e.target.value)} placeholder="e.g. Rahul & Priya" /></Field></div>}
-              <Field label="Event Name" hint={!d.eventName && d.couple.trim() ? `Will be saved as “${eventTitle}”` : undefined}><input className={inputCls} value={d.eventName} onChange={(e) => set("eventName", e.target.value)} placeholder={d.couple.trim() ? eventTitle : "e.g. Rahul & Priya Wedding"} /></Field>
-              <Field label="Event Type"><select className={inputCls} value={d.event} onChange={(e) => set("event", e.target.value)}>{EVENT_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field>
+              <div className="md:col-span-2"><Field label="Couple Name" hint="Names of the couple, e.g. Rahul & Priya"><input className={inputCls} value={d.couple} onChange={(e) => set("couple", e.target.value)} placeholder="e.g. Rahul & Priya" /></Field></div>
               <Field label="Work Group"><select className={inputCls} value={d.workGroup} onChange={(e) => set("workGroup", e.target.value)}><option value="">Select</option>{WORK_GROUPS.map((x) => <option key={x}>{x}</option>)}</select></Field>
               <Field label="Event Date"><input type="date" className={inputCls} value={d.eventDate} onChange={(e) => set("eventDate", e.target.value)} /></Field>
               <Field label="Priority" required><div className="flex gap-1.5">{PRIORITIES.filter((x) => x !== "Low").map((x) => <button key={x} onClick={() => set("priority", x)} className={cx("h-10 flex-1 rounded-lg border text-[13px] font-bold", d.priority === x ? "border-brand bg-brand text-white" : "border-line hover:bg-brand-soft")}>{x}</button>)}</div></Field>
@@ -217,7 +214,7 @@ function Wizard({ onClose, seedCustomer }: { onClose: () => void; seedCustomer?:
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
               <div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  {[["Customer", custName], ["Order type", d.workflow], ["Work group", d.workGroup || "—"], ["Couple", d.couple || "—"], ["Event", `${d.event}${eventTitle ? ` · ${eventTitle}` : ""}`], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
+                  {[["Customer", custName], ["Order type", d.workflow], ["Work group", d.workGroup || "—"], ["Couple", d.couple || "—"], ["Priority", d.priority], ["Order date", d.orderDate], ["Delivery date", d.due], ["Albums", String(d.albums.length)], ["Instructions", d.instructions || "—"]].map(([k, v]) => <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
                 </dl>
                 <div className="mt-4 space-y-3">
                   {d.albums.map((a, i) => (
