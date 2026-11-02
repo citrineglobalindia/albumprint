@@ -89,5 +89,11 @@ select t.as('system');
 select t.eq($$select l.qty::int || '/' || l.amount::text || '/' || coalesce(l.item_id::text, 'no item') || '/' || l.scope from order_charge_lines l join orders o on o.id = l.order_id
   where l.kind = 'design' and l.album_position = 1 and o.id = ((select result from order_drafts where id = t.id('draft_dz'))->>'orderId')::uuid$$, '1/2500.00/no item/album', 'design charge: stored on the order once for the album');
 select t.eq($$select count(*)::text from invoice_lines il join invoices i on i.id = il.invoice_id where i.order_id = ((select result from order_drafts where id = t.id('draft_dz'))->>'orderId')::uuid and il.description like 'Album design%' and il.rate = 2500$$, '1', 'design charge: on the invoice');
+select t.as('reception');
+insert into order_drafts(payload) select t.payload() || jsonb_build_object('customerId', t.id('cust'), 'event', jsonb_build_object('name', 'No type given', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'draft_nt', id::text from order_drafts where payload->'event'->>'name' = 'No type given';
+select t.ok($$select finalize_order_v2(t.id('draft_nt'))$$, 'event type: not required to finalize (0042)');
+select t.as('system');
+select t.eq($$select coalesce(event_type, 'null') || '/' || event_name from orders where id = ((select result from order_drafts where id = t.id('draft_nt'))->>'orderId')::uuid$$, 'null/No type given', 'event type: stored empty, the event name is kept');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

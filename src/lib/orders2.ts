@@ -60,8 +60,6 @@ export function draftProblems(d: OrderDraft): { step: number; message: string }[
     const m = mobileError(d.newCustomer.phone); if (m) out.push({ step: 1, message: m });
     if (d.newCustomer.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.newCustomer.email.trim())) out.push({ step: 1, message: "Enter a valid email address (or leave it empty)" });
   }
-  if (!d.event.type.trim()) out.push({ step: 2, message: "Choose the event type" });
-  else if (d.event.type.trim() === "Other") out.push({ step: 2, message: "Type the event type (you chose Other)" });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "Enter the event date" });
   if (d.event.delivery && d.event.delivery < todayIso()) out.push({ step: 2, message: "The delivery date cannot be in the past" });
   const p = price(d);
@@ -188,11 +186,11 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
   const specs = p.albums.map((a, i) => toSpec(a, payload.albums[i]!));
   let order: Order;
   if (reopen) {
-    Object.assign(reopen, { priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, customer: cust.studio, mobile: cust.mobile, event: payload.event.type, workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets, due, total: p.total, albums: specs, couple: payload.event.name || undefined });
+    Object.assign(reopen, { priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, customer: cust.studio, mobile: cust.mobile, event: payload.event.name.trim() || payload.event.type || "—", workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets, due, total: p.total, albums: specs, couple: payload.event.name || undefined });
     order = reopen;
   } else {
     const n = Math.max(0, ...ORDERS.map((o) => Number(o.id.replace("IDP", "")) || 0)) + 1;
-    order = { id: `IDP${String(n).padStart(5, "0")}`, customer: cust.studio, mobile: cust.mobile, event: payload.event.type, workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets,
+    order = { id: `IDP${String(n).padStart(5, "0")}`, customer: cust.studio, mobile: cust.mobile, event: payload.event.name.trim() || payload.event.type || "—", workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets,
       stage: "new_order", priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, pendingAt: today, assignee: "Priya", due, pay: "Unpaid", total: p.total, paid: 0, progress: 0, couple: payload.event.name || undefined, albums: specs } as Order;
     ORDERS.unshift(order);
   }

@@ -10,7 +10,7 @@ import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { backendOn } from "../lib/supabase";
 import { CUSTOMERS, ORDERS } from "../lib/data";
-import { EVENT_TYPES, LAMINATION, PAPER, SIZES, WORK_GROUPS } from "../lib/pricing";
+import { LAMINATION, PAPER, SIZES, WORK_GROUPS } from "../lib/pricing";
 import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
@@ -286,13 +286,8 @@ function CustomerStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>)
 
 function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) => void }) {
   const ev = d.event; const e = (k: keyof OrderDraft["event"], v: string) => set({ event: { ...ev, [k]: v } });
-  const isOther = ev.type === "Other" || (!!ev.type && !EVENT_TYPES.includes(ev.type));       // "Other" lets the user type their own event type
   return (
     <section className="grid gap-x-4 rounded-2xl border border-line bg-white p-5 md:grid-cols-2" aria-label="Event details">
-      <div>
-        <Field label="Event type" required><select aria-label="Event type" className={inputCls} value={isOther ? "Other" : ev.type} onChange={(x) => e("type", x.target.value)}><option value="">Select…</option>{EVENT_TYPES.filter((t) => t !== "Other").map((t) => <option key={t}>{t}</option>)}<option value="Other">Other</option></select></Field>
-        {isOther && <Field label="Specify the event type" required><input aria-label="Other event type" autoFocus className={inputCls} maxLength={60} value={ev.type === "Other" ? "" : ev.type} onChange={(x) => e("type", x.target.value.trim() ? x.target.value : "Other")} placeholder="e.g. Naming ceremony, Housewarming" /></Field>}
-      </div>
       <Field label="Event name" hint="e.g. Asha & Ravi wedding"><input aria-label="Event name" className={inputCls} value={ev.name} maxLength={150} onChange={(x) => e("name", x.target.value)} /></Field>
       <Field label="Event date" required><input aria-label="Event date" type="date" className={inputCls} value={ev.date} onChange={(x) => e("date", x.target.value)} /></Field>
       <Field label="Delivery date (optional)" hint={`If left empty: ${pricingSettings().defaultDeliveryDays} days after the order date`}><input aria-label="Delivery date" type="date" min={orderToday()} className={inputCls} value={ev.delivery} onChange={(x) => e("delivery", x.target.value)} /></Field>

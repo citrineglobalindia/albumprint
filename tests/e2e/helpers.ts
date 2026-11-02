@@ -29,7 +29,6 @@ export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegE
     await page.getByRole("button", { name: o.customer ?? /^Sharma Studio/ }).first().click();
   }
   await page.getByRole("button", { name: "Next" }).click();
-  await page.getByLabel("Event type").selectOption("Wedding");
   if (o.eventName) await page.getByLabel("Event name").fill(o.eventName);
   await page.getByLabel("Event date").fill("2026-12-12");
   await page.getByRole("button", { name: "Next" }).click();

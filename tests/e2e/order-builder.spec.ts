@@ -16,7 +16,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event name").fill("Asha & Ravi"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Event name").fill("Asha & Ravi"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
 
   // album 1: 30 sheets × 2 copies, 12x36 Metallic, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
   const a1 = page.getByTestId("album-1");
@@ -238,21 +238,19 @@ test("tax is optional and configured by the admin; it is charged on the amount a
   await expect(page.getByTestId("final-amount")).toHaveText("₹3,500");
 });
 
-test("event type “Other” asks for the event type to be typed and keeps what was typed", async ({ page }) => {
+test("the event step has no event type; an order finalizes without one", async ({ page }) => {
   await seedRole(page, "admin");
   await page.goto("/orders/new");
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event type").selectOption("Other");
-  await page.getByLabel("Event date").fill("2026-12-12");
+  await expect(page.getByLabel("Event type")).toHaveCount(0);
+  await expect(page.getByLabel("Event name")).toBeVisible();
   await next(page);
-  await expect(page.getByRole("alert")).toContainText("Type the event type");
-  await page.getByLabel("Other event type").fill("Naming ceremony");
-  await next(page);
-  await page.getByRole("button", { name: /Event & dates/ }).click();
-  await expect(page.getByLabel("Event type", { exact: true })).toHaveValue("Other");
-  await expect(page.getByLabel("Other event type")).toHaveValue("Naming ceremony");
+  await expect(page.getByRole("alert")).toContainText("event date");                // the date is still required
+  await expect(page.getByRole("alert")).not.toContainText("event type");
+  const code = await buildOrder(page, { eventName: "No type", albums: [{ name: "Album", sheets: 10 }], finalize: true });
+  expect(code).toMatch(/^IDP/);
 });
 
 test("Design + Printing: design charge typed on the order (per sheet or fixed, once per album)", async ({ page }) => {
@@ -262,7 +260,7 @@ test("Design + Printing: design charge typed on the order (per sheet or fixed, o
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Wedding"); await a1.getByLabel("Sheets", { exact: true }).fill("30"); await a1.getByLabel("Copies").fill("2");
   // default: the design rate card (sample ₹40/sheet, per copy): 30×90 + 30×40 = 3,900 per copy
@@ -298,7 +296,7 @@ test("a half-entered order is saved as a draft automatically and can be resumed"
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event name").fill("Half entry"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Event name").fill("Half entry"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Main album"); await a1.getByLabel("Sheets", { exact: true }).fill("24");
   await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");

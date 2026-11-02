@@ -28,7 +28,7 @@ test("reception builds a two-album order; the server prices, numbers and stores 
   await page.getByRole("button", { name: "New customer" }).click();
   await page.getByLabel("Customer name").fill(`Builder ${TAG}`); await page.getByLabel("Phone number").fill(`9${String(Date.now()).slice(-9)}`);
   await page.getByLabel("Address").fill("12 MG Road"); await next(page);
-  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event name").fill(`Couple ${TAG}`); await page.getByLabel("Event date").fill("2026-12-20");
+  await page.getByLabel("Event name").fill(`Couple ${TAG}`); await page.getByLabel("Event date").fill("2026-12-20");
   await page.getByLabel("Work Group").selectOption("Photo Book"); await next(page);
 
   const a1 = page.getByTestId("album-1");
@@ -125,7 +125,7 @@ test("missing price blocks finalizing, and the catalog admin writes the hierarch
   await page.getByRole("radio", { name: /Album Printing Only/ }).click(); await next(page);
   await page.getByRole("button", { name: "New customer" }).click();
   await page.getByLabel("Customer name").fill(`Party ${TAG}`); await page.getByLabel("Phone number").fill(`8${String(Date.now()).slice(-9)}`); await next(page);
-  await page.getByLabel("Event type").selectOption("Birthday"); await page.getByLabel("Event date").fill("2026-12-20"); await next(page);
+  await page.getByLabel("Event date").fill("2026-12-20"); await next(page);
   await page.getByTestId("album-1").getByLabel("Album name").fill("Party album"); await page.getByTestId("album-1").getByLabel("Sheets").fill("30");
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: `Extras ${TAG}` }); await p1.getByLabel("Subcategory").selectOption({ label: "Unpriced" });
