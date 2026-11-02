@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, FileText, Palette, Plus, Printer, Save, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { Field, Pill, Toggle, cx, inputCls } from "../components/ui";
 import { Combobox } from "../components/controls";
-import { CategoryPicker } from "../components/CategoryPicker";
+import { CategoryPicker, type SheetBalance } from "../components/CategoryPicker";
 import { InvoiceView } from "../components/InvoiceView";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
@@ -13,7 +13,7 @@ import { CUSTOMERS, ORDERS } from "../lib/data";
 import { LAMINATION, PAPER, SIZES, WORK_GROUPS } from "../lib/pricing";
 import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
-import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
+import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, pathOf, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
 import { DRAFTS, addDays, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
@@ -306,6 +306,12 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
     set({ items: id ? [...rest, { itemId: id, qty: 1 }] : rest });
   };
   const design = { mode: a.design?.mode || (rateCard("design") ? "card" as const : "per_sheet" as const), amount: a.design?.amount ?? "" };
+  // sheet allocation: per-sheet items are grouped by their top category (Paper, Lamination…); each group should add up to the album's sheets
+  const albumSheets = Number(a.sheets) || 0;
+  const groupOf = (itemId: string) => { const it = itemById(itemId); return it ? pathOf(it.categoryId)[0]?.name ?? "Other" : "Other"; };
+  const sheetGroups = new Map<string, number>();
+  for (const x of a.items) { const it = itemById(x.itemId); if (it?.method !== "per_sheet") continue; const q = x.sheetQty == null || x.sheetQty === "" ? albumSheets : Number(x.sheetQty) || 0; sheetGroups.set(groupOf(x.itemId), (sheetGroups.get(groupOf(x.itemId)) ?? 0) + q); }
+  const sheetBalance = (it: { id: string; categoryId: string }): SheetBalance | null => { const g = groupOf(it.id); const used = sheetGroups.get(g) ?? 0; return { group: g, used, balance: albumSheets - used }; };
   const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
@@ -343,7 +349,7 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
         </div>
       )}
       {missingCards.length > 0 && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">The {missingCards.join(" and ")} rate card is not set up — an admin adds it in Catalog & Pricing. Until then this album shows “Price not configured”.</p>}
-      <CategoryPicker testId={`picker-${n}`} sheets={a.sheets} accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
+      <CategoryPicker testId={`picker-${n}`} sheets={a.sheets} sheetBalance={sheetBalance} accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
         onAdd={(id, qty, sheetQty) => { const it = itemById(id); if (a.items.some((x) => x.itemId === id)) return "Already on this album — change its quantity below"; if (it?.kind && a.items.some((x) => itemById(x.itemId)?.kind === it.kind)) return `This album already has a ${it.kind} — change it above`; set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null; }} />
       <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-[13px]" data-testid={`album-lines-${n}`}>
         <thead className="text-[11px] uppercase tracking-wide text-sub"><tr><th className="py-1.5 text-left">Item</th><th className="text-left">Scope</th><th className="text-right">Qty</th><th className="text-right">Rate</th><th className="text-right">Amount</th><th /></tr></thead>
@@ -366,6 +372,14 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
           <tr><td colSpan={4} className="py-1 text-right font-extrabold">Album total</td><td className="text-right font-extrabold tabular-nums" data-testid={`album-total-${n}`}>{money(priced.total)}</td><td /></tr>
         </tfoot>}
       </table></div>
+      {sheetGroups.size > 0 && albumSheets > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2" data-testid={`sheet-allocation-${n}`} aria-label="Sheet allocation">
+          {[...sheetGroups].map(([g, used]) => { const bal = albumSheets - used; return (
+            <span key={g} className={cx("rounded-lg border px-3 py-1.5 text-xs font-semibold", bal === 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : bal > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700")} data-testid={`sheet-balance-${g}`}>
+              {g}: {used} of {albumSheets} sheets · {bal === 0 ? "all allocated ✓" : bal > 0 ? `balance ${bal}` : `${-bal} over`}
+            </span>); })}
+        </div>
+      )}
       <div className="mt-4"><Field label="Additional requirements & notes"><textarea aria-label="Album notes" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={a.notes} maxLength={1000} onChange={(e) => set({ notes: e.target.value })} /></Field></div>
     </section>
   );
