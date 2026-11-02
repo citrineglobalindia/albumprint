@@ -9,7 +9,7 @@ import { useStore } from "../lib/store";
 import { backendOn } from "../lib/supabase";
 import { LAMINATION, PAPER, SIZES } from "../lib/pricing";
 import {
-  CATEGORIES, ITEMS, KIND_LABEL, MAX_DEPTH, METHOD_LABEL, RATES, SCOPE_LABEL, categoryById, childrenOf, descendantsOf, deleteCategory, deleteItem, branchSummary, importClassic, importProductList, itemsIn, loadCatalog2, loadSampleCatalog, pathLabel, pricingSettings,
+  CATEGORIES, ITEMS, KIND_LABEL, MAX_DEPTH, METHOD_LABEL, RATES, SCOPE_LABEL, categoryById, childrenOf, descendantsOf, deleteCategory, deleteItem, branchSummary, importClassic, importProductList, itemsIn, loadCatalog2, pathLabel, pricingSettings,
   removeRate, saveCategory, saveItem, savePricingSettings, saveRate, seedDemoCatalog, type CItem, type Category, type OptionKind, type PricingMethod,
 } from "../lib/catalog2";
 import { scopeOf } from "../lib/orderPricing";
@@ -69,7 +69,6 @@ export default function CatalogAdmin() {
     <div>
       <PageHeader title="Catalog & pricing" subtitle="Categories, items and rates used by the order builder. Nothing is priced unless it is configured here." icon={<span className="mt-1 grid size-10 place-items-center rounded-xl bg-brand-soft text-brand"><Library className="size-5" aria-hidden /></span>}>
         <button disabled={busy} onClick={async () => { setBusy(true); const r = await importProductList(); setBusy(false); if (typeof r === "string") show(r); else { show(r ? `Product list imported — ${r} item(s) added. Enter their prices in the Prices tab.` : "The product list is already in the catalog"); setTab("prices"); } }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-bold text-white hover:bg-brand-dark disabled:opacity-50"><ListTree className="size-4" />{busy ? "Importing…" : "Import product list"}</button>
-        <button onClick={async () => { const e = await loadSampleCatalog(); show(e ?? "Sample catalog added (demonstration prices, labelled “Sample”)"); }} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-bold hover:bg-brand-soft"><Sparkles className="size-4" />Add sample catalog</button>
         {backendOn && <button onClick={async () => { const r = await importClassic(); show(typeof r === "string" ? r : `${r} item(s) copied from the classic catalog`); }} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-bold hover:bg-brand-soft"><Upload className="size-4" />Import classic catalog</button>}
       </PageHeader>
       {err && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">Could not load the catalog: {err}</p>}
@@ -78,7 +77,7 @@ export default function CatalogAdmin() {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,330px)_minmax(0,1fr)]">
           <Panel title="Hierarchy" subtitle={`Up to ${MAX_DEPTH} levels · items can sit at any level`} action={<button onClick={() => setCatForm({ parentId: null, name: "", sort: childrenOf(null).length + 1, active: true })} className="inline-flex items-center gap-1 text-xs font-bold text-brand hover:underline"><FolderPlus className="size-4" />Category</button>}>
             {CATEGORIES.length ? <ul className="-mx-1 max-h-[65vh] overflow-y-auto scroll-thin" data-testid="cat-tree">{childrenOf(null).map((c) => <Node key={c.id} c={c} />)}</ul>
-              : <p className="py-6 text-center text-sm text-sub">No categories yet. Add one, or use “Add sample catalog”.</p>}
+              : <p className="py-6 text-center text-sm text-sub">No categories yet. Add one, or use “Import product list”.</p>}
           </Panel>
           <div className="min-w-0 space-y-5">
             {!cur ? <Panel title="Select a category"><p className="text-sm text-sub">Choose a category on the left to see and edit its sub-categories and items.</p></Panel> : (
