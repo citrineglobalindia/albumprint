@@ -2,6 +2,7 @@ import { persistArray } from "./persist";
 import { backendOn } from "./supabase";
 import { notify } from "./store";
 import { logAudit } from "./audit";
+import { PRODUCT_LIST } from "./productList";
 
 // The order catalog: Category → Subcategory → Level 3 → Level 4 → Items, with configurable pricing (supabase/migrations/0036).
 // Items can sit at any level; deeper levels are optional. Prices are never hardcoded: every item has a pricing method, an optional standard rate,
@@ -71,6 +72,8 @@ type Backend = {
   removeRate: (id: string) => Promise<string | null>;
   saveSettings: (s: PricingSettings) => Promise<string | null>;
   importClassic: () => Promise<number | string>;
+  importTree: (entries: TreeEntry[]) => Promise<number | string>;
+  setPrices: (rows: PriceRow[]) => Promise<string | null>;
   load: () => Promise<string | null>;
 };
 let backend: Backend | null = null;
@@ -211,4 +214,122 @@ export function seedDemoCatalog() {
   if (backendOn || CATEGORIES.length) return;
   try { if (localStorage.getItem("albumpro.v1.cat2_seeded")) return; localStorage.setItem("albumpro.v1.cat2_seeded", "1"); } catch { /* private mode */ }
   void loadSampleCatalog();
+}
+
+// ───────── bulk tools: product list import, price grid, CSV ─────────
+export interface TreeEntry { path: string[]; item: string; method: PricingMethod; unit: string }
+export interface PriceRow { id: string; rate: number | null; method: PricingMethod; unit: string }
+
+/** Paper and lamination are charged per sheet; everything else in the product list per piece. */
+const GROUP_METHOD: Record<string, [PricingMethod, string]> = { Paper: ["per_sheet", "sheet"], Lamination: ["per_sheet", "sheet"] };
+export const productListEntries = (): TreeEntry[] => PRODUCT_LIST.map((p) => {
+  const [method, unit] = GROUP_METHOD[p[0]!] ?? ["per_unit", "pcs"];
+  return { path: p.slice(0, -1), item: p[p.length - 1]!, method, unit };
+});
+
+/** Creates the missing categories and items of a hierarchy (existing ones and their prices are kept). Returns how many items were added. */
+export async function importTree(entries: TreeEntry[]): Promise<number | string> {
+  for (const [i, e] of entries.entries()) {
+    if (e.path.length < 1 || e.path.length > MAX_DEPTH) return `Row ${i + 1}: between 1 and ${MAX_DEPTH} category levels are needed`;
+    if (!e.item.trim() || e.path.some((x) => !x.trim())) return `Row ${i + 1}: a name is missing`;
+    if (!(e.method in METHOD_LABEL)) return `Row ${i + 1}: unknown pricing method “${e.method}”`;
+  }
+  if (backendOn) { if (!backend) return NOT_CONNECTED; return backend.importTree(entries); }
+  let added = 0;
+  for (const e of entries) {
+    let parent: string | null = null, depth = 0;
+    for (const raw of e.path) {
+      const name = raw.trim().replace(/\s+/g, " "); depth++;
+      let c = CATEGORIES.find((x) => x.parentId === parent && norm(x.name) === norm(name));
+      if (!c) { c = { id: newId(), parentId: parent, name, depth, sort: childrenOf(parent).length + 1, active: true }; CATEGORIES.push(c); }
+      parent = c.id;
+    }
+    const name = e.item.trim().replace(/\s+/g, " ");
+    if (ITEMS.some((i) => i.categoryId === parent && norm(i.name) === norm(name))) continue;
+    ITEMS.push({ id: newId(), categoryId: parent!, name, method: e.method, rate: null, unit: e.unit || "pcs", sort: itemsIn(parent!).length + 1, active: true });
+    added++;
+  }
+  notify();
+  if (added) logAudit({ entity: "catalog_item", entityId: "import", action: "create", detail: `Imported ${added} item(s) into the catalog` });
+  return added;
+}
+export const importProductList = () => importTree(productListEntries());
+
+export function priceRowError(r: PriceRow): string | null {
+  const i = itemById(r.id); if (!i) return "Item not found";
+  if (r.rate != null && (!Number.isFinite(r.rate) || r.rate < 0)) return `${i.name}: the rate must be 0 or more`;
+  if (r.rate != null && Math.abs(Math.round(r.rate * 100) - r.rate * 100) > 1e-6) return `${i.name}: use at most 2 decimals`;
+  if (!r.unit.trim() || r.unit.trim().length > 20) return `${i.name}: enter a unit (20 characters max)`;
+  if ((i.kind === "printing" || i.kind === "design") && r.method !== "per_sheet") return `${i.name}: printing and design are priced per sheet`;
+  if ((i.kind === "cover" || i.kind === "binding" || i.kind === "box") && !(r.method === "per_unit" || r.method === "fixed_per_album")) return `${i.name}: cover, binding and box options are priced per unit or per album`;
+  return null;
+}
+/** Saves many prices at once — all or nothing. */
+export async function savePrices(rows: PriceRow[]): Promise<string | null> {
+  if (!rows.length) return null;
+  for (const r of rows) { const e = priceRowError(r); if (e) return e; }
+  const clean = rows.map((r) => ({ ...r, unit: r.unit.trim(), rate: r.rate == null ? null : Math.round(r.rate * 100) / 100 }));
+  if (backendOn) { if (!backend) return NOT_CONNECTED; const e = await backend.setPrices(clean); if (e) return e; }
+  for (const r of clean) { const i = itemById(r.id); if (i) Object.assign(i, { rate: r.rate, method: r.method, unit: r.unit }); }
+  notify();
+  if (!backendOn) logAudit({ entity: "catalog_item", entityId: "prices", action: "update", detail: `Updated ${clean.length} price(s)` });
+  return null;
+}
+
+// CSV: Path,Item,Method,Unit,Rate — the path uses " > " between levels. Rate blank = not priced.
+const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+export function pricesCsv(): string {
+  const rows = [...ITEMS].sort((a, b) => pathLabel(a.categoryId).localeCompare(pathLabel(b.categoryId)) || a.sort - b.sort)
+    .map((i) => [pathOf(i.categoryId).map((c) => c.name).join(" > "), i.name, i.method, i.unit, i.rate == null ? "" : String(i.rate)].map(csvCell).join(","));
+  return ["Path,Item,Method,Unit,Rate", ...rows].join("\n") + "\n";
+}
+function parseCsv(text: string): string[][] {
+  const out: string[][] = []; let row: string[] = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cell); cell = ""; if (row.some((c) => c.trim())) out.push(row); row = []; }
+    else cell += ch;
+  }
+  row.push(cell); if (row.some((c) => c.trim())) out.push(row);
+  return out;
+}
+const METHOD_ALIASES: Record<string, PricingMethod> = { per_sheet: "per_sheet", sheet: "per_sheet", per_unit: "per_unit", unit: "per_unit", pcs: "per_unit", fixed_per_album: "fixed_per_album", album: "fixed_per_album", one_time_order: "one_time_order", order: "one_time_order" };
+/** Reads a prices CSV: creates any missing categories / items, then applies the rates. */
+export async function importPricesCsv(text: string): Promise<{ added: number; priced: number } | { error: string }> {
+  const rows = parseCsv(text.replace(/^\uFEFF/, ""));
+  if (!rows.length) return { error: "The file is empty" };
+  const head = rows[0]!.map((h) => h.trim().toLowerCase());
+  const col = (n: string) => head.indexOf(n);
+  const [cp, ci, cm, cu, cr] = [col("path"), col("item"), col("method"), col("unit"), col("rate")];
+  if (cp < 0 || ci < 0 || cr < 0) return { error: "The first row must be the header: Path,Item,Method,Unit,Rate" };
+  const parsed: { e: TreeEntry; rate: number | null; m?: PricingMethod }[] = [];
+  for (const [n, r] of rows.slice(1).entries()) {
+    const line = n + 2;
+    const path = (r[cp] ?? "").split(">").map((x) => x.trim()).filter(Boolean), item = (r[ci] ?? "").trim();
+    if (!path.length || !item) return { error: `Line ${line}: Path and Item are required` };
+    const m = METHOD_ALIASES[(cm >= 0 ? r[cm] ?? "" : "").trim().toLowerCase()];
+    if (cm >= 0 && (r[cm] ?? "").trim() && !m) return { error: `Line ${line}: unknown method “${r[cm]}” (use per_sheet, per_unit, fixed_per_album or one_time_order)` };
+    const rawRate = (r[cr] ?? "").replace(/[₹,\s]/g, "");
+    const rate = rawRate === "" ? null : Number(rawRate);
+    if (rate != null && (!Number.isFinite(rate) || rate < 0)) return { error: `Line ${line}: “${r[cr]}” is not a valid rate` };
+    parsed.push({ e: { path, item, method: m ?? "per_unit", unit: (cu >= 0 ? r[cu] ?? "" : "").trim() || "pcs" }, rate, m });
+  }
+  const added = await importTree(parsed.map((p) => p.e));
+  if (typeof added === "string") return { error: added };
+  const find = (e: TreeEntry) => {
+    let parent: string | null = null;
+    for (const nm of e.path) { const c = CATEGORIES.find((x) => x.parentId === parent && norm(x.name) === norm(nm)); if (!c) return undefined; parent = c.id; }
+    return ITEMS.find((i) => i.categoryId === parent && norm(i.name) === norm(e.item));
+  };
+  const updates: PriceRow[] = [];
+  for (const p of parsed) {
+    const it = find(p.e); if (!it) continue;
+    const method = p.m ?? it.method, unit = cu >= 0 && p.e.unit ? p.e.unit : it.unit;
+    if (it.rate !== p.rate || it.method !== method || it.unit !== unit) updates.push({ id: it.id, rate: p.rate, method, unit });
+  }
+  const e = await savePrices(updates); if (e) return { error: e };
+  return { added, priced: updates.length };
 }

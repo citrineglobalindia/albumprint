@@ -1,0 +1,95 @@
+import { useRef, useState } from "react";
+import { Download, FileUp, Save, Undo2, Wand2 } from "lucide-react";
+import { Panel, Pill, Td, Th, Toggle, cx, inputCls, tableCls, trCls } from "./ui";
+import { useStore } from "../lib/store";
+import { ITEMS, METHOD_LABEL, childrenOf, importPricesCsv, pathOf, pricesCsv, savePrices, type PriceRow, type PricingMethod } from "../lib/catalog2";
+import { downloadBlob } from "../lib/invoicePdf";
+
+type Edit = { rate: string; method: PricingMethod; unit: string };
+const rateText = (n: number | null) => (n == null ? "" : String(n));
+
+/** One screen to price the whole catalog: filter, type the rates, save all at once. Also CSV export / import for spreadsheets. */
+export function PriceGrid({ show }: { show: (m: string) => void }) {
+  useStore();
+  const [q, setQ] = useState(""); const [group, setGroup] = useState(""); const [unpriced, setUnpriced] = useState(false);
+  const [edits, setEdits] = useState<Record<string, Edit>>({});
+  const [fill, setFill] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+
+  const rows = ITEMS.map((i) => { const p = pathOf(i.categoryId); return { i, top: p[0]?.id ?? "", path: p.map((c) => c.name).join(" ▸ ") }; })
+    .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }) || a.i.sort - b.i.sort);
+  const cur = (id: string): Edit => { const e = edits[id]; if (e) return e; const i = ITEMS.find((x) => x.id === id)!; return { rate: rateText(i.rate), method: i.method, unit: i.unit }; };
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = rows.filter(({ i, top, path }) => (!group || top === group) && (!unpriced || cur(i.id).rate.trim() === "")
+    && words.every((w) => `${path} ${i.name}`.toLowerCase().includes(w)));
+  const changed = Object.keys(edits).filter((id) => { const i = ITEMS.find((x) => x.id === id); const e = edits[id]!; return i && (e.rate.trim() !== rateText(i.rate) || e.method !== i.method || e.unit.trim() !== i.unit); });
+  const priced = ITEMS.filter((i) => i.rate != null).length;
+  const set = (id: string, p: Partial<Edit>) => setEdits((s) => ({ ...s, [id]: { ...cur(id), ...p } }));
+
+  const save = async () => {
+    setMsg(""); const out: PriceRow[] = [];
+    for (const id of changed) {
+      const e = edits[id]!, t = e.rate.replace(/[₹,\s]/g, "");
+      const rate = t === "" ? null : Number(t);
+      if (rate != null && !Number.isFinite(rate)) { setMsg(`“${e.rate}” is not a number (${ITEMS.find((x) => x.id === id)?.name})`); return; }
+      out.push({ id, rate, method: e.method, unit: e.unit });
+    }
+    setBusy(true); const err = await savePrices(out); setBusy(false);
+    if (err) { setMsg(err); return; }
+    setEdits({}); show(`${out.length} price(s) saved`);
+  };
+  const applyFill = () => {
+    const t = fill.replace(/[₹,\s]/g, ""); if (t === "" || !Number.isFinite(Number(t))) { setMsg("Type the rate to apply, then press Apply"); return; }
+    setMsg(""); setEdits((s) => { const n = { ...s }; for (const { i } of shown) n[i.id] = { ...cur(i.id), rate: t }; return n; });
+  };
+  const importCsv = async (f: File) => {
+    setMsg(""); setBusy(true); const r = await importPricesCsv(await f.text()); setBusy(false);
+    if ("error" in r) setMsg(r.error); else { setEdits({}); show(`CSV imported — ${r.added} new item(s), ${r.priced} price(s) updated`); }
+  };
+
+  return (
+    <Panel title="Prices" subtitle={`${priced} of ${ITEMS.length} items priced · items without a rate show “Price not configured” in orders (unless a rate rule applies)`} bodyClassName="p-0"
+      action={<div className="flex flex-wrap gap-2">
+        <button onClick={() => downloadBlob(new Blob(["﻿" + pricesCsv()], { type: "text/csv" }), "albumpro-prices.csv")} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><Download className="size-3.5" />Export CSV</button>
+        <button disabled={busy} onClick={() => file.current?.click()} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><FileUp className="size-3.5" />Import CSV</button>
+        <input ref={file} type="file" accept=".csv,text/csv" aria-label="Prices CSV file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void importCsv(f); }} />
+      </div>}>
+      <div className="flex flex-wrap items-end gap-3 border-b border-line p-4">
+        <input aria-label="Search prices" className={cx(inputCls, "w-64")} placeholder="Search, e.g. rexine above 12x9" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select aria-label="Price group" className={cx(inputCls, "w-48")} value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="">All categories</option>{childrenOf(null).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <label className="flex h-10 items-center gap-2 text-sm font-semibold"><Toggle label="Only unpriced" on={unpriced} onChange={setUnpriced} />Only unpriced</label>
+        <div className="ml-auto flex items-center gap-2">
+          <input aria-label="Rate for all shown" inputMode="decimal" className={cx(inputCls, "w-28")} placeholder="₹ rate" value={fill} onChange={(e) => setFill(e.target.value)} />
+          <button onClick={applyFill} disabled={!shown.length} className="inline-flex h-10 items-center gap-1 rounded-lg border border-line px-3 text-sm font-bold hover:bg-brand-soft"><Wand2 className="size-4" />Apply to {shown.length} shown</button>
+        </div>
+      </div>
+      <div className="max-h-[62vh] overflow-auto scroll-thin">
+        <table className={tableCls} data-testid="price-grid">
+          <thead className="sticky top-0 z-10 bg-slate-50"><tr><Th>Category</Th><Th>Item</Th><Th>Pricing</Th><Th>Unit</Th><Th className="text-right">Rate (₹)</Th></tr></thead>
+          <tbody>{shown.map(({ i, path }) => {
+            const e = cur(i.id), dirty = changed.includes(i.id);
+            return (
+              <tr key={i.id} className={cx(trCls, dirty && "bg-amber-50")} data-testid={`price-${path} ▸ ${i.name}`}>
+                <Td className="text-xs text-sub">{path}</Td>
+                <Td className="font-semibold">{i.name}{!i.active && <Pill tone="slate" className="ml-2 !py-0 text-[10px]">Inactive</Pill>}{i.sample && <Pill tone="amber" className="ml-1 !py-0 text-[10px]">Sample</Pill>}</Td>
+                <Td><select aria-label={`Pricing for ${path} ▸ ${i.name}`} className={cx(inputCls, "h-8 w-52 text-xs")} value={e.method} onChange={(ev) => set(i.id, { method: ev.target.value as PricingMethod })}>
+                  {(Object.keys(METHOD_LABEL) as PricingMethod[]).map((m) => <option key={m} value={m}>{METHOD_LABEL[m]}</option>)}</select></Td>
+                <Td><input aria-label={`Unit for ${path} ▸ ${i.name}`} className={cx(inputCls, "h-8 w-20 text-xs")} maxLength={20} value={e.unit} onChange={(ev) => set(i.id, { unit: ev.target.value })} /></Td>
+                <Td className="text-right"><input aria-label={`Rate for ${path} ▸ ${i.name}`} inputMode="decimal" placeholder="Not set" className={cx(inputCls, "h-8 w-28 text-right tabular-nums", e.rate.trim() === "" && "border-amber-300")} value={e.rate} onChange={(ev) => set(i.id, { rate: ev.target.value })} /></Td>
+              </tr>);
+          })}
+            {!shown.length && <tr><td colSpan={5} className="p-6 text-center text-sm text-sub">{ITEMS.length ? "Nothing matches the filters." : "No items yet — use “Import product list” above, or add items under Categories & items."}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 border-t border-line p-4">
+        {msg && <p role="alert" className="text-sm font-semibold text-rose-600">{msg}</p>}
+        <span className="ml-auto text-sm text-sub">{changed.length ? `${changed.length} unsaved change(s)` : "No unsaved changes"}</span>
+        <button disabled={!changed.length || busy} onClick={() => { setEdits({}); setMsg(""); }} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm font-bold hover:bg-slate-100 disabled:opacity-40"><Undo2 className="size-4" />Discard</button>
+        <button disabled={!changed.length || busy} onClick={() => void save()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-40"><Save className="size-4" />Save {changed.length || ""} price{changed.length === 1 ? "" : "s"}</button>
+      </div>
+    </Panel>
+  );
+}

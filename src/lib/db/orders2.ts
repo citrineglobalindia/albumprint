@@ -51,6 +51,11 @@ registerCatalog2Backend({
     const { data, error } = await sb().rpc("cat_import_classic"); if (error) return error.message;
     await loadCatalog(); return Number(data ?? 0);
   },
+  async importTree(entries) {
+    const { data, error } = await sb().rpc("cat_import_tree", { p: entries }); if (error) return error.message;
+    const e = await loadCatalog(); if (e) return e; return Number(data ?? 0);
+  },
+  async setPrices(rows) { const { error } = await sb().rpc("cat_set_prices", { p: rows }); return msg(error); },
 });
 
 const draftFrom = (r: Row, me: string | undefined): StoredDraft => ({ id: r.id, title: r.title ?? "Draft", payload: r.payload as OrderDraft, updatedAt: r.updated_at, result: r.result ?? undefined, mine: r.created_by === me });
