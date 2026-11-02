@@ -1,12 +1,15 @@
 import { useRef, useState } from "react";
-import { Download, FileUp, Save, Undo2, Wand2 } from "lucide-react";
+import { Download, FileUp, Save, Trash2, Undo2, Wand2 } from "lucide-react";
+import { useConfirm } from "./ConfirmDialog";
+import "../lib/orders2";                                   // registers which items are on finalized orders (delete protection in demo mode)
 import { Panel, Pill, Td, Th, Toggle, cx, inputCls, tableCls, trCls } from "./ui";
 import { useStore } from "../lib/store";
-import { ITEMS, METHOD_LABEL, childrenOf, importPricesCsv, pathOf, pricesCsv, savePrices, type PriceRow, type PricingMethod } from "../lib/catalog2";
+import { ITEMS, childrenOf, deleteItem, importPricesCsv, pathOf, pricesCsv, savePrices, type PriceRow, type PricingMethod } from "../lib/catalog2";
 import { downloadBlob } from "../lib/invoicePdf";
 
 type Edit = { rate: string; method: PricingMethod; unit: string };
 const rateText = (n: number | null) => (n == null ? "" : String(n));
+const SHORT: Record<PricingMethod, string> = { per_sheet: "Per sheet", per_unit: "Per piece", fixed_per_album: "Per album (fixed)", one_time_order: "Per order (once)" };
 
 /** One screen to price the whole catalog: filter, type the rates, save all at once. Also CSV export / import for spreadsheets. */
 export function PriceGrid({ show }: { show: (m: string) => void }) {
@@ -15,6 +18,8 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [fill, setFill] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [dialog, confirm] = useConfirm();
 
   const rows = ITEMS.map((i) => { const p = pathOf(i.categoryId); return { i, top: p[0]?.id ?? "", path: p.map((c) => c.name).join(" ▸ ") }; })
     .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }) || a.i.sort - b.i.sort);
@@ -23,6 +28,22 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
   const shown = rows.filter(({ i, top, path }) => (!group || top === group) && (!unpriced || cur(i.id).rate.trim() === "")
     && words.every((w) => `${path} ${i.name}`.toLowerCase().includes(w)));
   const changed = Object.keys(edits).filter((id) => { const i = ITEMS.find((x) => x.id === id); const e = edits[id]!; return i && (e.rate.trim() !== rateText(i.rate) || e.method !== i.method || e.unit.trim() !== i.unit); });
+  const selected = [...picked].filter((id) => ITEMS.some((i) => i.id === id));
+  const allShown = shown.length > 0 && shown.every(({ i }) => picked.has(i.id));
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const remove = (ids: string[]) => {
+    const names = ids.map((id) => ITEMS.find((x) => x.id === id)?.name).filter(Boolean);
+    confirm({ title: ids.length === 1 ? `Delete “${names[0]}”?` : `Delete ${ids.length} items?`, message: `${ids.length === 1 ? "This item and its rate rules are" : "These items and their rate rules are"} removed from the catalog. Items already used on orders are kept (switch them off instead). This cannot be undone.`, confirmLabel: "Delete", danger: true },
+      async () => {
+        setBusy(true); setMsg(""); let done = 0; const kept: string[] = [];
+        for (const id of ids) { const e = await deleteItem(id); if (e) kept.push(e); else done++; }
+        setBusy(false);
+        setPicked((p) => { const n = new Set(p); ids.forEach((id) => n.delete(id)); return n; });
+        setEdits((s0) => { const n = { ...s0 }; ids.forEach((id) => delete n[id]); return n; });
+        if (kept.length) setMsg(kept.length === 1 ? kept[0]! : `${kept.length} item(s) were kept because they are used on existing orders — switch them off instead`);
+        if (done) show(`${done} item(s) deleted`);
+      });
+  };
   const priced = ITEMS.filter((i) => i.rate != null).length;
   const set = (id: string, p: Partial<Edit>) => setEdits((s) => ({ ...s, [id]: { ...cur(id), ...p } }));
 
@@ -67,29 +88,33 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
       </div>
       <div className="max-h-[62vh] overflow-auto scroll-thin">
         <table className={tableCls} data-testid="price-grid">
-          <thead className="sticky top-0 z-10 bg-slate-50"><tr><Th>Category</Th><Th>Item</Th><Th>Pricing</Th><Th>Unit</Th><Th className="text-right">Rate (₹)</Th></tr></thead>
+          <thead className="sticky top-0 z-10 bg-slate-50"><tr><Th className="w-8"><input type="checkbox" aria-label="Select all shown" checked={allShown} onChange={() => setPicked((p) => { const n = new Set(p); shown.forEach(({ i }) => (allShown ? n.delete(i.id) : n.add(i.id))); return n; })} /></Th><Th>Category</Th><Th>Item</Th><Th>Pricing</Th><Th>Unit</Th><Th className="text-right">Rate (₹)</Th><Th /></tr></thead>
           <tbody>{shown.map(({ i, path }) => {
             const e = cur(i.id), dirty = changed.includes(i.id);
             return (
               <tr key={i.id} className={cx(trCls, dirty && "bg-amber-50")} data-testid={`price-${path} ▸ ${i.name}`}>
+                <Td><input type="checkbox" aria-label={`Select ${path} ▸ ${i.name}`} checked={picked.has(i.id)} onChange={() => toggle(i.id)} /></Td>
                 <Td className="text-xs text-sub">{path}</Td>
                 <Td className="font-semibold">{i.name}{!i.active && <Pill tone="slate" className="ml-2 !py-0 text-[10px]">Inactive</Pill>}{i.sample && <Pill tone="amber" className="ml-1 !py-0 text-[10px]">Sample</Pill>}</Td>
-                <Td><select aria-label={`Pricing for ${path} ▸ ${i.name}`} className={cx(inputCls, "h-8 w-52 text-xs")} value={e.method} onChange={(ev) => set(i.id, { method: ev.target.value as PricingMethod })}>
-                  {(Object.keys(METHOD_LABEL) as PricingMethod[]).map((m) => <option key={m} value={m}>{METHOD_LABEL[m]}</option>)}</select></Td>
+                <Td><select aria-label={`Pricing for ${path} ▸ ${i.name}`} className={cx(inputCls, "h-8 w-40 text-xs")} value={e.method} onChange={(ev) => set(i.id, { method: ev.target.value as PricingMethod })}>
+                  {(Object.keys(SHORT) as PricingMethod[]).map((m) => <option key={m} value={m}>{SHORT[m]}</option>)}</select></Td>
                 <Td><input aria-label={`Unit for ${path} ▸ ${i.name}`} className={cx(inputCls, "h-8 w-20 text-xs")} maxLength={20} value={e.unit} onChange={(ev) => set(i.id, { unit: ev.target.value })} /></Td>
                 <Td className="text-right"><input aria-label={`Rate for ${path} ▸ ${i.name}`} inputMode="decimal" placeholder="Not set" className={cx(inputCls, "h-8 w-28 text-right tabular-nums", e.rate.trim() === "" && "border-amber-300")} value={e.rate} onChange={(ev) => set(i.id, { rate: ev.target.value })} /></Td>
+                <Td><button type="button" aria-label={`Delete ${path} ▸ ${i.name}`} disabled={busy} onClick={() => remove([i.id])} className="grid size-8 place-items-center rounded-lg text-rose-600 hover:bg-rose-50"><Trash2 className="size-4" /></button></Td>
               </tr>);
           })}
-            {!shown.length && <tr><td colSpan={5} className="p-6 text-center text-sm text-sub">{ITEMS.length ? "Nothing matches the filters." : "No items yet — use “Import product list” above, or add items under Categories & items."}</td></tr>}
+            {!shown.length && <tr><td colSpan={7} className="p-6 text-center text-sm text-sub">{ITEMS.length ? "Nothing matches the filters." : "No items yet — use “Import product list” above, or add items under Categories & items."}</td></tr>}
           </tbody>
         </table>
       </div>
       <div className="flex flex-wrap items-center gap-3 border-t border-line p-4">
+        {selected.length > 0 && <button disabled={busy} onClick={() => remove(selected)} className="inline-flex h-10 items-center gap-1 rounded-lg border border-rose-200 px-3 text-sm font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="size-4" />Delete {selected.length} selected</button>}
         {msg && <p role="alert" className="text-sm font-semibold text-rose-600">{msg}</p>}
         <span className="ml-auto text-sm text-sub">{changed.length ? `${changed.length} unsaved change(s)` : "No unsaved changes"}</span>
         <button disabled={!changed.length || busy} onClick={() => { setEdits({}); setMsg(""); }} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm font-bold hover:bg-slate-100 disabled:opacity-40"><Undo2 className="size-4" />Discard</button>
         <button disabled={!changed.length || busy} onClick={() => void save()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-40"><Save className="size-4" />Save {changed.length || ""} price{changed.length === 1 ? "" : "s"}</button>
       </div>
+      {dialog}
     </Panel>
   );
 }

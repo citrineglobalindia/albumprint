@@ -133,3 +133,38 @@ test("delete an item and a whole category branch; items used on orders are prote
   await expect(page.getByText(/holds 1 item\(s\) used on existing orders/).first()).toBeVisible();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
 });
+
+test("delete from the Prices tab: one row, or several selected", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await page.goto("/catalog");
+  await page.getByRole("button", { name: "Import product list" }).click();
+  await expect(page.getByTestId("price-grid")).toBeVisible();
+  await expect(page.getByLabel("Pricing for Bag ▸ JUTE BAG")).toHaveValue("per_unit");
+  await expect(page.getByLabel("Pricing for Bag ▸ JUTE BAG").locator("option:checked")).toHaveText("Per piece");
+
+  await page.getByRole("button", { name: "Delete Bag ▸ JUTE BAG" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("1 item(s) deleted").first()).toBeVisible();
+  await expect(page.getByLabel("Rate for Bag ▸ JUTE BAG")).toHaveCount(0);
+
+  await page.getByLabel("Price group").selectOption({ label: "Bag" });
+  await page.getByLabel("Select all shown").check();
+  await page.getByLabel("Select Bag ▸ NORMAL ▸ 12X9").uncheck();
+  await page.getByRole("button", { name: "Delete 4 selected" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Delete 4 items?");
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("4 item(s) deleted").first()).toBeVisible();
+  await expect(page.locator("[data-testid^='price-Bag']")).toHaveCount(1);
+  await expect(page.getByLabel("Rate for Bag ▸ NORMAL ▸ 12X9")).toBeVisible();
+
+  // an item on a finalized order is kept
+  await buildOrder(page, { albums: [{ name: "Album", sheets: 10, cover: "Leatherette cover (sample)" }], finalize: true });
+  await page.goto("/catalog");
+  await page.getByRole("button", { name: "Prices" }).or(page.getByRole("tab", { name: "Prices" })).first().click();
+  await page.getByLabel("Search prices").fill("leatherette");
+  await page.getByRole("button", { name: "Delete Sample — Covers ▸ Leatherette cover (sample)" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("alert")).toContainText("used on existing orders");
+  await expect(page.getByLabel("Rate for Sample — Covers ▸ Leatherette cover (sample)")).toBeVisible();
+});
