@@ -5,7 +5,8 @@ import type { CItem, PricingMethod, PricingSettings, Rate } from "./catalog2";
 //   every line = whole quantity × 2-decimal rate (exact); percentages are rounded half-up to the paisa.
 export type OrderType = "design_printing" | "printing_only";
 export type Scope = "copy" | "album" | "order";
-export interface DraftItem { itemId: string; qty: number; note?: string }
+/** qty: pieces for a per-unit item. sheetQty: sheets for a per-sheet item — leave it out (or null) to follow the album's sheet count automatically. */
+export interface DraftItem { itemId: string; qty: number; sheetQty?: number | string | null; note?: string }
 export interface DraftAlbum { id: string; name: string; sheets: number; copies: number; size: string; paper: string; finish: string; orientation: string; notes: string; items: DraftItem[] }
 export interface NewCustomerDraft { name: string; phone: string; email: string; address: string }
 export interface OrderDraft {
@@ -90,12 +91,16 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
       if (seen.has(ci.id)) { err(`album.${ai}.items`, `Album ${ai}: “${ci.name}” is added twice — change its quantity instead`); continue; }
       seen.add(ci.id);
       if (ci.kind) { if (kinds.has(ci.kind)) { err(`album.${ai}.items`, `Album ${ai}: choose only one ${ci.kind}`); continue; } kinds.add(ci.kind); }
-      let qty = 1;
+      let qty = 1, itemSheets = sheets;
+      if (ci.method === "per_sheet" && it.sheetQty != null && it.sheetQty !== "") {
+        if (!isWhole(it.sheetQty, 1e5) || Number(it.sheetQty) < 1) { err(`album.${ai}.items`, `Album ${ai}: “${ci.name}” needs a sheet quantity of 1 or more (whole number)`); continue; }
+        itemSheets = Number(it.sheetQty);
+      }
       if (ci.method === "per_unit") {
         if (!isWhole(it.qty, 1e5) || Number(it.qty) < 1) { err(`album.${ai}.items`, `Album ${ai}: “${ci.name}” needs a quantity of 1 or more (whole number)`); continue; }
         qty = Number(it.qty);
       }
-      const l = priceLine(ci, qty, sheets, size, paper, finish, "item", catalog.rates);
+      const l = priceLine(ci, qty, itemSheets, size, paper, finish, "item", catalog.rates);
       raw.push({ ...l, note: clean(it.note) });
       if (l.missing) { anyMissing = true; err(`album.${ai}.items`, `Album ${ai}: price not configured for “${ci.name}” with these requirements`); }
     }

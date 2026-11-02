@@ -9,11 +9,14 @@ const LEVEL = ["Category", "Subcategory", "Level 3", "Level 4"];
 
 /** Dependent dropdowns: each level shows only the active children of the level above (and only branches that hold something usable);
  *  changing a level clears everything below it. The item list shows the active items of the deepest level chosen. */
-export function CategoryPicker({ accept, onAdd, label = "Add item", testId }: { accept: (i: CItem) => boolean; onAdd: (itemId: string, qty: number) => string | null; label?: string; testId?: string }) {
+/** sheets: the album's sheet count — a per-sheet item's quantity follows it automatically unless the user types another number. */
+export function CategoryPicker({ accept, onAdd, label = "Add item", testId, sheets }: { accept: (i: CItem) => boolean; onAdd: (itemId: string, qty: number, sheetQty?: number) => string | null; label?: string; testId?: string; sheets?: number | string }) {
   useStore();
   const [path, setPath] = useState<string[]>([]);
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("1");
+  const [sheetQty, setSheetQty] = useState<string | null>(null);              // null = follow the album's sheets
+  const autoSheets = sheets === "" || sheets == null ? "" : String(sheets);
   const [msg, setMsg] = useState("");
   const ok = (i: CItem) => usableItem(i) && accept(i);
   const levels = useMemo(() => {
@@ -32,14 +35,19 @@ export function CategoryPicker({ accept, onAdd, label = "Add item", testId }: { 
   const node = path[path.length - 1];
   const items = node ? itemsIn(node, true).filter(ok) : [];
   const item = itemId ? itemById(itemId) : undefined;
-  const choose = (d: number, id: string) => { setPath([...path.slice(0, d), ...(id ? [id] : [])]); setItemId(""); setMsg(""); };
+  const choose = (d: number, id: string) => { setPath([...path.slice(0, d), ...(id ? [id] : [])]); setItemId(""); setSheetQty(null); setMsg(""); };
   const add = () => {
     if (!item) { setMsg("Choose an item"); return; }
     const q = Number(qty);
     if (item.method === "per_unit" && (!Number.isInteger(q) || q < 1)) { setMsg("Enter a whole-number quantity of 1 or more"); return; }
-    const e = onAdd(item.id, item.method === "per_unit" ? q : 1);
+    let sq: number | undefined;
+    if (item.method === "per_sheet" && sheetQty != null && sheetQty !== autoSheets) {
+      sq = Number(sheetQty);
+      if (!/^[0-9]{1,5}$/.test(sheetQty) || sq < 1) { setMsg("Enter a whole number of sheets (1 or more), or use Auto"); return; }
+    }
+    const e = onAdd(item.id, item.method === "per_unit" ? q : 1, sq);
     if (e) { setMsg(e); return; }
-    setItemId(""); setQty("1"); setMsg("");
+    setItemId(""); setQty("1"); setSheetQty(null); setMsg("");
   };
   if (!levels.length) return <p className="rounded-xl border border-dashed border-line p-3 text-center text-xs text-sub" data-testid={testId}>Nothing to add here yet — an admin can add items in Catalog & Pricing.</p>;
   return (
@@ -64,7 +72,10 @@ export function CategoryPicker({ accept, onAdd, label = "Add item", testId }: { 
       {item && (
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1 text-xs text-sub">{METHOD_LABEL[item.method]}{item.rate != null ? ` · standard ${money(item.rate)} / ${item.unit}` : " · priced by requirement"}{item.description ? ` · ${item.description}` : ""}</div>
-          {item.method === "per_unit" && <label className="text-[11px] font-bold text-sub">Quantity<input aria-label="Quantity" type="number" min={1} step={1} className={cx(inputCls, "mt-1 w-24")} value={qty} onChange={(e) => setQty(e.target.value)} /></label>}
+          {item.method === "per_unit" && <label className="text-[11px] font-bold text-sub">Qty<input aria-label="Quantity" type="number" min={1} step={1} className={cx(inputCls, "mt-1 w-24")} value={qty} onChange={(e) => setQty(e.target.value)} /></label>}
+          {item.method === "per_sheet" && <label className="text-[11px] font-bold text-sub">Qty (sheets){sheetQty == null ? <span className="ml-1 font-semibold text-emerald-700">· auto = album sheets</span> : <button type="button" onClick={() => setSheetQty(null)} className="ml-1 font-semibold text-brand hover:underline">· back to auto</button>}
+            <input aria-label="Quantity" type="number" min={1} step={1} className={cx(inputCls, "mt-1 w-24")} placeholder="Sheets" value={sheetQty ?? autoSheets} onChange={(e) => setSheetQty(e.target.value)} /></label>}
+          {(item.method === "fixed_per_album" || item.method === "one_time_order") && <label className="text-[11px] font-bold text-sub">Qty<input aria-label="Quantity" disabled className={cx(inputCls, "mt-1 w-24 bg-slate-100")} value={item.method === "fixed_per_album" ? "1 / album" : "1 / order"} readOnly /></label>}
           <button type="button" onClick={add} className="inline-flex h-10 items-center gap-1 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark"><Plus className="size-4" />Add</button>
         </div>
       )}

@@ -37,8 +37,10 @@ test("import the product list, price it in bulk, use the price in an order", asy
   await expect(page.getByRole("alert")).toContainText("0 or more");                // nothing saved
   expect((await items(page)).filter((i) => i.rate != null && !/\(sample/.test(i.name))).toHaveLength(0);
   await page.getByLabel("Rate for Photo Print ▸ 4 x6").fill("20");
-  await page.getByRole("button", { name: /^Save 18 prices/ }).click();
-  await expect(page.getByText("18 price(s) saved").first()).toBeVisible();
+  await page.getByLabel("Price group").selectOption({ label: "Lamination" });
+  await page.getByLabel("Rate for Lamination ▸ GLOSSY").fill("5");
+  await page.getByRole("button", { name: /^Save 19 prices/ }).click();
+  await expect(page.getByText("19 price(s) saved").first()).toBeVisible();
   await expect.poll(async () => (await items(page)).find((i) => i.name === "4 x6")?.rate).toBe(20);             // saved to this browser (autosave)
   expect((await items(page)).find((i) => i.name === "12X24")?.rate).toBe(25);
 
@@ -66,11 +68,29 @@ test("import the product list, price it in bulk, use the price in an order", asy
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await page.getByRole("button", { name: "Next" }).click();
   await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event date").fill("2026-12-12"); await page.getByRole("button", { name: "Next" }).click();
   const a1 = page.getByTestId("album-1");
-  await a1.getByLabel("Sheets").fill("10");
+  await a1.getByLabel("Sheets", { exact: true }).fill("10");
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Cover" });
   await p1.getByLabel("Subcategory").selectOption({ label: "REXINE COVER" });
   await p1.getByLabel("Level 3").selectOption({ label: "2 FOLD" });
   await p1.getByLabel("Item").selectOption({ label: "ABOVE 12X9" }); await p1.getByRole("button", { name: "Add" }).click();
   await expect(page.getByTestId("per-copy-1")).toHaveText("₹1,750");              // 10×90 + 10×40 + 450
+
+  // a per-sheet item: Qty is filled from the album's sheets and keeps following them
+  await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Lamination" });
+  await p1.getByLabel("Item").selectOption({ label: "GLOSSY" });
+  await expect(p1.getByLabel("Quantity")).toHaveValue("10");
+  await expect(p1.getByText("auto = album sheets")).toBeVisible();
+  await p1.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹1,800");              // + 10 × 5
+  await a1.getByLabel("Sheets", { exact: true }).fill("12");
+  await expect(a1.getByLabel("Quantity of GLOSSY")).toHaveValue("12");
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹2,070");              // 12×130 + 450 + 12×5
+  await a1.getByLabel("Quantity of GLOSSY").fill("4");                           // override
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹2,030");
+  await a1.getByLabel("Sheets", { exact: true }).fill("14");
+  await expect(a1.getByLabel("Quantity of GLOSSY")).toHaveValue("4");            // an override stays
+  await a1.getByRole("button", { name: "Match GLOSSY to album sheets" }).click();
+  await expect(a1.getByLabel("Quantity of GLOSSY")).toHaveValue("14");
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹2,340");              // 14×130 + 450 + 14×5
 });

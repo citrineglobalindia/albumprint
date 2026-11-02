@@ -39,5 +39,17 @@ select t.as('reception');
 select t.err($$select t.tree('[{"path":["Staff"],"item":"X"}]')$$, 'bulk import: only an administrator', 'administrator');
 select t.err($$select t.prices(jsonb_build_array(jsonb_build_object('id', (select id from cat_items where name = 'JUTE BAG'), 'rate', 1)))$$, 'prices: only an administrator', 'administrator');
 select t.as('system');
+
+-- per-sheet item quantity (0039): follows the album's sheets unless items[].sheetQty is given
+select t.as('system');
+insert into cat_items(category_id, name, pricing_method, unit, rate) select id, 'Sheet lam', 'per_sheet', 'sheet', 3 from cat_categories where name = 'Bulk Bag';
+create function t.sq(extra text) returns jsonb language sql as $$
+  select order_price(jsonb_build_object('orderType', 'printing_only', 'albums', jsonb_build_array(jsonb_build_object('id', 'x', 'name', 'A', 'sheets', 30, 'copies', 2, 'size', '', 'paper', '', 'finish', '',
+    'items', jsonb_build_array(jsonb_build_object('itemId', (select id from cat_items where name = 'Sheet lam'), 'qty', 1) || coalesce(extra, '{}')::jsonb))), 'orderCharges', '[]'::jsonb, 'discount', jsonb_build_object('type', 'none', 'value', 0))) $$;
+select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text from jsonb_array_elements(t.sq(null)->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '30/90.00', 'sheet qty: a per-sheet item follows the album sheets (30 × ₹3)');
+select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text || '/' || (l->>'amount')::numeric::text from jsonb_array_elements(t.sq('{"sheetQty": 12}')->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '12/36.00/72.00', 'sheet qty: an explicit sheet quantity (12 × ₹3, × 2 copies)');
+select t.eq($$select l->>'qty' from jsonb_array_elements(t.sq('{"sheetQty": ""}')->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '30', 'sheet qty: blank means auto');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": "2.5"}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: a fraction is refused');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": 0}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: zero is refused');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED
