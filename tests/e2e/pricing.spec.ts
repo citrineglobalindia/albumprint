@@ -10,11 +10,11 @@ test("admin-managed work groups appear in the New Order dropdown", async ({ page
   await page.getByLabel("Add Work groups").click();
   await page.getByTestId("pricing-save").click();
 
-  await page.goto("/orders");
-  await page.getByRole("button", { name: "Create Order" }).first().click();
-  const dlg = page.getByRole("dialog", { name: "New Order" });
-  await dlg.getByRole("button", { name: /^Customer/ }).click();
-  await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await expect(dlg.getByLabel("Work Group").locator("option", { hasText: "Studio Special" })).toHaveCount(1);
+  await page.goto("/orders/new");
+  await page.getByRole("radio", { name: /Design \+ Printing/ }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: /^Search customer/ }).click();
+  await page.getByRole("button", { name: /^Sharma Studio/ }).first().click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByLabel("Work Group").locator("option", { hasText: "Studio Special" })).toHaveCount(1);
 });

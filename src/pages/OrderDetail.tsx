@@ -8,6 +8,8 @@ import { useReason } from "../components/ReasonDialog";
 import { ORDERS, STAGES, stageLabel, stageTone, type Order, type StageKey } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
 import CostingPanel from "../components/CostingPanel";
+import OrderPricingPanel from "../components/OrderPricingPanel";
+import { pricingOf } from "../lib/orders2";
 import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
 import { FILES, addFile, lockFile, archiveFile, downloadFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
@@ -152,7 +154,7 @@ export default function OrderDetail() {
         </div>
       </Panel>
 
-      <CostingPanel o={o} show={show} fail={fail} />
+      {pricingOf(o.id) ? <OrderPricingPanel o={o} show={show} /> : <CostingPanel o={o} show={show} fail={fail} />}
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_1fr_340px]">
         <div className="min-w-0 space-y-5">

@@ -11,6 +11,7 @@ import {
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
 import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
+import { openDrafts } from "../lib/orders2";
 import { assignees } from "../lib/staffList";
 import { ORDERS, CUSTOMERS, STAGES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
 import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
@@ -165,6 +166,7 @@ export default function Orders() {
       <PageHeader title="Orders" subtitle="Manage and track all album orders from design to delivery.">
         <DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} />
         <MoreButton />
+        <button onClick={() => nav("/orders/new?drafts=1")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft">Drafts{openDrafts().length ? ` (${openDrafts().length})` : ""}</button>
         <PrimaryButton onClick={() => newOrder.open()}>Create Order</PrimaryButton>
       </PageHeader>
 

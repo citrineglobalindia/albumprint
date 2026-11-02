@@ -4,21 +4,17 @@ import { seedRole } from "./helpers";
 // Reception records the sheets; the admin splits each album into priced catalog items, finalizes, and generates invoices.
 test("admin costs two albums from the catalog, finalizes the total and generates one invoice per album", async ({ page }) => {
   await seedRole(page, "admin");
+  // classic costing applies to orders that were not priced by the order builder: give a seeded order two albums
   await page.goto("/orders");
-  await page.getByRole("button", { name: "Create Order" }).first().click();
-  const dlg = page.getByRole("dialog", { name: "New Order" });
-  await dlg.getByRole("button", { name: /^Customer/ }).click();
-  await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByLabel("No. of Sheets").fill("30");
-  await dlg.getByRole("button", { name: "Add album" }).click();
-  await dlg.getByLabel("Album Name").fill("Engagement Album");
-  await dlg.getByLabel("No. of Sheets").fill("20");
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByRole("button", { name: "Create Order" }).click();
-  await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
+  await expect.poll(() => page.evaluate(() => !!localStorage.getItem("albumpro.v1.orders"))).toBe(true);
+  await page.evaluate(() => {
+    const k = "albumpro.v1.orders"; const all = JSON.parse(localStorage.getItem(k)!) as Record<string, unknown>[];
+    const o = all.find((x) => x.id === "IDP00072")!;
+    const base = { albumType: "Premium Album", size: "12x36", orientation: "Landscape", copies: 1, binding: "Lay-flat", paper: "Matte", gsm: "300", cover: "Leatherette", lamination: "Matte", box: "None", finishes: [], nameText: "" };
+    o.albums = [{ ...base, title: "Asha & Ravi Wedding Album", sheets: 30 }, { ...base, title: "Engagement Album", sheets: 20 }]; delete o.costing;
+    localStorage.setItem(k, JSON.stringify(all));
+  });
+  await page.goto("/orders/IDP00072");
 
   const costing = page.getByTestId("costing");
   await expect(costing).toBeVisible();

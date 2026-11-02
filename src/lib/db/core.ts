@@ -48,6 +48,12 @@ export function hydrateAll(): Promise<void> {
   return inflight;
 }
 
+/** Re-run some hydrators by name (after a server-side change such as finalizing an order). */
+export async function rehydrate(names: string[]): Promise<void> {
+  staffOnce = null;
+  for (const n of names) { const h = hydrators.find((x) => x.name === n); if (h) { try { await h.fn(); } catch (e) { reportDbError(`Loading ${n}`, e); } } }
+}
+
 /** Run a database write in the background after an optimistic local change; `revert` undoes the local change on failure. */
 export function writeThrough(what: string, op: () => PromiseLike<{ error: { message: string } | null }>, revert?: () => void) {
   if (!backendOn) return;

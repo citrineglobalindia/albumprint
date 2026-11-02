@@ -8,6 +8,8 @@ const NewOrderProvider = lazy(() => import("./components/NewOrderWizard").then((
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Attendance = lazy(() => import("./pages/Attendance"));
+const CatalogAdmin = lazy(() => import("./pages/CatalogAdmin"));
+const OrderBuilder = lazy(() => import("./pages/OrderBuilder"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
 const ColourGrading = lazy(() => import("./pages/ColourGrading"));
@@ -69,6 +71,8 @@ export default function App() {
             <Route index element={<Home />} />
             <Route path="orders/:id" element={page(<OrderDetail />)} />
             <Route path="attendance" element={page(<Attendance />)} />
+            <Route path="catalog" element={page(<CatalogAdmin />)} />
+            <Route path="orders/new" element={page(<OrderBuilder />)} />
             <Route path="notifications" element={page(<Notifications />)} />
             <Route path="control" element={page(<ControlCenter />)} />
             <Route path="audit" element={page(<AuditLog />)} />

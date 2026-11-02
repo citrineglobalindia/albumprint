@@ -35,11 +35,13 @@ async function hydrate() {
   })).filter((p) => p.orderId);
   const invoices: Invoice[] = (invs ?? []).map((r) => {
     const o = codeOf.get(r.order_id);
-    const lines = ((r.invoice_lines ?? []) as Row[]).map((l) => ({ desc: l.description, qty: Number(l.qty), price: Number(l.rate) }));
+    const lines = ((r.invoice_lines ?? []) as Row[]).sort((a, b) => (Number(a.line_no ?? 0) - Number(b.line_no ?? 0)) || String(a.id).localeCompare(String(b.id))).map((l) => ({ desc: l.description, qty: Number(l.qty), price: Number(l.rate), section: l.section ?? undefined, scope: l.scope ?? undefined, note: l.note ?? undefined }));
+    const v2 = r.calc_mode === "v2" ? { subtotal: Number(r.subtotal), discountType: r.discount_type ?? null, discountValue: Number(r.discount_value ?? 0), discountAmount: Number(r.discount_amount ?? 0), taxLabel: r.tax_label ?? null,
+      taxRate: Number(r.tax_rate ?? 0), taxAmount: Number(r.tax_amount ?? 0), revision: Number(r.pricing_revision ?? 1), snapshot: r.snapshot ?? undefined } : undefined;
     const disc = Number(r.discount_pct);
     return {
       uid: r.id, no: r.number, kind: r.kind, orderId: o?.id ?? "", customer: o?.customer ?? "", date: day(r.issue_date), due: day(r.due_date), lines, gstPct: Number(r.gst_rate), igst: !!r.igst, discountPct: disc,
-      status: r.status === "draft" ? "Draft" : r.status === "overdue" ? "Overdue" : "Sent", approval: r.discount_approved_by ? "approved" : r.kind === "invoice" && disc > discountLimit() ? "pending" : "none",
+      status: r.status === "draft" ? "Draft" : r.status === "overdue" ? "Overdue" : r.status === "void" ? "Void" : "Sent", v2, approval: r.discount_approved_by ? "approved" : r.kind === "invoice" && (v2 ? (v2.subtotal > 0 ? (v2.discountAmount * 100) / v2.subtotal : 0) : disc) > discountLimit() ? "pending" : "none",
       approvedBy: r.discount_approved_by ? String(staff.get(r.discount_approved_by)?.full_name ?? "Admin") : undefined, refNo: r.ref_invoice_id ? invNo.get(r.ref_invoice_id) : undefined,
       amount: r.kind === "credit_note" && r.amount != null ? Number(r.amount) : undefined, notes: r.notes ?? undefined, sentAt: r.sent_at ?? undefined,
     } satisfies Invoice;

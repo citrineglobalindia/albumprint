@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
   CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X,
-  AlarmClockCheck,
+  AlarmClockCheck, Library,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
@@ -28,6 +28,7 @@ export const NAV = [
   { to: "/payments", label: "Payments", icon: CreditCard },
   { to: "/invoices", label: "Invoices", icon: FileText },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/catalog", label: "Catalog & Pricing", icon: Library },
   { to: "/masters", label: "Masters", icon: Boxes },
   { to: "/users", label: "Users & Roles", icon: UserCog },
   { to: "/control", label: "Control Center", icon: Gauge },

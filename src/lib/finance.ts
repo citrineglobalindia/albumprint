@@ -25,14 +25,17 @@ export interface Payment { uid?: string; id: string; orderId: string; kind: "pay
 export const PAYMENTS: Payment[] = persistArray<Payment>("payments", []);
 
 /* ───────────── invoices ───────────── */
-export interface Line { desc: string; qty: number; price: number }
+export interface Line { desc: string; qty: number; price: number; section?: string; scope?: "copy" | "album" | "order"; note?: string }
+/** Invoices issued by the order builder (supabase/migrations/0036): their totals and the full snapshot are stored, never recomputed. */
+export interface InvoiceV2 { subtotal: number; discountType: "fixed" | "percent" | null; discountValue: number; discountAmount: number; taxLabel: string | null; taxRate: number; taxAmount: number; revision: number; snapshot?: unknown }
 export interface Invoice {
   uid?: string; no: string; kind: "invoice" | "credit_note"; orderId: string; customer: string; date: string; due: string; lines: Line[]; gstPct: number; igst: boolean; discountPct: number;
-  status: "Draft" | "Sent" | "Overdue"; approval: "none" | "pending" | "approved"; approvedBy?: string; refNo?: string; amount?: number; notes?: string; sentAt?: string;
+  status: "Draft" | "Sent" | "Overdue" | "Void"; v2?: InvoiceV2; approval: "none" | "pending" | "approved"; approvedBy?: string; refNo?: string; amount?: number; notes?: string; sentAt?: string;
 }
 export const INVOICES: Invoice[] = persistArray<Invoice>("invoices", []);
 
-export function calc(i: Pick<Invoice, "lines" | "gstPct" | "discountPct" | "igst">) {
+export function calc(i: Pick<Invoice, "lines" | "gstPct" | "discountPct" | "igst"> & { v2?: InvoiceV2 }) {
+  if (i.v2) { const v = i.v2, taxable = Math.round((v.subtotal - v.discountAmount) * 100) / 100; return { sub: v.subtotal, discount: v.discountAmount, taxable, gst: v.taxAmount, cgst: 0, sgst: 0, igst: 0, total: Math.round((taxable + v.taxAmount) * 100) / 100 }; }
   const sub = i.lines.reduce((a, l) => a + l.qty * l.price, 0);
   const discount = Math.round((sub * i.discountPct) / 100);
   const taxable = sub - discount;
@@ -65,15 +68,16 @@ export function position(o: Order) {
 export const syncPay = (o: Order) => { o.pay = o.paid >= o.total ? "Paid" : o.paid > 0 ? "Partial" : "Unpaid"; };
 
 /** Derived invoice state: Paid / Partially Paid / Overdue come from the order's collections and the due date. */
-export function invStatus(i: Invoice): "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Credit note" {
+export function invStatus(i: Invoice): "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Credit note" | "Void" {
   if (i.kind === "credit_note") return "Credit note";
+  if (i.status === "Void") return "Void";
   if (i.status === "Draft") return "Draft";
   const o = ord(i.orderId); const paid = Math.min(invTotal(i), o?.paid ?? 0);
   if (paid >= invTotal(i)) return "Paid";
   if (i.due < TODAY_STR || i.status === "Overdue") return "Overdue";
   return paid > 0 ? "Partially Paid" : "Sent";
 }
-export const invPaid = (i: Invoice) => (i.kind === "invoice" ? Math.min(invTotal(i), ord(i.orderId)?.paid ?? 0) : 0);
+export const invPaid = (i: Invoice) => (i.kind === "invoice" && i.status !== "Void" ? Math.min(invTotal(i), ord(i.orderId)?.paid ?? 0) : 0);
 
 /** Automatic overdue marking (persisted + audited once per invoice). */
 export function sweepOverdue() {

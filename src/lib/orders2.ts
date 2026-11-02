@@ -1,0 +1,249 @@
+import { persistArray } from "./persist";
+import { backendOn } from "./supabase";
+import { notify } from "./store";
+import { currentActor, logAudit } from "./audit";
+import { CUSTOMERS, ORDERS, type Customer, type Order } from "./data";
+import { INVOICES, type Invoice, type Line } from "./finance";
+import { loadSettings } from "./localState";
+import { DISCOUNT_APPROVAL_PCT, blankAlbum, type AlbumSpec } from "./pricing";
+import { ITEMS, RATES, newId, pricingSettings } from "./catalog2";
+import { priceOrder, type DraftAlbum, type OrderDraft, type PricedOrder } from "./orderPricing";
+import { mobileError, TODAY } from "./format";
+import { notifyOrderCreated } from "./events";
+
+// Order builder data: drafts, finalizing (order + albums + priced lines + invoice in one step), the pricing snapshot, and the authorized reopen.
+// Database mode: the server re-prices and writes everything in one transaction (finalize_order_v2); a repeated request returns the same order.
+export interface Business { name?: string; legal?: string; address?: string; phone?: string; email?: string; website?: string; gstin?: string; pan?: string; state?: string }
+export interface InvoiceSnapshot extends PricedOrder {
+  business: Business; customer: { id?: string; code?: string; name: string; phone?: string; email?: string; address?: string };
+  event: OrderDraft["event"]; orderCode?: string; orderDate?: string; dueDate?: string; invoiceNumber?: string; invoiceDate?: string; revision?: number;
+}
+export interface FinalizeResult { orderId: string; code: string; invoiceId?: string; invoiceNumber: string; total: number; revision: number }
+export interface StoredDraft { id: string; title: string; payload: OrderDraft; updatedAt: string; result?: FinalizeResult; mine?: boolean }
+export interface PricingRecord {
+  orderId: string;                      // order code
+  revision: number; status: "finalized" | "reopened"; payload: OrderDraft; snapshot: InvoiceSnapshot; invoiceNo?: string; invoiceUid?: string;
+  finalizedAt: string; reopenReason?: string;
+}
+export const DRAFTS: StoredDraft[] = persistArray<StoredDraft>("order_drafts", []);
+export const PRICING: PricingRecord[] = persistArray<PricingRecord>("order_pricing", []);
+export const pricingOf = (orderCode: string) => PRICING.find((p) => p.orderId === orderCode);
+
+// ───────── drafts ─────────
+const todayIso = () => { const d = TODAY; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+export const addDays = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+export const orderToday = todayIso;
+export const newAlbum = (n: number, copyOf?: DraftAlbum): DraftAlbum => copyOf
+  ? { ...copyOf, id: newId(), name: `${copyOf.name} (copy)`, items: copyOf.items.map((i) => ({ ...i })) }
+  : { id: newId(), name: n === 1 ? "" : `Album ${n}`, sheets: 30, copies: 1, size: "", paper: "", finish: "", orientation: "Landscape", notes: "", items: [] };
+export const blankDraft = (): OrderDraft => ({
+  orderType: "", customerId: "", newCustomer: null, event: { type: "", name: "", date: "", delivery: "", notes: "", workGroup: "", priority: "Normal" },
+  albums: [newAlbum(1)], orderCharges: [], discount: { type: "none", value: "" }, applyTax: true,
+});
+export function customerName(d: OrderDraft): string {
+  if (d.newCustomer) return d.newCustomer.name.trim();
+  const c = CUSTOMERS.find((x) => (x.uid ?? x.id) === d.customerId);
+  return c?.studio ?? "";
+}
+export const draftTitle = (d: OrderDraft) => [customerName(d) || "New order", d.event.name || d.event.type].filter(Boolean).join(" · ");
+export const price = (d: OrderDraft) => priceOrder(d, { items: ITEMS, rates: RATES }, pricingSettings());
+
+/** What is still missing before the order can be finalized (the server checks the same). */
+export function draftProblems(d: OrderDraft): { step: number; message: string }[] {
+  const out: { step: number; message: string }[] = [];
+  if (!d.orderType) out.push({ step: 0, message: "Choose the order type" });
+  if (!d.customerId && !d.newCustomer) out.push({ step: 1, message: "Choose a customer or add a new one" });
+  if (d.newCustomer) {
+    if (d.newCustomer.name.trim().length < 2) out.push({ step: 1, message: "Enter the customer name" });
+    const m = mobileError(d.newCustomer.phone); if (m) out.push({ step: 1, message: m });
+    if (d.newCustomer.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.newCustomer.email.trim())) out.push({ step: 1, message: "Enter a valid email address (or leave it empty)" });
+  }
+  if (!d.event.type.trim()) out.push({ step: 2, message: "Choose the event type" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "Enter the event date" });
+  if (d.event.delivery && d.event.delivery < todayIso()) out.push({ step: 2, message: "The delivery date cannot be in the past" });
+  const p = price(d);
+  for (const e of p.errors) out.push({ step: e.path === "discount" ? 4 : e.path === "orderType" ? 0 : 3, message: e.message });
+  return out;
+}
+
+type Backend = {
+  listDrafts: () => Promise<StoredDraft[] | string>;
+  saveDraft: (id: string | undefined, payload: OrderDraft, title: string) => Promise<{ id: string } | { error: string }>;
+  deleteDraft: (id: string) => Promise<string | null>;
+  finalize: (id: string) => Promise<FinalizeResult | { error: string }>;
+  reopen: (orderUid: string, reason: string) => Promise<{ draftId: string } | { error: string }>;
+  cancelReopen: (orderUid: string) => Promise<string | null>;
+  serverPrice: (payload: OrderDraft) => Promise<PricedOrder | { error: string }>;
+  business: () => Promise<Business>;
+  refresh: () => Promise<void>;
+};
+let backend: Backend | null = null;
+export const registerOrders2Backend = (b: Backend) => { backend = b; };
+const NOT_CONNECTED = "Not connected to the database";
+
+export async function listDrafts(): Promise<string | null> {
+  if (!backendOn) return null;
+  if (!backend) return NOT_CONNECTED;
+  const r = await backend.listDrafts(); if (typeof r === "string") return r;
+  DRAFTS.splice(0, DRAFTS.length, ...r); notify(); return null;
+}
+export const openDrafts = () => DRAFTS.filter((d) => !d.result).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+export async function saveDraft(id: string | undefined, payload: OrderDraft): Promise<{ id: string } | { error: string }> {
+  const title = draftTitle(payload);
+  if (backendOn) {
+    if (!backend) return { error: NOT_CONNECTED };
+    const r = await backend.saveDraft(id, payload, title); if ("error" in r) return r;
+    upsertLocal({ id: r.id, title, payload, updatedAt: new Date().toISOString(), mine: true }); return r;
+  }
+  const existing = id ? DRAFTS.find((x) => x.id === id) : undefined;
+  if (existing?.result) return { error: "This draft is already finalized" };
+  const rec: StoredDraft = { id: id ?? newId(), title, payload: JSON.parse(JSON.stringify(payload)) as OrderDraft, updatedAt: new Date().toISOString(), mine: true };
+  upsertLocal(rec); return { id: rec.id };
+}
+function upsertLocal(rec: StoredDraft) { const i = DRAFTS.findIndex((x) => x.id === rec.id); if (i >= 0) DRAFTS[i] = { ...DRAFTS[i], ...rec }; else DRAFTS.unshift(rec); notify(); }
+export async function deleteDraft(id: string): Promise<string | null> {
+  const d = DRAFTS.find((x) => x.id === id); if (d?.result) return "A finalized draft is part of the order record";
+  if (backendOn) { if (!backend) return NOT_CONNECTED; const e = await backend.deleteDraft(id); if (e) return e; }
+  const i = DRAFTS.findIndex((x) => x.id === id); if (i >= 0) DRAFTS.splice(i, 1); notify(); return null;
+}
+
+export async function serverPrice(payload: OrderDraft): Promise<PricedOrder | { error: string } | null> {
+  if (!backendOn) return null;
+  if (!backend) return { error: NOT_CONNECTED };
+  return backend.serverPrice(payload);
+}
+
+let bizCache: Business | null = null;
+export async function businessProfile(): Promise<Business> {
+  if (backendOn) { if (!bizCache && backend) bizCache = await backend.business(); return bizCache ?? {}; }
+  return localBusiness();
+}
+function localBusiness(): Business {
+  const s = loadSettings();
+  const str = (k: string) => (typeof s[k] === "string" && (s[k] as string).trim() ? (s[k] as string).trim() : undefined);
+  return { name: str("name") ?? "AlbumPro Studio", legal: str("legal"), address: str("caddr") ?? str("address"), phone: str("phone"), email: str("email"), website: str("website"), gstin: str("gstin"), pan: str("pan"), state: str("state") };
+}
+/** The invoice as it would look now (preview: no invoice number yet). */
+export async function previewSnapshot(payload: OrderDraft, priced?: PricedOrder): Promise<InvoiceSnapshot> {
+  const c = CUSTOMERS.find((x) => (x.uid ?? x.id) === payload.customerId);
+  const customer = payload.newCustomer ? { name: payload.newCustomer.name.trim(), phone: payload.newCustomer.phone, email: payload.newCustomer.email || undefined, address: payload.newCustomer.address || undefined }
+    : { id: c?.uid, code: c?.id, name: c?.studio ?? "", phone: c?.mobile, email: c?.email || undefined, address: [c?.address, c?.city, c?.state].filter(Boolean).join(", ") || undefined };
+  return { ...(priced ?? price(payload)), business: await businessProfile(), customer, event: payload.event, orderDate: todayIso(), dueDate: payload.event.delivery || addDays(todayIso(), pricingSettings().defaultDeliveryDays) };
+}
+
+/** Invoice lines in the same form the database writes them. */
+export function invoiceLines(p: PricedOrder): Line[] {
+  const out: Line[] = [];
+  for (const a of p.albums) for (const l of a.lines) {
+    const what = l.scope === "copy" ? ` — ${l.method === "per_sheet" ? `${l.qty} sheets` : `${l.qty} ${l.unit}`}${a.copies > 1 ? ` × ${a.copies} copies` : ""}` : l.scope === "album" ? " — per album" : "";
+    out.push({ desc: l.name + what, qty: l.scope === "copy" ? l.qty * a.copies : 1, price: l.rate ?? 0, section: a.name, scope: l.scope, note: l.rule ?? undefined });
+  }
+  for (const l of p.orderLines) out.push({ desc: `${l.name} — one-time order charge`, qty: 1, price: l.rate ?? 0, section: "Order charges", scope: "order", note: l.rule ?? undefined });
+  return out;
+}
+
+const toSpec = (a: PricedOrder["albums"][number], d: DraftAlbum): AlbumSpec => {
+  const pick = (k: string) => a.lines.find((l) => l.optionKind === k)?.name;
+  return { ...blankAlbum(), title: a.name, albumType: "Album", size: a.size ?? "—", orientation: d.orientation || "Landscape", sheets: a.sheets, copies: a.copies, paper: a.paper ?? "—", gsm: "", cover: pick("cover") ?? "—", lamination: a.finish ?? "", binding: pick("binding") ?? "—", box: pick("box") ?? "None", finishes: [], nameText: "" };
+};
+
+/** Finalize: save the draft, then create the order, its albums, priced lines and the numbered invoice. Repeating the call returns the same result. */
+export async function finalizeDraft(id: string | undefined, payload: OrderDraft): Promise<{ result: FinalizeResult; draftId: string } | { error: string }> {
+  const problems = draftProblems(payload);
+  if (problems.length) return { error: problems[0]!.message };
+  const existing = id ? DRAFTS.find((x) => x.id === id) : undefined;
+  if (existing?.result) return { result: existing.result, draftId: existing.id };          // a double click or a retry: same order, same invoice
+  const saved = await saveDraft(id, payload); if ("error" in saved) return saved;
+  if (backendOn) {
+    if (!backend) return { error: NOT_CONNECTED };
+    const r = await backend.finalize(saved.id); if ("error" in r) return r;
+    const rec = DRAFTS.find((x) => x.id === saved.id); if (rec) rec.result = r;
+    await backend.refresh(); notify();
+    return { result: r, draftId: saved.id };
+  }
+  return finalizeLocal(saved.id, payload);
+}
+
+function finalizeLocal(draftId: string, payload: OrderDraft): { result: FinalizeResult; draftId: string } | { error: string } {
+  const p = price(payload);
+  if (!p.canFinalize) return { error: p.errors[0]?.message ?? "A price is not configured" };
+  const pct = p.subtotal > 0 ? (p.discountAmount * 100) / p.subtotal : 0;
+  if (pct > DISCOUNT_APPROVAL_PCT && currentActor().role !== "admin") return { error: `A discount above ${DISCOUNT_APPROVAL_PCT}% needs an admin to finalize` };
+  const designed = payload.orderType === "design_printing";
+  const today = todayIso(), due = payload.event.delivery || addDays(today, pricingSettings().defaultDeliveryDays);
+  let cust = CUSTOMERS.find((c) => (c.uid ?? c.id) === payload.customerId);
+  if (!cust) {
+    const n = payload.newCustomer; if (!n) return { error: "Choose a customer" };
+    cust = { id: `IDC${String(1249 + CUSTOMERS.length).padStart(6, "0")}`, name: n.name.trim(), studio: n.name.trim(), mobile: n.phone, email: n.email.trim(), address: n.address.trim() || undefined, city: "", state: "", type: "New", status: "Active", activeOrders: 0, lifetime: 0, lastOrder: today, since: today, dues: 0, tags: [] } as Customer;
+    CUSTOMERS.unshift(cust);
+  }
+  const reopen = payload.reopenOrder ? ORDERS.find((o) => o.id === payload.reopenOrder) : undefined;
+  const prev = reopen ? pricingOf(reopen.id) : undefined;
+  if (payload.reopenOrder && (!reopen || prev?.status !== "reopened")) return { error: "This order is not open for editing" };
+  const revision = prev ? prev.revision + 1 : 1;
+  const specs = p.albums.map((a, i) => toSpec(a, payload.albums[i]!));
+  let order: Order;
+  if (reopen) {
+    Object.assign(reopen, { priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, customer: cust.studio, mobile: cust.mobile, event: payload.event.type, workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets, due, total: p.total, albums: specs, couple: payload.event.name || undefined });
+    order = reopen;
+  } else {
+    const n = Math.max(0, ...ORDERS.map((o) => Number(o.id.replace("IDP", "")) || 0)) + 1;
+    order = { id: `IDP${String(n).padStart(5, "0")}`, customer: cust.studio, mobile: cust.mobile, event: payload.event.type, workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets,
+      stage: "new_order", priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, pendingAt: today, assignee: "Priya", due, pay: "Unpaid", total: p.total, paid: 0, progress: 0, couple: payload.event.name || undefined, albums: specs } as Order;
+    ORDERS.unshift(order);
+  }
+  if (prev?.invoiceNo) { const old = INVOICES.find((i) => i.no === prev.invoiceNo); if (old) old.status = "Void"; }
+  const year = new Date().getFullYear();
+  const seq = Math.max(0, ...INVOICES.filter((i) => i.kind === "invoice").map((i) => Number(new RegExp(`^INV-${year}-(\\d+)$`).exec(i.no)?.[1] ?? 0))) + 1;
+  const invoiceNo = `INV-${year}-${String(seq).padStart(4, "0")}`;
+  const snapshot: InvoiceSnapshot = {
+    ...p, business: {}, customer: { code: cust.id, name: cust.studio, phone: cust.mobile, email: cust.email || undefined, address: cust.address }, event: payload.event,
+    orderCode: order.id, orderDate: today, dueDate: due, invoiceNumber: invoiceNo, invoiceDate: today, revision,
+  };
+  snapshot.business = localBusiness();
+  const inv: Invoice = {
+    no: invoiceNo, kind: "invoice", orderId: order.id, customer: cust.studio, date: today, due, lines: invoiceLines(p), gstPct: 0, igst: false, discountPct: 0, status: "Sent", approval: pct > DISCOUNT_APPROVAL_PCT ? "approved" : "none",
+    approvedBy: pct > DISCOUNT_APPROVAL_PCT ? currentActor().name : undefined, sentAt: new Date().toISOString(), notes: payload.event.notes || undefined,
+    v2: { subtotal: p.subtotal, discountType: p.discountType, discountValue: p.discountValue, discountAmount: p.discountAmount, taxLabel: p.taxEnabled ? p.taxLabel : null, taxRate: p.taxRate, taxAmount: p.tax, revision, snapshot },
+  };
+  INVOICES.unshift(inv);
+  const rec: PricingRecord = { orderId: order.id, revision, status: "finalized", payload: { ...payload, reopenOrder: undefined }, snapshot, invoiceNo, finalizedAt: new Date().toISOString() };
+  if (prev) Object.assign(prev, rec, { reopenReason: undefined }); else PRICING.unshift(rec);
+  const result: FinalizeResult = { orderId: order.id, code: order.id, invoiceNumber: invoiceNo, total: p.total, revision };
+  const d = DRAFTS.find((x) => x.id === draftId); if (d) d.result = result;
+  if (!reopen) notifyOrderCreated(order);
+  logAudit({ entity: "order", entityId: order.id, action: reopen ? "pricing_refinalize" : "create", detail: `${designed ? "Design + Printing" : "Printing Only"} · ${p.albums.length} album(s) · total ₹${p.total} · ${invoiceNo}` });
+  notify();
+  return { result, draftId };
+}
+
+/** Admin only, with a reason: the invoice is voided (kept), and the order's selections come back as a draft to edit and finalize again. */
+export async function reopenOrder(o: Order, reason: string): Promise<{ draftId: string } | { error: string }> {
+  if (currentActor().role !== "admin") return { error: "Only an administrator can reopen a finalized order" };
+  if (reason.trim().length < 3) return { error: "Give a reason for reopening the order" };
+  const pr = pricingOf(o.id); if (!pr) return { error: "This order has no finalized pricing" };
+  if (pr.status !== "finalized") return { error: "This order is already open for editing" };
+  if (backendOn) {
+    if (!backend || !o.uid) return { error: NOT_CONNECTED };
+    const r = await backend.reopen(o.uid, reason.trim()); if ("error" in r) return r;
+    await listDrafts(); await backend.refresh(); return r;
+  }
+  pr.status = "reopened"; pr.reopenReason = reason.trim();
+  const inv = INVOICES.find((i) => i.no === pr.invoiceNo); if (inv) inv.status = "Void";
+  const id = newId();
+  DRAFTS.unshift({ id, title: `Editing ${o.id}`, payload: { ...JSON.parse(JSON.stringify(pr.payload)) as OrderDraft, reopenOrder: o.id }, updatedAt: new Date().toISOString(), mine: true });
+  logAudit({ entity: "order", entityId: o.id, action: "pricing_reopen", reason: reason.trim(), detail: `Invoice ${pr.invoiceNo} voided` });
+  notify(); return { draftId: id };
+}
+export async function cancelReopen(o: Order): Promise<string | null> {
+  if (currentActor().role !== "admin") return "Only an administrator can do this";
+  const pr = pricingOf(o.id); if (!pr || pr.status !== "reopened") return "This order is not open for editing";
+  if (backendOn) { if (!backend || !o.uid) return NOT_CONNECTED; const e = await backend.cancelReopen(o.uid); if (e) return e; await listDrafts(); await backend.refresh(); return null; }
+  pr.status = "finalized"; pr.reopenReason = undefined;
+  const inv = INVOICES.find((i) => i.no === pr.invoiceNo); if (inv) inv.status = "Sent";
+  for (let i = DRAFTS.length - 1; i >= 0; i--) if (!DRAFTS[i]!.result && DRAFTS[i]!.payload.reopenOrder === o.id) DRAFTS.splice(i, 1);
+  logAudit({ entity: "order", entityId: o.id, action: "pricing_reopen_cancel" });
+  notify(); return null;
+}
+export const paymentsOf = (o: Order) => o.paid;

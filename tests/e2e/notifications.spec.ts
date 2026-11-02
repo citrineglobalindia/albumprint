@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedRole } from "./helpers";
+import { seedRole, buildOrder } from "./helpers";
 
 // Demo mode: the same events the database announces (supabase/migrations/0035) reach the right roles, and not the person who did it.
 test("approving a grading tells the designer (and only the designer); the bell keeps it across reloads", async ({ page }) => {
@@ -39,15 +39,7 @@ test("approving a grading tells the designer (and only the designer); the bell k
 
 test("a new order tells admin and reception; mark all read clears the badge", async ({ page }) => {
   await seedRole(page, "reception");
-  await page.goto("/orders");
-  await page.getByRole("button", { name: "Create Order" }).first().click();
-  const dlg = page.getByRole("dialog", { name: "New Order" });
-  await dlg.getByRole("button", { name: /^Customer/ }).click();
-  await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-  for (let i = 0; i < 3; i++) await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByRole("button", { name: "Create Order" }).click();
-  await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
-  const code = page.url().split("/").pop()!;
+  const code = (await buildOrder(page))!;
 
   // reception created it, so reception is not told; admin is
   await page.evaluate(() => localStorage.setItem("albumpro.role", "admin"));

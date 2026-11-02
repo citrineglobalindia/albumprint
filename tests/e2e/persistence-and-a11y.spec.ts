@@ -55,19 +55,15 @@ test.describe("mobile (390x844)", () => {
     });
   }
 
-  test("New Order wizard is full-screen and Esc closes it", async ({ page }) => {
+  test("the order builder fits a phone screen (no sideways scrolling)", async ({ page }) => {
     await seedRole(page, "admin");
     await page.goto("/orders");
     await page.getByRole("button", { name: "Create Order" }).first().click();
-    const dlg = page.getByRole("dialog", { name: "New Order" });
-    await expect(dlg).toBeVisible();
-    const box = await dlg.boundingBox();
-    expect(box!.width).toBeGreaterThanOrEqual(388);
-    expect(box!.height).toBeGreaterThanOrEqual(840);
-    await expect(dlg).toHaveAttribute("aria-modal", "true");
-    await page.keyboard.press("Escape");
-    await expect(dlg).toBeHidden();
+    await expect(page).toHaveURL(/\/orders\/new/);
+    await expect(page.getByRole("radiogroup", { name: "Order type" })).toBeVisible();
+    expect(await noHScroll(page)).toBe(true);
   });
+
 });
 
 test.describe("accessibility basics", () => {

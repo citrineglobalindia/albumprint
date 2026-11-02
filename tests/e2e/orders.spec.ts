@@ -1,86 +1,49 @@
 import { test, expect } from "@playwright/test";
-import { savedContains, seedRole } from "./helpers";
+import { savedContains, seedRole, buildOrder } from "./helpers";
 
 test.describe("orders", () => {
   test.beforeEach(async ({ page }) => { await seedRole(page, "admin"); });
 
-  test("New Order wizard creates an order that survives a reload", async ({ page }) => {
-    await page.goto("/orders");
-    await page.getByRole("button", { name: "Create Order" }).first().click();
-    const dlg = page.getByRole("dialog", { name: "New Order" });
-    await expect(dlg).toBeVisible();
-    await dlg.getByRole("button", { name: /^Customer/ }).click();
-    await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-    for (let i = 0; i < 3; i++) await dlg.getByRole("button", { name: "Next" }).click();
-    await dlg.getByRole("button", { name: "Create Order" }).click();
-    await expect(page).toHaveURL(/\/orders\/IDP00073$/);
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("IDP00073");
-    await savedContains(page, "orders", "IDP00073");
-    await page.goto("/orders");
+  test("the order builder creates an order that survives a reload", async ({ page }) => {
+    const code = await buildOrder(page, { albums: [{ name: "Reload album" }] });
+    expect(code).toMatch(/^IDP\d+$/);
+    await page.getByRole("link", { name: "Open the order" }).click();
+    await expect(page).toHaveURL(new RegExp(`/orders/${code}$`));
+    await savedContains(page, "orders", code!);
     await page.reload();
-    await expect(page.locator('[data-row="IDP00073"]')).toBeVisible();
-    await expect(page.getByTestId("last-saved")).toBeVisible();
+    await expect(page.getByTestId("order-pricing")).toBeVisible();
+    await expect(page.getByText("Reload album").first()).toBeVisible();
   });
 
-  test("an order can hold several albums, each with its own spec, plus the couple's name", async ({ page }) => {
-    await page.goto("/orders");
-    await page.getByRole("button", { name: "Create Order" }).first().click();
-    const dlg = page.getByRole("dialog", { name: "New Order" });
-    await dlg.getByRole("button", { name: /^Customer/ }).click();
-    await page.getByRole("button", { name: "Sharma Studio Rahul Sharma · +91 98765 43210", exact: true }).click();
-    await dlg.getByRole("button", { name: "Next" }).click();
-    await expect(dlg.getByText(/^Total/)).toHaveCount(0);                       // reception never sees a price: the admin costs the order afterwards
-    await dlg.getByLabel("Couple Name").fill("Asha & Ravi");
-    await dlg.getByLabel("Work Group").selectOption("Photo Book");
-    await dlg.getByRole("button", { name: "Next" }).click();
-    // album 1 stays as the default; album 2 is a different spec
-    await dlg.getByRole("button", { name: "Add album" }).click();
-    await expect(dlg.getByRole("tab", { name: /^Album 2/ })).toHaveAttribute("aria-selected", "true");
-    await dlg.getByLabel("Album Name").fill("Engagement Album");
-    await dlg.getByLabel("Album Type").selectOption("Photobook");
-    await dlg.getByLabel("Album Size").selectOption("8x12");
-    await dlg.getByRole("tab", { name: /Asha & Ravi Wedding Album/ }).click();
-    await expect(dlg.getByLabel("Album Type")).toHaveValue("Premium Album");     // album 1 was not changed
-    await dlg.getByRole("button", { name: "Next" }).click();                       // → Review
-    await expect(dlg.getByText(/Engagement Album · Photobook/)).toBeVisible();
-    await expect(dlg.getByText("Asha & Ravi").first()).toBeVisible();
-    await dlg.getByRole("button", { name: "Create Order" }).click();
-    await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
-    await expect(page.getByText("Print Specification · 2 albums")).toBeVisible();
-    await expect(page.getByText("Engagement Album · Photobook")).toBeVisible();
-    await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
-    await expect(page.getByText("Photo Book").first()).toBeVisible();
+  test("an order can hold several albums, each with its own name and requirements", async ({ page }) => {
+    await buildOrder(page, { eventName: "Asha & Ravi", albums: [{ name: "Asha & Ravi Wedding Album", sheets: 30 }, { name: "Engagement Album", sheets: 20, size: "8x12" }], finalize: false });
+    await page.getByRole("button", { name: /Albums & items/ }).click();
+    await page.getByRole("tab", { name: /Asha & Ravi Wedding Album/ }).click();
+    await expect(page.getByTestId("album-1").getByLabel("Size")).toHaveValue("12x36");      // album 1 was not changed by album 2
+    await page.getByRole("tab", { name: /Engagement Album/ }).click();
+    await expect(page.getByTestId("album-2").getByLabel("Size")).toHaveValue("8x12");
+    await expect(page.getByTestId("album-2").getByLabel("Sheets")).toHaveValue("20");
   });
 
   test("mobile numbers are limited to 10 digits and must start with 6-9", async ({ page }) => {
-    await page.goto("/orders");
-    await page.getByRole("button", { name: "Create Order" }).first().click();
-    const dlg = page.getByRole("dialog", { name: "New Order" });
-    await dlg.getByRole("button", { name: /^Customer/ }).click();
-    await page.getByRole("button", { name: "Add new customer", exact: true }).click();
-    await dlg.getByPlaceholder("Studio / customer name").fill("Mobile Rule Studio");
-    const mobile = dlg.getByPlaceholder("Mobile number");
+    await page.goto("/orders/new");
+    await page.getByRole("radio", { name: /Design \+ Printing/ }).click();
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "New customer" }).click();
+    await page.getByLabel("Customer name").fill("Mobile Rule Studio");
+    const mobile = page.getByLabel("Phone number");
     await mobile.fill("98989898989898");
     await expect(mobile).toHaveValue("9898989898");                                   // letters stripped, capped at 10
     await mobile.fill("5123456789");
-    await dlg.getByRole("button", { name: "Next" }).click();
-    await expect(dlg.getByText("Mobile number must start with 6, 7, 8 or 9")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("alert")).toContainText("Mobile number must start with 6, 7, 8 or 9");
     await mobile.fill("6123456789");
-    await dlg.getByRole("button", { name: "Next" }).click();
-    await expect(dlg.getByText("Mobile number must start with")).toHaveCount(0);
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByLabel("Event type")).toBeVisible();
   });
 
   test("a new customer + order persist, customers list included", async ({ page }) => {
-    await page.goto("/orders");
-    await page.getByRole("button", { name: "Create Order" }).first().click();
-    const dlg = page.getByRole("dialog", { name: "New Order" });
-    await dlg.getByRole("button", { name: /^Customer/ }).click();
-    await page.getByRole("button", { name: "Add new customer", exact: true }).click();
-    await dlg.getByPlaceholder("Studio / customer name").fill("E2E Test Studio");
-    await dlg.getByPlaceholder("Mobile number").fill("9876501234");
-    for (let i = 0; i < 3; i++) await dlg.getByRole("button", { name: "Next" }).click();
-    await dlg.getByRole("button", { name: "Create Order" }).click();
-    await expect(page).toHaveURL(/\/orders\/IDP\d+$/);
+    await buildOrder(page, { newCustomer: { name: "E2E Test Studio", phone: "9876501234" } });
     await savedContains(page, "customers", "E2E Test Studio");
     await page.goto("/customers");
     await page.reload();

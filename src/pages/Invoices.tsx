@@ -17,7 +17,7 @@ import { INVOICES, PAYMENTS, ensureFinance, calc, invTotal, invPaid, invStatus, 
 
 type Tab = "all" | "Draft" | "Sent" | "Partially Paid" | "Paid" | "Overdue" | "approval" | "credit";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
-const TONE = { Draft: "slate", Sent: "blue", Paid: "green", "Partially Paid": "amber", Overdue: "red", "Credit note": "violet" } as const;
+const TONE = { Draft: "slate", Sent: "blue", Paid: "green", "Partially Paid": "amber", Overdue: "red", "Credit note": "violet", Void: "slate" } as const;
 const COLS = [{ key: "no", label: "Invoice no." }, { key: "order", label: "Order" }, { key: "customer", label: "Customer" }, { key: "date", label: "Date" }, { key: "due", label: "Due" }, { key: "total", label: "Total" }, { key: "paid", label: "Paid" }, { key: "status", label: "Status" }];
 interface ViewState { tab: Tab; type: string[]; cust: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
 const TAB_LABEL: Record<Tab, string> = { all: "All", Draft: "Draft", Sent: "Sent", "Partially Paid": "Partial", Paid: "Paid", Overdue: "Overdue", approval: "Needs approval", credit: "Credit notes" };
@@ -70,7 +70,7 @@ export default function Invoices() {
   const kpis: Kpi[] = [
     { label: "Invoiced", value: inrShort(invs.reduce((a, i) => a + invTotal(i), 0)), icon: FileText, tone: "blue" },
     { label: "Collected", value: inrShort(invs.reduce((a, i) => a + invPaid(i), 0)), icon: IndianRupee, tone: "green" },
-    { label: "Outstanding", value: inrShort(invs.filter((i) => i.status !== "Draft").reduce((a, i) => a + invTotal(i) - invPaid(i), 0)), icon: IndianRupee, tone: "orange", invert: true },
+    { label: "Outstanding", value: inrShort(invs.filter((i) => i.status !== "Draft" && i.status !== "Void").reduce((a, i) => a + invTotal(i) - invPaid(i), 0)), icon: IndianRupee, tone: "orange", invert: true },
     { label: "Overdue", value: invs.filter((i) => invStatus(i) === "Overdue").length, icon: AlertCircle, tone: "red", invert: true },
     { label: "Needs approval", value: invs.filter((i) => i.approval === "pending").length, icon: ShieldAlert, tone: "pink", invert: true },
   ];
@@ -197,6 +197,7 @@ export default function Invoices() {
             <div className="mt-4 flex flex-wrap gap-2">
               {cur.kind === "invoice" && cur.status === "Draft" && (finance ? <button data-testid="send-invoice" onClick={() => run(sendInvoice(cur.no))} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand text-sm font-bold text-white hover:bg-brand-dark"><Send className="size-4" />Send invoice</button> : <button onClick={() => show(`Your role (${role}) cannot send invoices`)} className="h-10 flex-1 rounded-lg border border-line text-sm font-bold text-sub">Send (Accounts only)</button>)}
               {cur.approval === "pending" && (isAdmin ? <button data-testid="approve-discount" onClick={() => run(approveDiscount(cur.no))} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700"><Check className="size-4" />Approve discount</button> : <button onClick={() => show("Only an admin can approve this discount")} className="h-10 flex-1 rounded-lg border border-line text-sm font-bold text-sub">Approve (admin only)</button>)}
+              {cur.v2?.snapshot ? <button data-testid="invoice-pdf" onClick={async () => { const { invoicePdf, downloadBlob } = await import("../lib/invoicePdf"); downloadBlob(await invoicePdf(cur.v2!.snapshot as never, { paid: invPaid(cur) }), `${cur.no}.pdf`); }} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-sm font-bold hover:bg-brand-soft"><Printer className="size-4" />PDF</button> : null}
               <button onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-sm font-bold hover:bg-brand-soft"><Printer className="size-4" />Print</button>
             </div>
             {cur.kind === "invoice" && (<>

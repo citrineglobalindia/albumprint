@@ -19,23 +19,13 @@ test("admin maintains the catalog, costs a reception order, finalizes and invoic
   expect(sql(`select sell_price || ':' || category from catalog_items where name = '${PRODUCT}'`)).toBe("1200.00:BOX");
   expect(sql(`select cost_price from catalog_costs where item_id = (select id from catalog_items where name = '${PRODUCT}')`)).toBe("900.00");
 
-  // reception: customer + one album with 30 sheets, no prices
+  // an order with one album of 30 sheets and no pricing yet (orders not created by the order builder use this classic costing)
+  const cust = sql(`insert into customers(studio_name, mobile, code) values ('Costing Spec ${TAG}', '9${TAG.slice(-9)}', 'pending') returning id`).split("\n")[0];
+  const code = sql(`insert into orders(customer_id, type, due_date, total, code) values ('${cust}', 'design_printing', current_date + 14, 0, 'pending') returning code`).split("\n")[0]!;
+  sql(`insert into order_albums(order_id, position, title, album_type, album_size, orientation, pages, copies, paper_type, cover_type, binding) select id, 1, 'Album 1', 'Premium Album', '12x36', 'landscape', 30, 1, 'Matte', 'Leatherette', 'Lay-flat' from orders where code = '${code}'`);
   const ctx = await browser.newContext(); const rp = await ctx.newPage();
   await loginAs(rp, "reception");
-  await rp.goto("/orders");
-  await rp.getByRole("button", { name: "Create Order" }).first().click();
-  const dlg = rp.getByRole("dialog", { name: "New Order" });
-  await dlg.getByRole("button", { name: /^Customer/ }).click();
-  await rp.getByPlaceholder("Type to search…").fill(`Costing Spec ${TAG}`);
-  await rp.getByRole("button", { name: /Add new customer/ }).last().click();
-  await dlg.getByPlaceholder("Mobile number").fill(`9${TAG.slice(-9)}`);
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByLabel("No. of Sheets").fill("30");
-  await dlg.getByRole("button", { name: "Next" }).click();
-  await dlg.getByRole("button", { name: "Create Order" }).click();
-  await expect(rp).toHaveURL(/\/orders\/IDP\d+$/, { timeout: 20_000 });
-  const code = rp.url().split("/").pop()!;
+  await rp.goto(`/orders/${code}`);
   await expect(rp.getByText("Costing is pending")).toBeVisible();                       // reception cannot cost it
   expect(sql(`select total from orders where code = '${code}'`)).toBe("0.00");
   await ctx.close();

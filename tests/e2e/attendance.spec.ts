@@ -44,6 +44,7 @@ test("admin sees the team register, corrects a day with a reason, and manages le
   await expect(page.getByTestId("today-board")).toBeVisible();
   const reg = page.getByTestId("register");
   await expect(reg.getByText("Ramesh Kumar")).toBeVisible();
+  await page.getByRole("button", { name: "Previous month" }).click();                 // a full month of past working days, whatever today's date is
 
   // correct a past day for one employee: a reason is required
   const cell = reg.getByRole("button", { name: /^Ramesh Kumar \d{4}-\d{2}-\d{2} (Present|Late|Absent|Half day|Incomplete)$/ }).first();
