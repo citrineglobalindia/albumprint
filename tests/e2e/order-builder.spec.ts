@@ -236,3 +236,20 @@ test("tax is optional and configured by the admin; it is charged on the amount a
   await page.getByRole("switch", { name: "Apply tax" }).click();
   await expect(page.getByTestId("final-amount")).toHaveText("₹3,500");
 });
+
+test("event type “Other” asks for the event type to be typed and keeps what was typed", async ({ page }) => {
+  await seedRole(page, "admin");
+  await page.goto("/orders/new");
+  await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
+  await page.getByRole("button", { name: /^Search customer/ }).click();
+  await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
+  await page.getByLabel("Event type").selectOption("Other");
+  await page.getByLabel("Event date").fill("2026-12-12");
+  await next(page);
+  await expect(page.getByRole("alert")).toContainText("Type the event type");
+  await page.getByLabel("Other event type").fill("Naming ceremony");
+  await next(page);
+  await page.getByRole("button", { name: /Event & dates/ }).click();
+  await expect(page.getByLabel("Event type", { exact: true })).toHaveValue("Other");
+  await expect(page.getByLabel("Other event type")).toHaveValue("Naming ceremony");
+});

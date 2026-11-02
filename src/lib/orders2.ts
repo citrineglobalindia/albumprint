@@ -59,6 +59,7 @@ export function draftProblems(d: OrderDraft): { step: number; message: string }[
     if (d.newCustomer.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.newCustomer.email.trim())) out.push({ step: 1, message: "Enter a valid email address (or leave it empty)" });
   }
   if (!d.event.type.trim()) out.push({ step: 2, message: "Choose the event type" });
+  else if (d.event.type.trim() === "Other") out.push({ step: 2, message: "Type the event type (you chose Other)" });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "Enter the event date" });
   if (d.event.delivery && d.event.delivery < todayIso()) out.push({ step: 2, message: "The delivery date cannot be in the past" });
   const p = price(d);
