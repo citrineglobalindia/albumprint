@@ -33,9 +33,10 @@ export const pricingOf = (orderCode: string) => PRICING.find((p) => p.orderId ==
 const todayIso = () => { const d = TODAY; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 export const addDays = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 export const orderToday = todayIso;
+/** A new album starts with no sheet count, so nothing is priced until the user enters it. */
 export const newAlbum = (n: number, copyOf?: DraftAlbum): DraftAlbum => copyOf
   ? { ...copyOf, id: newId(), name: `${copyOf.name} (copy)`, items: copyOf.items.map((i) => ({ ...i })) }
-  : { id: newId(), name: n === 1 ? "" : `Album ${n}`, sheets: 30, copies: 1, size: "", paper: "", finish: "", orientation: "Landscape", notes: "", items: [] };
+  : { id: newId(), name: n === 1 ? "" : `Album ${n}`, sheets: "" as unknown as number, copies: 1, size: "", paper: "", finish: "", orientation: "Landscape", notes: "", items: [] };
 export const blankDraft = (): OrderDraft => ({
   orderType: "", customerId: "", newCustomer: null, event: { type: "", name: "", date: "", delivery: "", notes: "", workGroup: "", priority: "Normal" },
   albums: [newAlbum(1)], orderCharges: [], discount: { type: "none", value: "" }, applyTax: true,

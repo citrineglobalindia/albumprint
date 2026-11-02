@@ -20,6 +20,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
 
   // album 1: 30 sheets × 2 copies, 12x36 Metallic, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
   const a1 = page.getByTestId("album-1");
+  await a1.getByLabel("Sheets").fill("30");
   await a1.getByLabel("Album name").fill("Wedding album"); await a1.getByLabel("Copies").fill("2");
   await a1.getByLabel("Size").selectOption("12x36"); await a1.getByLabel("Paper type").selectOption("Metallic");
   await a1.getByLabel("Cover").selectOption({ label: "Leatherette cover (sample)" }); await a1.getByLabel("Box").selectOption({ label: "Premium box (sample)" });

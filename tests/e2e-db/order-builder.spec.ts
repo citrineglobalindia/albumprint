@@ -32,6 +32,7 @@ test("reception builds a two-album order; the server prices, numbers and stores 
   await page.getByLabel("Work Group").selectOption("Photo Book"); await next(page);
 
   const a1 = page.getByTestId("album-1");
+  await a1.getByLabel("Sheets").fill("30");
   await a1.getByLabel("Album name").fill("Wedding album"); await a1.getByLabel("Copies").fill("2"); await a1.getByLabel("Size").selectOption("12x36");
   await a1.getByLabel("Cover").selectOption({ label: `Cover ${TAG}` });
   const p1 = page.getByTestId("picker-1");
@@ -125,7 +126,7 @@ test("missing price blocks finalizing, and the catalog admin writes the hierarch
   await page.getByRole("button", { name: "New customer" }).click();
   await page.getByLabel("Customer name").fill(`Party ${TAG}`); await page.getByLabel("Phone number").fill(`8${String(Date.now()).slice(-9)}`); await next(page);
   await page.getByLabel("Event type").selectOption("Birthday"); await page.getByLabel("Event date").fill("2026-12-20"); await next(page);
-  await page.getByTestId("album-1").getByLabel("Album name").fill("Party album");
+  await page.getByTestId("album-1").getByLabel("Album name").fill("Party album"); await page.getByTestId("album-1").getByLabel("Sheets").fill("30");
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: `Extras ${TAG}` }); await p1.getByLabel("Subcategory").selectOption({ label: "Unpriced" });
   await p1.getByLabel("Item").selectOption({ label: `No price ${TAG}` }); await p1.getByRole("button", { name: "Add" }).click();
