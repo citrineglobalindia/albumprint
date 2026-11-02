@@ -67,5 +67,27 @@ select t.as('reception');
 select t.err($$select cat_delete_item((select id from cat_items where name = 'JUTE BAG'))$$, 'delete: only an administrator (item)', 'administrator');
 select t.err($$select cat_delete_category((select id from cat_categories where name = 'Bulk Bag'))$$, 'delete: only an administrator (category)', 'administrator');
 select t.as('system');
+
+-- design charge typed on the order (0041)
+create function t.dz(design jsonb, otype text default 'design_printing') returns jsonb language sql as $$
+  select order_price(jsonb_build_object('orderType', otype, 'albums', jsonb_build_array(jsonb_build_object('id', 'x', 'name', 'A', 'sheets', 30, 'copies', 2, 'size', '', 'paper', '', 'finish', '', 'items', '[]'::jsonb, 'design', design)),
+    'orderCharges', '[]'::jsonb, 'discount', jsonb_build_object('type', 'none', 'value', 0))) $$;
+select t.eq($$select l->>'qty' || '/' || (l->>'rate')::numeric::text || '/' || (l->>'amount')::numeric::text || '/' || (l->>'scope') from jsonb_array_elements(t.dz('{"mode":"per_sheet","amount":"50"}')->'albums'->0->'lines') l where l->>'kind' = 'design'$$,
+  '30/50/1500/album', 'design charge: per sheet = rate × sheets, once per album (not × 2 copies)');
+select t.eq($$select (t.dz('{"mode":"per_sheet","amount":"50"}')->'albums'->0->>'perAlbum')::numeric::text$$, '1500', 'design charge: counted in the per-album charges');
+select t.eq($$select l->>'qty' || '/' || (l->>'amount')::numeric::text from jsonb_array_elements(t.dz('{"mode":"fixed","amount":"4999.50"}')->'albums'->0->'lines') l where l->>'kind' = 'design'$$, '1/4999.50', 'design charge: a fixed amount');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.dz('{"mode":"fixed","amount":""}')->'errors') e where e->>'path' = 'album.1.design'$$, 'Album 1: enter the design charge (0 or more, up to 2 decimals)', 'design charge: required');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.dz('{"mode":"fixed","amount":"-5"}')->'errors') e where e->>'path' = 'album.1.design'$$, 'Album 1: enter the design charge (0 or more, up to 2 decimals)', 'design charge: no negatives');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.dz('{"mode":"weird","amount":"5"}')->'errors') e where e->>'path' = 'album.1.design'$$, 'Album 1: choose how design is charged', 'design charge: unknown mode refused');
+select t.eq($$select count(*)::text from jsonb_array_elements(t.dz('{"mode":"fixed","amount":"500"}', 'printing_only')->'albums'->0->'lines') l where l->>'kind' = 'design'$$, '0', 'design charge: ignored for Album Printing Only');
+select t.eq($$select count(*)::text from jsonb_array_elements(t.dz('{"mode":"card","amount":""}')->'albums'->0->'lines') l where l->>'kind' = 'design' and l->>'itemId' is not null$$, '1', 'design charge: "card" keeps the design rate card');
+select t.as('reception');
+insert into order_drafts(payload) select jsonb_set(t.payload(), '{albums,0,design}', '{"mode":"fixed","amount":"2500"}') || jsonb_build_object('customerId', t.id('cust'), 'event', jsonb_build_object('type', 'Wedding', 'name', 'Typed design', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'draft_dz', id::text from order_drafts where payload->'event'->>'name' = 'Typed design';
+select t.ok($$select finalize_order_v2(t.id('draft_dz'))$$, 'design charge: an order with a typed design charge finalizes');
+select t.as('system');
+select t.eq($$select l.qty::int || '/' || l.amount::text || '/' || coalesce(l.item_id::text, 'no item') || '/' || l.scope from order_charge_lines l join orders o on o.id = l.order_id
+  where l.kind = 'design' and l.album_position = 1 and o.id = ((select result from order_drafts where id = t.id('draft_dz'))->>'orderId')::uuid$$, '1/2500.00/no item/album', 'design charge: stored on the order once for the album');
+select t.eq($$select count(*)::text from invoice_lines il join invoices i on i.id = il.invoice_id where i.order_id = ((select result from order_drafts where id = t.id('draft_dz'))->>'orderId')::uuid and il.description like 'Album design%' and il.rate = 2500$$, '1', 'design charge: on the invoice');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

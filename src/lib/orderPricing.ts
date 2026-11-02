@@ -7,7 +7,11 @@ export type OrderType = "design_printing" | "printing_only";
 export type Scope = "copy" | "album" | "order";
 /** qty: pieces for a per-unit item. sheetQty: sheets for a per-sheet item — leave it out (or null) to follow the album's sheet count automatically. */
 export interface DraftItem { itemId: string; qty: number; sheetQty?: number | string | null; note?: string }
-export interface DraftAlbum { id: string; name: string; sheets: number; copies: number; size: string; paper: string; finish: string; orientation: string; notes: string; items: DraftItem[] }
+/** How a Design + Printing album is charged for design: the design rate card (per sheet, per copy), or a charge typed on the order —
+ *  a rate per sheet (× sheets) or a fixed amount — added once per album. Left out = the rate card when one is set up, otherwise per sheet. */
+export type DesignMode = "card" | "per_sheet" | "fixed";
+export interface DesignCharge { mode: DesignMode; amount: string }
+export interface DraftAlbum { id: string; name: string; sheets: number; copies: number; size: string; paper: string; finish: string; orientation: string; notes: string; items: DraftItem[]; design?: DesignCharge }
 export interface NewCustomerDraft { name: string; phone: string; email: string; address: string }
 export interface OrderDraft {
   orderType: OrderType | "";
@@ -77,7 +81,17 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
     const raw: (ReturnType<typeof priceLine> & { note?: string | null })[] = [];
     if (!prn) { err("catalog.printing", "Printing rate card is not set up. Ask an admin to add it in Catalog."); anyMissing = true; }
     else { const l = priceLine(prn, 1, sheets, size, paper, finish, "printing", catalog.rates); raw.push(l); if (l.missing) { anyMissing = true; err(`album.${ai}.printing`, `Album ${ai}: printing price not configured for this size / paper / finish`); } }
-    if (designed) {
+    const dmode = a.design?.mode || (dsn ? "card" : "per_sheet");             // no choice yet: the rate card if there is one, else a typed per-sheet rate
+    if (designed && dmode !== "card" && dmode !== "per_sheet" && dmode !== "fixed") err(`album.${ai}.design`, `Album ${ai}: choose how design is charged`);
+    else if (designed && dmode !== "card") {
+      const amt = (a.design?.amount ?? "").toString().trim();
+      if (!/^[0-9]{1,10}(\.[0-9]{1,2})?$/.test(amt)) err(`album.${ai}.design`, `Album ${ai}: enter the design charge (0 or more, up to 2 decimals)`);
+      else {
+        const rate = Number(amt), q = dmode === "per_sheet" ? sheets : 1;
+        raw.push({ kind: "design", itemId: "", name: "Album design", unit: dmode === "per_sheet" ? "sheet" : "album", method: dmode === "per_sheet" ? "per_sheet" : "fixed_per_album", scope: "album", optionKind: null,
+          qty: q, rate, rule: dmode === "per_sheet" ? "design rate entered on the order" : "design charge entered on the order", missing: false, unitAmountP: q * P(rate) });
+      }
+    } else if (designed) {
       if (!dsn) { err("catalog.design", "Design rate card is not set up. Ask an admin to add it in Catalog."); anyMissing = true; }
       else { const l = priceLine(dsn, 1, sheets, size, paper, finish, "design", catalog.rates); raw.push(l); if (l.missing) { anyMissing = true; err(`album.${ai}.design`, `Album ${ai}: design price not configured for this size / paper / finish`); } }
     }

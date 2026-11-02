@@ -49,7 +49,7 @@ export default function OrderBuilder() {
       const id = params.get("draft");
       const rec = id ? DRAFTS.find((x) => x.id === id) : undefined;
       if (rec) {
-        setD(clone(rec.payload)); setDraftId(rec.id);
+        const copy = clone(rec.payload); setD(copy); setDraftId(rec.id); lastSaved.current = JSON.stringify(copy);
         if (rec.result) { setDone(rec.result); setStep(5); setVisited(5); } else { setStep(rec.payload.orderType ? 3 : 0); setVisited(5); }
       }
       setLoaded(true);
@@ -72,15 +72,43 @@ export default function OrderBuilder() {
     setErrs([]); setStep(s); setVisited(Math.max(visited, s)); window.scrollTo({ top: 0 });
     if (d.orderType || d.customerId || d.newCustomer) void persist(true);
   };
+  // ───── drafts: saved by hand, and automatically while an order is being entered ─────
+  const dRef = useRef(d); dRef.current = d;
+  const draftRef = useRef(draftId); draftRef.current = draftId;
+  const doneRef = useRef(done); doneRef.current = done;
+  const saving = useRef<Promise<unknown> | null>(null);
+  const lastSaved = useRef("");
+  const [saveState, setSaveState] = useState<{ s: "idle" | "saving" | "saved" | "error"; at?: Date; msg?: string }>({ s: "idle" });
+  const started = (x: OrderDraft) => !!(x.orderType || x.customerId || x.newCustomer?.name?.trim());   // nothing worth keeping before this
+  const save = async (): Promise<string | null> => {
+    if (saving.current) await saving.current.catch(() => undefined);              // one save at a time, so one draft per order
+    const cur = dRef.current, json = JSON.stringify(cur);
+    if (json === lastSaved.current && draftRef.current) return null;
+    setSaveState({ s: "saving" });
+    const job = saveDraft(draftRef.current, cur); saving.current = job;
+    const r = await job; saving.current = null;
+    if ("error" in r) { setSaveState({ s: "error", msg: r.error }); return r.error; }
+    lastSaved.current = json;
+    if (r.id !== draftRef.current) { draftRef.current = r.id; setDraftId(r.id); setParams((x) => { const n = new URLSearchParams(x); n.set("draft", r.id); return n; }, { replace: true }); }
+    setSaveState({ s: "saved", at: new Date() });
+    return null;
+  };
+  const autosave = () => { if (loaded && !doneRef.current && !busyRef.current && started(dRef.current)) void save(); };
+  useEffect(() => { if (!loaded || done) return; const t = window.setTimeout(autosave, 1200); return () => window.clearTimeout(t); }, [d, step, loaded, done]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const away = () => { if (document.visibilityState === "hidden") autosave(); };
+    document.addEventListener("visibilitychange", away); window.addEventListener("pagehide", autosave);
+    return () => { document.removeEventListener("visibilitychange", away); window.removeEventListener("pagehide", autosave); autosave(); };   // leaving the page saves too
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const persist = async (quiet = false) => {
-    const r = await saveDraft(draftId, d);
-    if ("error" in r) { show(r.error); return; }
-    if (r.id !== draftId) { setDraftId(r.id); setParams((x) => { const n = new URLSearchParams(x); n.set("draft", r.id); return n; }, { replace: true }); }
+    const e = await save();
+    if (e) { show(e); return; }
     if (!quiet) show("Draft saved — you can come back to it from Orders › Drafts");
   };
   const finalize = async () => {
     if (busyRef.current) return;                                                         // a second click while the first is in flight does nothing
     busyRef.current = true; setBusy(true); setErrs([]);
+    if (saving.current) await saving.current.catch(() => undefined);                    // let an auto-save in flight finish first
     try {
       const r = await finalizeDraft(draftId, d);
       if ("error" in r) { setErrs([r.error]); return; }
@@ -114,12 +142,20 @@ export default function OrderBuilder() {
     <div className="min-w-0">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-extrabold tracking-tight">{reopenOf ? `Edit order ${reopenOf.id}` : "New order"}</h1>
-          <p className="text-sm text-sub">Order type → customer → event → albums & items → invoice → finalize. Nothing is lost when you move between steps.</p></div>
+          <p className="text-sm text-sub">Order type → customer → event → albums & items → invoice → finalize. Nothing is lost when you move between steps.</p>
+          <span className={cx("mt-1 block text-[11px] font-semibold", saveState.s === "error" ? "text-rose-600" : "text-sub")} data-testid="autosave" aria-live="polite">
+            {saveState.s === "saving" ? "Saving draft…" : saveState.s === "saved" ? `Draft saved automatically · ${saveState.at!.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : saveState.s === "error" ? `Not saved: ${saveState.msg}` : started(d) ? "" : "Auto-saves as a draft once you start"}
+          </span></div>
         {!done && <div className="flex flex-wrap gap-2">
           <DraftMenu current={draftId} onOpen={(id) => { nav(`/orders/new?draft=${id}`); window.location.reload(); }} />
           <button onClick={() => void persist()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-bold hover:bg-brand-soft"><Save className="size-4" />Save draft</button>
         </div>}
       </div>
+      {loaded && !done && !draftId && !started(d) && openDrafts().length > 0 && (() => { const last = openDrafts()[0]!; return (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" data-testid="resume-banner">
+          <span className="min-w-0 flex-1">You have {openDrafts().length} unfinished order{openDrafts().length === 1 ? "" : "s"}. Latest: <b>{last.title}</b> <span className="text-xs">({new Date(last.updatedAt).toLocaleString("en-IN")})</span></span>
+          <button onClick={() => { nav(`/orders/new?draft=${last.id}`); window.location.reload(); }} className="h-9 rounded-lg bg-sky-700 px-4 text-xs font-bold text-white hover:bg-sky-800">Resume</button>
+        </div>); })()}
       {reopenOf && !done && <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Authorized edit of a finalized order. Its previous invoice was voided and is kept on record; finalizing issues a new invoice revision. Payments already received ({money(paid)}) stay with the order.</div>}
 
       <ol className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-line bg-white p-2 scroll-thin" aria-label="Progress">
@@ -151,7 +187,7 @@ export default function OrderBuilder() {
                     </button>))}
                   <button onClick={() => { set({ albums: [...d.albums, newAlbum(d.albums.length + 1)] }); setCur(d.albums.length); }} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-brand px-3 py-2 text-sm font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add another album</button>
                 </div>
-                <AlbumEditor key={album.id} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} set={setAlbum}
+                <AlbumEditor key={album.id} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} designErr={p.errors.find((e) => e.path === `album.${cur + 1}.design`)?.message} set={setAlbum}
                   onDuplicate={() => { set({ albums: [...d.albums.slice(0, cur + 1), newAlbum(0, album), ...d.albums.slice(cur + 1)] }); setCur(cur + 1); show("Album duplicated — edit the copy independently"); }}
                   onRemove={() => { if (d.albums.length === 1) return; if (!window.confirm(`Remove “${album.name || `Album ${cur + 1}`}” from this order?`)) return; set({ albums: d.albums.filter((_, i) => i !== cur) }); setCur(Math.max(0, cur - 1)); }} />
                 <section className="rounded-2xl border border-line bg-white p-4" aria-label="Order charges">
@@ -267,14 +303,15 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
   );
 }
 
-function AlbumEditor({ a, n, total, designed, priced, set, onDuplicate, onRemove }: { a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
+function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicate, onRemove }: { a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; designErr?: string; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
   const num = (v: string) => (v === "" ? ("" as unknown as number) : Number(v));
   const slotItem = (k: OptionKind) => a.items.find((i) => itemById(i.itemId)?.kind === k);
   const setSlot = (k: OptionKind, id: string) => {
     const rest = a.items.filter((i) => itemById(i.itemId)?.kind !== k);
     set({ items: id ? [...rest, { itemId: id, qty: 1 }] : rest });
   };
-  const missingCards = [!rateCard("printing") && "printing", designed && !rateCard("design") && "design"].filter(Boolean);
+  const design = { mode: a.design?.mode || (rateCard("design") ? "card" as const : "per_sheet" as const), amount: a.design?.amount ?? "" };
+  const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
       <div className="mb-4 flex flex-wrap items-center gap-2"><h2 className="text-base font-extrabold">Album {n} of {total}</h2>
@@ -291,6 +328,25 @@ function AlbumEditor({ a, n, total, designed, priced, set, onDuplicate, onRemove
         {SLOTS.map((k) => { const opts = optionItems(k); if (!opts.length) return null; const cur = slotItem(k); return (
           <Field key={k} label={SLOT_LABEL[k]!}><select aria-label={SLOT_LABEL[k]} className={inputCls} value={cur?.itemId ?? ""} onChange={(e) => setSlot(k, e.target.value)}><option value="">None</option>{opts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>); })}
       </div>
+      {designed && (
+        <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4" data-testid={`design-charge-${n}`}>
+          <div className="mb-2 text-[13px] font-extrabold text-violet-900">Design charges</div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-[11px] font-bold text-sub">Charge design
+              <select aria-label="Design charge type" className={cx(inputCls, "mt-1 w-60")} value={design.mode} onChange={(e) => set({ design: { ...design, mode: e.target.value as "card" | "per_sheet" | "fixed" } })}>
+                <option value="per_sheet">Per sheet (rate × sheets)</option>
+                <option value="fixed">Fixed amount for this album</option>
+                <option value="card" disabled={!rateCard("design") && design.mode !== "card"}>From design rate card{rateCard("design") ? "" : " (not set up)"}</option>
+              </select></label>
+            {design.mode !== "card" && <label className="text-[11px] font-bold text-sub">{design.mode === "per_sheet" ? "Design rate per sheet (₹)" : "Design charge (₹)"}
+              <input aria-label="Design charge" inputMode="decimal" className={cx(inputCls, "mt-1 w-40")} placeholder={design.mode === "per_sheet" ? "e.g. 50" : "e.g. 5000"} value={design.amount} onChange={(e) => set({ design: { ...design, amount: e.target.value } })} /></label>}
+            <p className="min-w-0 flex-1 pb-2 text-xs text-sub">{design.mode === "card" ? "Design rate card × sheets, for every copy." : design.mode === "per_sheet"
+              ? `${Number(a.sheets) || 0} sheets × ₹${design.amount || 0} = ${money((Number(a.sheets) || 0) * (Number(design.amount) || 0))} · charged once per album (not per copy)`
+              : "Charged once per album (not per copy)."}</p>
+          </div>
+          {designErr && (a.design?.amount ?? "") !== "" && <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">{designErr}</p>}
+        </div>
+      )}
       {missingCards.length > 0 && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">The {missingCards.join(" and ")} rate card is not set up — an admin adds it in Catalog & Pricing. Until then this album shows “Price not configured”.</p>}
       <CategoryPicker testId={`picker-${n}`} sheets={a.sheets} accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
         onAdd={(id, qty, sheetQty) => { const it = itemById(id); if (a.items.some((x) => x.itemId === id)) return "Already on this album — change its quantity below"; if (it?.kind && a.items.some((x) => itemById(x.itemId)?.kind === it.kind)) return `This album already has a ${it.kind} — change it above`; set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null; }} />
@@ -298,7 +354,7 @@ function AlbumEditor({ a, n, total, designed, priced, set, onDuplicate, onRemove
         <thead className="text-[11px] uppercase tracking-wide text-sub"><tr><th className="py-1.5 text-left">Item</th><th className="text-left">Scope</th><th className="text-right">Qty</th><th className="text-right">Rate</th><th className="text-right">Amount</th><th /></tr></thead>
         <tbody>{(priced?.lines ?? []).map((l) => { const di = a.items.find((x) => x.itemId === l.itemId); return (
           <tr key={`${l.kind}${l.itemId}`} className="border-t border-line">
-            <td className="py-1.5"><span className="font-semibold">{l.name}</span>{l.kind !== "item" && <Pill tone="indigo" className="ml-2 !py-0 text-[10px]">automatic</Pill>}{l.rule && <span className="block text-[11px] text-sub">{l.rule}</span>}</td>
+            <td className="py-1.5"><span className="font-semibold">{l.name}</span>{l.kind !== "item" && <Pill tone="indigo" className="ml-2 !py-0 text-[10px]">{l.kind === "design" && !l.itemId ? "entered" : "automatic"}</Pill>}{l.rule && <span className="block text-[11px] text-sub">{l.rule}</span>}</td>
             <td><span className="text-xs">{SCOPE_LABEL[l.scope]}</span></td>
             <td className="text-right">{l.method === "per_unit" && di ? <input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className="h-8 w-20 rounded-lg border border-line px-2 text-right" value={di.qty} onChange={(e) => set({ items: a.items.map((x) => (x.itemId === l.itemId ? { ...x, qty: num(e.target.value) } : x)) })} />
               : l.method === "per_sheet" && di ? <span className="inline-flex items-center gap-1"><input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className="h-8 w-20 rounded-lg border border-line px-2 text-right" value={di.sheetQty ?? a.sheets} onChange={(e) => set({ items: a.items.map((x) => (x.itemId === l.itemId ? { ...x, sheetQty: e.target.value === "" || e.target.value === String(a.sheets) ? null : e.target.value } : x)) })} />

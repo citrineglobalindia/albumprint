@@ -254,3 +254,69 @@ test("event type “Other” asks for the event type to be typed and keeps what 
   await expect(page.getByLabel("Event type", { exact: true })).toHaveValue("Other");
   await expect(page.getByLabel("Other event type")).toHaveValue("Naming ceremony");
 });
+
+test("Design + Printing: design charge typed on the order (per sheet or fixed, once per album)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await page.goto("/orders/new");
+  await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
+  await page.getByRole("button", { name: /^Search customer/ }).click();
+  await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
+  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  const a1 = page.getByTestId("album-1");
+  await a1.getByLabel("Album name").fill("Wedding"); await a1.getByLabel("Sheets", { exact: true }).fill("30"); await a1.getByLabel("Copies").fill("2");
+  // default: the design rate card (sample ₹40/sheet, per copy): 30×90 + 30×40 = 3,900 per copy
+  await expect(a1.getByLabel("Design charge type")).toHaveValue("card");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹7,800");
+  // per sheet typed on the order: 30 × ₹50 once → 2 × 2,700 + 1,500
+  await a1.getByLabel("Design charge type").selectOption("per_sheet");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹5,400");            // no design charge until one is typed
+  await a1.getByLabel("Design charge", { exact: true }).fill("50");
+  await expect(page.getByTestId("design-charge-1")).toContainText("30 sheets × ₹50 = ₹1,500");
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹2,700");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹6,900");
+  await expect(page.getByTestId("album-lines-1")).toContainText("Album design");
+  // a fixed amount
+  await a1.getByLabel("Design charge type").selectOption("fixed");
+  await a1.getByLabel("Design charge", { exact: true }).fill("5000");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹10,400");
+  await a1.getByLabel("Design charge", { exact: true }).fill("-1");
+  await expect(page.getByTestId("design-charge-1").getByRole("alert")).toContainText("enter the design charge");
+  await a1.getByLabel("Design charge", { exact: true }).fill("5000");
+  await next(page);
+  await expect(page.getByTestId("sum-total")).toHaveText("₹10,400");
+  await next(page);
+  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await expect(page.getByTestId("finalized")).toContainText("₹10,400");
+});
+
+test("a half-entered order is saved as a draft automatically and can be resumed", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "reception");
+  await page.goto("/orders/new");
+  await expect(page.getByTestId("autosave")).toHaveText("Auto-saves as a draft once you start");
+  await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
+  await page.getByRole("button", { name: /^Search customer/ }).click();
+  await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
+  await page.getByLabel("Event type").selectOption("Wedding"); await page.getByLabel("Event name").fill("Half entry"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  const a1 = page.getByTestId("album-1");
+  await a1.getByLabel("Album name").fill("Main album"); await a1.getByLabel("Sheets", { exact: true }).fill("24");
+  await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");
+  await expect(page).toHaveURL(/draft=/);
+
+  // walk away without pressing Save, then come back
+  await page.getByRole("link", { name: "Orders" }).first().click();
+  await expect(page).toHaveURL(/\/orders$/);
+  await page.goto("/orders/new");
+  const banner = page.getByTestId("resume-banner");
+  await expect(banner).toContainText("1 unfinished order");
+  await expect(banner).toContainText("Half entry");
+  await banner.getByRole("button", { name: "Resume" }).click();
+  await expect(page.getByTestId("album-1").getByLabel("Album name")).toHaveValue("Main album");
+  await expect(page.getByTestId("album-1").getByLabel("Sheets", { exact: true })).toHaveValue("24");
+
+  // more changes keep going into the same draft (no duplicates)
+  await page.getByTestId("album-1").getByLabel("Copies").fill("3");
+  await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");
+  await expect.poll(() => page.evaluate(() => (JSON.parse(localStorage.getItem("albumpro.v1.order_drafts") ?? "[]") as { payload: { albums: { copies: number | string }[] } }[]).map((x) => String(x.payload.albums[0]?.copies)))).toEqual(["3"]);
+});
