@@ -32,7 +32,7 @@ export function InvoiceView({ s, paid = 0, preview = false }: { s: InvoiceSnapsh
             <thead className="text-[11px] uppercase text-sub"><tr><th className="py-1 text-left">Item</th><th className="text-left">Scope</th><th className="text-right">Qty</th><th className="text-right">Rate</th><th className="text-right">Amount</th></tr></thead>
             <tbody>{a.lines.map((l) => (
               <tr key={l.position} className="border-t border-line/60">
-                <td className="py-1.5"><span className="font-semibold">{l.name}</span>{l.rule && <span className="block text-[11px] text-sub">{l.rule}{l.note ? ` · ${l.note}` : ""}</span>}</td>
+                <td className="py-1.5"><span className="font-semibold">{l.name}</span>{(l.rule || l.note || !!l.discount) && <span className="block text-[11px] text-sub">{[l.priceEdited ? "price set on the order" : l.rule, l.note, l.discount ? `less ${l.discountType === "percent" ? `${l.discountValue}% ` : ""}discount ${money(l.discount)}${l.scope === "copy" ? " per copy" : ""}` : null].filter(Boolean).join(" · ")}</span>}</td>
                 <td><span className={cx("rounded px-1.5 py-0.5 text-[10px] font-bold", SCOPE_TONE[l.scope])}>{SCOPE_LABEL[l.scope]}</span></td>
                 <td className="text-right tabular-nums">{l.scope === "copy" ? `${l.qty} ${l.method === "per_sheet" ? "sheets" : l.unit}` : "1"}</td>
                 <td className={cx("text-right tabular-nums", l.missing && "font-bold text-rose-600")}>{l.missing ? "Price not configured" : money(l.rate!)}</td>

@@ -126,12 +126,19 @@ test("missing price blocks finalizing, and the catalog admin writes the hierarch
   await page.getByRole("button", { name: "New customer" }).click();
   await page.getByLabel("Customer name").fill(`Party ${TAG}`); await page.getByLabel("Phone number").fill(`8${String(Date.now()).slice(-9)}`); await next(page);
   await page.getByLabel("Event date").fill("2026-12-20"); await next(page);
-  await page.getByTestId("album-1").getByLabel("Album name").fill("Party album"); await page.getByTestId("album-1").getByLabel("Sheets").fill("30");
+  await page.getByTestId("album-1").getByLabel("Album name").fill("Party album"); await page.getByTestId("album-1").getByLabel("Sheets", { exact: true }).fill("30");
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: `Extras ${TAG}` }); await p1.getByLabel("Subcategory").selectOption({ label: "Unpriced" });
   await p1.getByLabel("Item").selectOption({ label: `No price ${TAG}` }); await p1.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("album-lines-1")).toContainText("Price not configured");
+  await expect(page.getByLabel(`Price of No price ${TAG}`)).toHaveAttribute("placeholder", "Not set");
   await next(page); await next(page);
   await expect(page.getByTestId("blocking")).toContainText("price not configured");
   await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeDisabled();
+  // a price typed on the line and a line discount: the server agrees on the total
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByLabel(`Price of No price ${TAG}`).fill("20");
+  await page.getByLabel(`Discount on No price ${TAG}`).fill("5");
+  await page.getByLabel(`Discount type for No price ${TAG}`).selectOption("percent");
+  await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
+  await expect(page.getByTestId("server-check")).toContainText("Verified by the server", { timeout: 15_000 });
 });

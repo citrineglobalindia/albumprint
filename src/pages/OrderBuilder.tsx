@@ -4,6 +4,7 @@ import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Copy, Do
 import { Field, Pill, Toggle, cx, inputCls } from "../components/ui";
 import { Combobox } from "../components/controls";
 import { CategoryPicker, type SheetBalance } from "../components/CategoryPicker";
+import { AlbumItemsTable } from "../components/AlbumItemsTable";
 import { InvoiceView } from "../components/InvoiceView";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
@@ -187,7 +188,7 @@ export default function OrderBuilder() {
                     </button>))}
                   <button onClick={() => { set({ albums: [...d.albums, newAlbum(d.albums.length + 1)] }); setCur(d.albums.length); }} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-brand px-3 py-2 text-sm font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add another album</button>
                 </div>
-                <AlbumEditor key={album.id} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} designErr={p.errors.find((e) => e.path === `album.${cur + 1}.design`)?.message} set={setAlbum}
+                <AlbumEditor key={album.id} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} designErr={p.errors.find((e) => e.path === `album.${cur + 1}.design`)?.message} taxRate={p.taxEnabled ? p.taxRate : 0} set={setAlbum}
                   onDuplicate={() => { set({ albums: [...d.albums.slice(0, cur + 1), newAlbum(0, album), ...d.albums.slice(cur + 1)] }); setCur(cur + 1); show("Album duplicated — edit the copy independently"); }}
                   onRemove={() => { if (d.albums.length === 1) return; if (!window.confirm(`Remove “${album.name || `Album ${cur + 1}`}” from this order?`)) return; set({ albums: d.albums.filter((_, i) => i !== cur) }); setCur(Math.max(0, cur - 1)); }} />
                 <section className="rounded-2xl border border-line bg-white p-4" aria-label="Order charges">
@@ -298,7 +299,7 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
   );
 }
 
-function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicate, onRemove }: { a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; designErr?: string; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
+function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, onDuplicate, onRemove }: { a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; designErr?: string; taxRate: number; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
   const num = (v: string) => (v === "" ? ("" as unknown as number) : Number(v));
   const slotItem = (k: OptionKind) => a.items.find((i) => itemById(i.itemId)?.kind === k);
   const setSlot = (k: OptionKind, id: string) => {
@@ -311,6 +312,13 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
   let sheetsUsed = 0, perSheetLines = 0;
   for (const x of a.items) { const it = itemById(x.itemId); if (it?.method !== "per_sheet") continue; perSheetLines++; sheetsUsed += x.sheetQty == null || x.sheetQty === "" ? albumSheets : Number(x.sheetQty) || 0; }
   const sheetBalance = (): SheetBalance => ({ group: "this album", used: sheetsUsed, balance: albumSheets - sheetsUsed });
+  const addItem = (id: string, qty: number, sheetQty?: number, full = false): string | null => {
+    const it = itemById(id);
+    if (a.items.some((x) => x.itemId === id)) return "Already on this album — change its quantity in the table";
+    if (it?.kind && a.items.some((x) => itemById(x.itemId)?.kind === it.kind)) return `This album already has a ${it.kind} — change it above`;
+    if (full) return `All ${albumSheets} sheets are already allocated — reduce another line first`;
+    set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null;
+  };
   const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
@@ -348,35 +356,19 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
         </div>
       )}
       {missingCards.length > 0 && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">The {missingCards.join(" and ")} rate card is not set up — an admin adds it in Catalog & Pricing. Until then this album shows “Price not configured”.</p>}
-      <CategoryPicker testId={`picker-${n}`} sheets={a.sheets} sheetBalance={sheetBalance} accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
-        onAdd={(id, qty, sheetQty) => { const it = itemById(id); if (a.items.some((x) => x.itemId === id)) return "Already on this album — change its quantity below"; if (it?.kind && a.items.some((x) => itemById(x.itemId)?.kind === it.kind)) return `This album already has a ${it.kind} — change it above`; set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null; }} />
-      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-[13px]" data-testid={`album-lines-${n}`}>
-        <thead className="text-[11px] uppercase tracking-wide text-sub"><tr><th className="py-1.5 text-left">Item</th><th className="text-left">Scope</th><th className="text-right">Qty</th><th className="text-right">Rate</th><th className="text-right">Amount</th><th /></tr></thead>
-        <tbody>{(priced?.lines ?? []).map((l) => { const di = a.items.find((x) => x.itemId === l.itemId); return (
-          <tr key={`${l.kind}${l.itemId}`} className="border-t border-line">
-            <td className="py-1.5"><span className="font-semibold">{l.name}</span>{l.kind !== "item" && <Pill tone="indigo" className="ml-2 !py-0 text-[10px]">{l.kind === "design" && !l.itemId ? "entered" : "automatic"}</Pill>}{l.rule && <span className="block text-[11px] text-sub">{l.rule}</span>}</td>
-            <td><span className="text-xs">{SCOPE_LABEL[l.scope]}</span></td>
-            <td className="text-right">{l.method === "per_unit" && di ? <input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className="h-8 w-20 rounded-lg border border-line px-2 text-right" value={di.qty} onChange={(e) => set({ items: a.items.map((x) => (x.itemId === l.itemId ? { ...x, qty: num(e.target.value) } : x)) })} />
-              : l.method === "per_sheet" && di ? <span className="inline-flex items-center gap-1"><input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className="h-8 w-20 rounded-lg border border-line px-2 text-right" value={di.sheetQty ?? a.sheets} onChange={(e) => set({ items: a.items.map((x) => (x.itemId === l.itemId ? { ...x, sheetQty: e.target.value === "" || e.target.value === String(a.sheets) ? null : e.target.value } : x)) })} />
-                {di.sheetQty == null || di.sheetQty === "" ? <span className="text-[10px] font-semibold text-emerald-700" title="Follows the album's sheet count">auto</span> : <button type="button" aria-label={`Match ${l.name} to album sheets`} onClick={() => set({ items: a.items.map((x) => (x.itemId === l.itemId ? { ...x, sheetQty: null } : x)) })} className="text-[10px] font-semibold text-brand hover:underline">auto</button>}</span>
-              : <span className="tabular-nums">{l.scope === "copy" ? `${l.qty} ${l.method === "per_sheet" ? "sheets" : l.unit}` : "1"}</span>}</td>
-            <td className={cx("text-right tabular-nums", l.missing && "font-bold text-rose-600")}>{l.missing ? "Price not configured" : money(l.rate!)}</td>
-            <td className="text-right font-semibold tabular-nums">{money(l.scope === "copy" ? l.unitAmount : l.amount)}</td>
-            <td className="pl-2">{di && <button aria-label={`Remove ${l.name}`} onClick={() => set({ items: a.items.filter((x) => x.itemId !== l.itemId) })} className="text-rose-600"><Trash2 className="size-4" /></button>}</td>
-          </tr>); })}</tbody>
-        {priced && <tfoot>
-          <tr className="border-t border-line"><td colSpan={4} className="py-1 text-right text-sub">Per-copy subtotal</td><td className="text-right font-bold tabular-nums" data-testid={`per-copy-${n}`}>{money(priced.perCopy)}</td><td /></tr>
-          <tr><td colSpan={4} className="py-1 text-right text-sub">× {priced.copies || 0} {priced.copies === 1 ? "copy" : "copies"}</td><td className="text-right tabular-nums">{money(Math.round(priced.perCopy * priced.copies * 100) / 100)}</td><td /></tr>
-          {priced.perAlbum > 0 && <tr><td colSpan={4} className="py-1 text-right text-sub">Per-album charges (once)</td><td className="text-right tabular-nums">{money(priced.perAlbum)}</td><td /></tr>}
-          <tr><td colSpan={4} className="py-1 text-right font-extrabold">Album total</td><td className="text-right font-extrabold tabular-nums" data-testid={`album-total-${n}`}>{money(priced.total)}</td><td /></tr>
-        </tfoot>}
-      </table></div>
-      {perSheetLines > 0 && albumSheets > 0 && (() => { const bal = albumSheets - sheetsUsed; return (
+      <AlbumItemsTable a={a} n={n} priced={priced} set={set} taxRate={taxRate}
+        accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
+        onAdd={(id) => { const it = itemById(id); if (!it) return "Item not found"; const b = it.method === "per_sheet" ? sheetBalance() : null; return addItem(id, 1, b && b.used > 0 ? (b.balance > 0 ? b.balance : undefined) : undefined, !!b && b.used > 0 && b.balance <= 0); }}
+        browse={<CategoryPicker testId={`picker-${n}`} sheets={a.sheets} sheetBalance={sheetBalance} accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
+          onAdd={(id, qty, sheetQty) => addItem(id, qty, sheetQty)} />}
+        footer={<div className="px-3 pb-1">
+        {perSheetLines > 0 && albumSheets > 0 && (() => { const bal = albumSheets - sheetsUsed; return (
         <div className="mt-3" data-testid={`sheet-allocation-${n}`} aria-label="Sheet allocation">
           <span className={cx("inline-block rounded-lg border px-3 py-1.5 text-xs font-semibold", bal === 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : bal > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700")} data-testid={`sheet-balance-${n}`}>
             Sheets: {sheetsUsed} of {albumSheets} allocated · {bal === 0 ? "all allocated ✓" : bal > 0 ? `balance ${bal}` : `${-bal} over`}
           </span>
         </div>); })()}
+        </div>} />
       <div className="mt-4"><Field label="Additional requirements & notes"><textarea aria-label="Album notes" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={a.notes} maxLength={1000} onChange={(e) => set({ notes: e.target.value })} /></Field></div>
     </section>
   );

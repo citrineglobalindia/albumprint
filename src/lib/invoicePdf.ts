@@ -42,7 +42,7 @@ export async function invoicePdf(s: InvoiceSnapshot, opts: { preview?: boolean; 
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 27, 76);
     doc.text(`${a.name}`, L, y); doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90);
     doc.text(`${a.sheets} sheets · ${a.copies} ${a.copies === 1 ? "copy" : "copies"}${[a.size, a.paper, a.finish].some(Boolean) ? " · " + [a.size, a.paper, a.finish].filter(Boolean).join(" / ") : ""}`, L, y + 12);
-    const body = a.lines.map((l) => [l.name + (l.note ? ` (${l.note})` : ""), l.rule ?? "", SCOPE_LABEL[l.scope], l.scope === "copy" ? `${l.qty} ${l.method === "per_sheet" ? "sheets" : l.unit}${a.copies > 1 ? ` × ${a.copies}` : ""}` : "1",
+    const body = a.lines.map((l) => [l.name + (l.note ? ` (${l.note})` : ""), [l.priceEdited ? "price set on the order" : l.rule, l.discount ? `less ${l.discountType === "percent" ? `${l.discountValue}% ` : ""}discount ${rs(l.discount)}${l.scope === "copy" ? "/copy" : ""}` : null].filter(Boolean).join(" · "), SCOPE_LABEL[l.scope], l.scope === "copy" ? `${l.qty} ${l.method === "per_sheet" ? "sheets" : l.unit}${a.copies > 1 ? ` × ${a.copies}` : ""}` : "1",
       l.rate == null ? "Price not configured" : rs(l.rate), rs(l.amount)]);
     body.push(["", "", "", "", "Per-copy subtotal", rs(a.perCopy)]);
     if (a.copies > 1) body.push(["", "", "", "", `× ${a.copies} copies`, rs(a.perCopy * a.copies)]);

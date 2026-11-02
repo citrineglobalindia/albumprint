@@ -95,5 +95,35 @@ insert into t.p36 select 'draft_nt', id::text from order_drafts where payload->'
 select t.ok($$select finalize_order_v2(t.id('draft_nt'))$$, 'event type: not required to finalize (0042)');
 select t.as('system');
 select t.eq($$select coalesce(event_type, 'null') || '/' || event_name from orders where id = ((select result from order_drafts where id = t.id('draft_nt'))->>'orderId')::uuid$$, 'null/No type given', 'event type: stored empty, the event name is kept');
+
+-- line price and line discount (0043)
+create function t.lp(item jsonb) returns jsonb language sql as $$ select order_price(jsonb_set(t.payload(), '{albums,0,items,0}', (t.payload()->'albums'->0->'items'->0) || item)) $$;
+create function t.leather(pr jsonb) returns jsonb language sql as $$ select l from jsonb_array_elements(pr->'albums'->0->'lines') l where l->>'itemId' = (select v from t.p36 where k = 'i_leather') $$;
+select t.eq($$select concat_ws('/', t.leather(t.lp('{"price":"450"}'))->>'rate', t.leather(t.lp('{"price":"450"}'))->>'listRate', t.leather(t.lp('{"price":"450"}'))->>'unitAmount')$$, '450/500.00/450', 'line price: a typed price replaces the catalog rate');
+select t.eq($$select concat_ws('/', t.leather(t.lp('{"disc":{"type":"percent","value":"10"}}'))->>'gross', t.leather(t.lp('{"disc":{"type":"percent","value":"10"}}'))->>'discount', t.leather(t.lp('{"disc":{"type":"percent","value":"10"}}'))->>'unitAmount')$$, '500.00/50.00/450.00', 'line discount: 10% off the line');
+select t.eq($$select (t.lp('{"disc":{"type":"fixed","value":"100"}}')->'albums'->0->>'total')::numeric::text$$, '3260.00', 'line discount: ₹100 per copy × 2 copies off the album (3460 → 3260)');
+select t.eq($$select concat_ws('/', p->>'lineDiscounts', p->>'listSubtotal', p->>'subtotal') from (select t.lp('{"disc":{"type":"fixed","value":"100"}}') p) x$$, '200/3940.00/3740.00', 'line discount: totals at catalog prices and after line discounts');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.lp('{"disc":{"type":"fixed","value":"501"}}')->'errors') e$$, 'Album 1: the discount on “Leatherette cover” is more than the line', 'line discount: not more than the line');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.lp('{"disc":{"type":"percent","value":"101"}}')->'errors') e$$, 'Album 1: the discount on “Leatherette cover” cannot be more than 100%', 'line discount: not more than 100%');
+select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.lp('{"price":"-5"}')->'errors') e$$, 'Album 1: enter a valid price for “Leatherette cover” (0 or more, up to 2 decimals)', 'line price: must be valid');
+select t.eq($$select (t.lp('{"price":"700"}')->>'reduction')::numeric::text$$, '434.00', 'reduction: a higher price is not a reduction (only the 10% order discount)');
+select t.eq($$select (t.lp('{"price":"100"}')->>'reduction')::numeric::text$$, '1114.00', 'reduction: a lowered price counts (2 × 400) plus the 10% order discount on the new subtotal (314)');
+-- an unpriced item can be priced on the line
+select t.as('system');
+insert into cat_items(category_id, name, pricing_method, unit) values (t.id('covers'), 'Unpriced cover', 'per_unit', 'pcs');
+select t.eq($$select concat_ws('/', l->>'missing', l->>'unitAmount') from jsonb_array_elements(order_price(jsonb_set(t.payload(), '{albums,0,items}', ('[{"itemId":"' || (select id from cat_items where name = 'Unpriced cover') || '","qty":2,"price":"300"}]')::jsonb))->'albums'->0->'lines') l where l->>'name' = 'Unpriced cover'$$, 'false/600', 'line price: an item with no catalog price can be priced on the order');
+-- finalize: line discounts go into the invoice discount; a large line discount needs an admin
+select t.as('reception');
+insert into order_drafts(payload) select jsonb_set(jsonb_set(t.payload(), '{albums,0,items,0}', (t.payload()->'albums'->0->'items'->0) || '{"disc":{"type":"fixed","value":"100"}}'), '{discount}', '{"type":"none","value":""}') || jsonb_build_object('customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Line discount', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'draft_ld', id::text from order_drafts where payload->'event'->>'name' = 'Line discount';
+select t.eq($$select (finalize_order_v2(t.id('draft_ld')))->>'total'$$, '3740.00', 'finalize: a small line discount (5%) — reception can finalize; server total');
+select t.as('system');
+select t.eq($$select concat_ws('/', i.subtotal::text, i.discount_amount::text, i.total::text) from invoices i where i.order_id = ((select result from order_drafts where id = t.id('draft_ld'))->>'orderId')::uuid$$, '3940.00/200.00/3740.00', 'finalize: invoice lines at full price, the line discount in the invoice discount');
+select t.eq($$select count(*)::text from invoice_lines il join invoices i on i.id = il.invoice_id where i.order_id = ((select result from order_drafts where id = t.id('draft_ld'))->>'orderId')::uuid and il.note like '%less discount ₹200%'$$, '1', 'finalize: the invoice line says how much was discounted');
+select t.as('reception');
+insert into order_drafts(payload) select jsonb_set(jsonb_set(t.payload(), '{albums,0,items,0}', (t.payload()->'albums'->0->'items'->0) || '{"price":"0"}'), '{discount}', '{"type":"percent","value":"5"}') || jsonb_build_object('customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Big cut', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'draft_bc', id::text from order_drafts where payload->'event'->>'name' = 'Big cut';
+select t.err($$select finalize_order_v2(t.id('draft_bc'))$$, 'finalize: a price cut + order discount over the limit needs an admin', 'needs an admin');
+select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

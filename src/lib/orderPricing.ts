@@ -6,7 +6,9 @@ import type { CItem, PricingMethod, PricingSettings, Rate } from "./catalog2";
 export type OrderType = "design_printing" | "printing_only";
 export type Scope = "copy" | "album" | "order";
 /** qty: pieces for a per-unit item. sheetQty: sheets for a per-sheet item — leave it out (or null) to follow the album's sheet count automatically. */
-export interface DraftItem { itemId: string; qty: number; sheetQty?: number | string | null; note?: string }
+export interface LineDiscount { type: "fixed" | "percent"; value: string }
+/** price: a price per unit typed on the order (replaces the catalog rate for this line). disc: a discount on the line (₹ per copy, or %). */
+export interface DraftItem { itemId: string; qty: number; sheetQty?: number | string | null; note?: string; price?: string | null; disc?: LineDiscount | null }
 /** How a Design + Printing album is charged for design: the design rate card (per sheet, per copy), or a charge typed on the order —
  *  a rate per sheet (× sheets) or a fixed amount — added once per album. Left out = the rate card when one is set up, otherwise per sheet. */
 export type DesignMode = "card" | "per_sheet" | "fixed";
@@ -27,6 +29,7 @@ export interface OrderDraft {
 export interface PricedLine {
   position: number; kind: "printing" | "design" | "item"; itemId: string; name: string; unit: string; method: PricingMethod; scope: Scope; optionKind?: string | null;
   qty: number; rate: number | null; rule: string | null; missing: boolean; unitAmount: number; amount: number; perCopy: number | null; note?: string | null;
+  listRate?: number | null; priceEdited?: boolean; gross?: number; discount?: number; discountType?: "fixed" | "percent" | null; discountValue?: number;   // gross / discount: per copy (copy-scope) or per album
 }
 export interface PricedAlbum { index: number; id: string; name: string; sheets: number; copies: number; size: string | null; paper: string | null; finish: string | null; notes: string | null; lines: PricedLine[]; perCopy: number; perAlbum: number; total: number }
 export interface PriceError { path: string; message: string }
@@ -34,6 +37,7 @@ export interface PricedOrder {
   orderType: string; albums: PricedAlbum[]; orderLines: PricedLine[]; subtotal: number;
   discountType: "fixed" | "percent" | null; discountValue: number; discountAmount: number;
   taxEnabled: boolean; taxLabel: string; taxRate: number; taxable: number; tax: number; total: number;
+  listSubtotal: number; lineDiscounts: number; reduction: number;   // at catalog prices; line discounts in total; everything below catalog price (for the approval limit)
   errors: PriceError[]; hasMissingPrice: boolean; canFinalize: boolean;
 }
 
@@ -42,6 +46,7 @@ const R = (paise: number) => Math.round(paise) / 100;               // paise →
 const halfUp = (num: number, den: number) => Math.floor((num * 2 + den) / (2 * den));     // non-negative integers, rounded half-up
 const clean = (s: string | undefined | null) => { const t = (s ?? "").trim(); return t ? t : null; };
 const low = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+const MONEY = /^[0-9]{1,10}(\.[0-9]{1,2})?$/;
 const isWhole = (v: unknown, max: number) => typeof v === "number" ? Number.isInteger(v) && v >= 0 && v < max : typeof v === "string" && /^[0-9]{1,6}$/.test(v) && Number(v) < max;
 
 /** The rate for an item and a set of requirements: the most specific matching rule (size, then paper, then finish break a tie), else the standard rate. */
@@ -70,7 +75,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
   const items = new Map(catalog.items.map((i) => [i.id, i]));
   const prn = catalog.items.find((i) => i.kind === "printing" && i.active), dsn = catalog.items.find((i) => i.kind === "design" && i.active);
   if (!d.albums.length) err("albums", "Add at least one album");
-  let anyMissing = false, subP = 0;
+  let anyMissing = false, subP = 0, listSubP = 0, lineDiscP = 0, reductionP = 0;
   const albums: PricedAlbum[] = d.albums.map((a, k) => {
     const ai = k + 1;
     const sheets = isWhole(a.sheets, 1e6) ? Number(a.sheets) : 0, copies = isWhole(a.copies, 1e4) ? Number(a.copies) : 0;
@@ -78,7 +83,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
     if (sheets < 1) err(`album.${ai}.sheets`, `Album ${ai}: sheets must be a positive whole number`);
     if (copies < 1) err(`album.${ai}.copies`, `Album ${ai}: copies must be a positive whole number`);
     if (!clean(a.name)) err(`album.${ai}.name`, `Album ${ai}: enter an album name or reference`);
-    const raw: (ReturnType<typeof priceLine> & { note?: string | null })[] = [];
+    const raw: (ReturnType<typeof priceLine> & { note?: string | null; listRate?: number | null; priceEdited?: boolean; grossP?: number; ldP?: number; listP?: number; dtype?: "fixed" | "percent" | null; dval?: number })[] = [];
     if (!prn) { err("catalog.printing", "Printing rate card is not set up. Ask an admin to add it in Catalog."); anyMissing = true; }
     else { const l = priceLine(prn, 1, sheets, size, paper, finish, "printing", catalog.rates); raw.push(l); if (l.missing) { anyMissing = true; err(`album.${ai}.printing`, `Album ${ai}: printing price not configured for this size / paper / finish`); } }
     const dmode = a.design?.mode || (dsn ? "card" : "per_sheet");             // no choice yet: the rate card if there is one, else a typed per-sheet rate
@@ -115,15 +120,29 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
         qty = Number(it.qty);
       }
       const l = priceLine(ci, qty, itemSheets, size, paper, finish, "item", catalog.rates);
-      raw.push({ ...l, note: clean(it.note) });
-      if (l.missing) { anyMissing = true; err(`album.${ai}.items`, `Album ${ai}: price not configured for “${ci.name}” with these requirements`); }
+      const ov = String(it.price ?? "").trim();
+      if (ov !== "" && !MONEY.test(ov)) { err(`album.${ai}.items`, `Album ${ai}: enter a valid price for “${ci.name}” (0 or more, up to 2 decimals)`); continue; }
+      const rate = ov !== "" ? Number(ov) : l.rate, missing = ov !== "" ? false : l.missing;
+      const grossP = missing ? 0 : l.qty * P(rate!);
+      let ldP = 0; const dv = String(it.disc?.value ?? "").trim(), dt = it.disc?.type;
+      if (dv !== "" && dt) {
+        if ((dt !== "fixed" && dt !== "percent") || !MONEY.test(dv)) { err(`album.${ai}.items`, `Album ${ai}: enter a valid discount for “${ci.name}”`); continue; }
+        if (dt === "percent") { if (Number(dv) > 100) { err(`album.${ai}.items`, `Album ${ai}: the discount on “${ci.name}” cannot be more than 100%`); continue; } ldP = halfUp(grossP * P(Number(dv)), 10000); }
+        else { ldP = P(Number(dv)); if (ldP > grossP) { err(`album.${ai}.items`, `Album ${ai}: the discount on “${ci.name}” is more than the line`); continue; } }
+      }
+      const listP = l.rate != null ? l.qty * P(l.rate) : grossP;
+      raw.push({ ...l, rate, missing, unitAmountP: grossP - ldP, note: clean(it.note), listRate: l.rate, priceEdited: ov !== "", grossP, ldP, listP, dtype: dv !== "" ? dt : null, dval: dv !== "" ? Number(dv) : 0 });
+      if (missing) { anyMissing = true; err(`album.${ai}.items`, `Album ${ai}: price not configured for “${ci.name}” — set it in Catalog & Pricing or type a price on the line`); }
     }
     let perCopyP = 0, perAlbumP = 0;
     const lines: PricedLine[] = raw.map((l, i) => {
-      const amountP = l.scope === "copy" ? l.unitAmountP * copies : l.unitAmountP;
+      const mult = l.scope === "copy" ? copies : 1, amountP = l.unitAmountP * mult;
       if (l.scope === "copy") perCopyP += l.unitAmountP; else perAlbumP += amountP;
+      const listAmtP = (l.listP ?? l.unitAmountP) * mult;
+      listSubP += listAmtP; lineDiscP += (l.ldP ?? 0) * mult; reductionP += Math.max(0, listAmtP - amountP);
       return { position: i + 1, kind: l.kind, itemId: l.itemId, name: l.name, unit: l.unit, method: l.method, scope: l.scope, optionKind: l.optionKind, qty: l.qty, rate: l.rate, rule: l.rule, missing: l.missing,
-        unitAmount: R(l.unitAmountP), amount: R(amountP), perCopy: l.scope === "copy" ? R(l.unitAmountP) : null, note: l.note ?? null };
+        unitAmount: R(l.unitAmountP), amount: R(amountP), perCopy: l.scope === "copy" ? R(l.unitAmountP) : null, note: l.note ?? null,
+        listRate: l.listRate === undefined ? l.rate : l.listRate, priceEdited: !!l.priceEdited, gross: R(l.grossP ?? l.unitAmountP), discount: R(l.ldP ?? 0), discountType: l.dtype ?? null, discountValue: l.dval ?? 0 };
     });
     const totalP = perCopyP * copies + perAlbumP; subP += totalP;
     return { index: ai, id: a.id, name: clean(a.name) ?? `Album ${ai}`, sheets, copies, size, paper, finish, notes: clean(a.notes), lines, perCopy: R(perCopyP), perAlbum: R(perAlbumP), total: R(totalP) };
@@ -139,7 +158,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
     const l = priceLine(ci, 1, 1, null, null, null, "item", catalog.rates);
     orderLines.push({ position: orderLines.length + 1, kind: "item", itemId: l.itemId, name: l.name, unit: l.unit, method: l.method, scope: "order", optionKind: l.optionKind, qty: l.qty, rate: l.rate, rule: l.rule, missing: l.missing,
       unitAmount: R(l.unitAmountP), amount: R(l.unitAmountP), perCopy: null });
-    if (l.missing) { anyMissing = true; err("orderCharges", `Price not configured for “${ci.name}”`); } else subP += l.unitAmountP;
+    if (l.missing) { anyMissing = true; err("orderCharges", `Price not configured for “${ci.name}”`); } else { subP += l.unitAmountP; listSubP += l.unitAmountP; }
   }
 
   let dtype: "fixed" | "percent" | null = d.discount.type === "none" ? null : d.discount.type;
@@ -162,6 +181,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
   return {
     orderType: otype, albums, orderLines, subtotal: R(subP), discountType: dtype, discountValue: dval, discountAmount: R(discP),
     taxEnabled: applyTax, taxLabel: settings.taxLabel, taxRate: applyTax ? settings.taxRate : 0, taxable: R(taxableP), tax: R(taxP), total: R(taxableP + taxP),
+    listSubtotal: R(listSubP), lineDiscounts: R(lineDiscP), reduction: R(reductionP + discP),
     errors: errs, hasMissingPrice: anyMissing, canFinalize: errs.length === 0 && !anyMissing && albums.length > 0,
   };
 }

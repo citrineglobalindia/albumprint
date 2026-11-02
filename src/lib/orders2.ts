@@ -133,12 +133,15 @@ export async function previewSnapshot(payload: OrderDraft, priced?: PricedOrder)
   return { ...(priced ?? price(payload)), business: await businessProfile(), customer, event: payload.event, orderDate: todayIso(), dueDate: payload.event.delivery || addDays(todayIso(), pricingSettings().defaultDeliveryDays) };
 }
 
-/** Invoice lines in the same form the database writes them. */
+/** Everything charged below catalog prices (line discounts, lowered prices, the order discount) as a % of the order at catalog prices — the approval limit applies to this. */
+export const discountPct = (p: PricedOrder) => (p.listSubtotal > 0 ? (p.reduction * 100) / p.listSubtotal : 0);
+const lineNote = (l: PricedOrder["orderLines"][number], mult: number) => [l.rule, l.discount ? `less ${l.discountType === "percent" ? `${l.discountValue}% ` : ""}discount ₹${(Math.round(l.discount * mult * 100) / 100).toLocaleString("en-IN")}` : null].filter(Boolean).join(" · ") || undefined;
+/** Invoice lines in the same form the database writes them (gross; line discounts go into the invoice discount). */
 export function invoiceLines(p: PricedOrder): Line[] {
   const out: Line[] = [];
   for (const a of p.albums) for (const l of a.lines) {
     const what = l.scope === "copy" ? ` — ${l.method === "per_sheet" ? `${l.qty} sheets` : `${l.qty} ${l.unit}`}${a.copies > 1 ? ` × ${a.copies} copies` : ""}` : l.scope === "album" ? " — per album" : "";
-    out.push({ desc: l.name + what, qty: l.scope === "copy" ? l.qty * a.copies : 1, price: l.rate ?? 0, section: a.name, scope: l.scope, note: l.rule ?? undefined });
+    out.push({ desc: l.name + what, qty: l.scope === "copy" ? l.qty * a.copies : 1, price: l.rate ?? 0, section: a.name, scope: l.scope, note: lineNote(l, l.scope === "copy" ? a.copies : 1) });
   }
   for (const l of p.orderLines) out.push({ desc: `${l.name} — one-time order charge`, qty: 1, price: l.rate ?? 0, section: "Order charges", scope: "order", note: l.rule ?? undefined });
   return out;
@@ -169,7 +172,7 @@ export async function finalizeDraft(id: string | undefined, payload: OrderDraft)
 function finalizeLocal(draftId: string, payload: OrderDraft): { result: FinalizeResult; draftId: string } | { error: string } {
   const p = price(payload);
   if (!p.canFinalize) return { error: p.errors[0]?.message ?? "A price is not configured" };
-  const pct = p.subtotal > 0 ? (p.discountAmount * 100) / p.subtotal : 0;
+  const pct = discountPct(p);
   if (pct > DISCOUNT_APPROVAL_PCT && currentActor().role !== "admin") return { error: `A discount above ${DISCOUNT_APPROVAL_PCT}% needs an admin to finalize` };
   const designed = payload.orderType === "design_printing";
   const today = todayIso(), due = payload.event.delivery || addDays(today, pricingSettings().defaultDeliveryDays);
@@ -206,7 +209,7 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
   const inv: Invoice = {
     no: invoiceNo, kind: "invoice", orderId: order.id, customer: cust.studio, date: today, due, lines: invoiceLines(p), gstPct: 0, igst: false, discountPct: 0, status: "Sent", approval: pct > DISCOUNT_APPROVAL_PCT ? "approved" : "none",
     approvedBy: pct > DISCOUNT_APPROVAL_PCT ? currentActor().name : undefined, sentAt: new Date().toISOString(), notes: payload.event.notes || undefined,
-    v2: { subtotal: p.subtotal, discountType: p.discountType, discountValue: p.discountValue, discountAmount: p.discountAmount, taxLabel: p.taxEnabled ? p.taxLabel : null, taxRate: p.taxRate, taxAmount: p.tax, revision, snapshot },
+    v2: { subtotal: Math.round((p.subtotal + p.lineDiscounts) * 100) / 100, discountType: p.discountType, discountValue: p.discountValue, discountAmount: Math.round((p.discountAmount + p.lineDiscounts) * 100) / 100, taxLabel: p.taxEnabled ? p.taxLabel : null, taxRate: p.taxRate, taxAmount: p.tax, revision, snapshot },
   };
   INVOICES.unshift(inv);
   const rec: PricingRecord = { orderId: order.id, revision, status: "finalized", payload: { ...payload, reopenOrder: undefined }, snapshot, invoiceNo, finalizedAt: new Date().toISOString() };

@@ -155,11 +155,72 @@ test("a missing price shows “Price not configured” and blocks finalizing", a
   await page.getByRole("button", { name: /Albums & items/ }).click();
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Sample — Extras" }); await p1.getByLabel("Item").selectOption({ label: "Gold edges (unpriced)" }); await p1.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("album-lines-1")).toContainText("Price not configured");
+  await expect(page.getByLabel("Price of Gold edges (unpriced)")).toHaveAttribute("placeholder", "Not set");
   await expect(page.getByTestId("summary")).toContainText("Price not configured");
   await page.getByRole("button", { name: /^6\s*Finalize/ }).click();
   await expect(page.getByTestId("blocking")).toContainText("price not configured for “Gold edges (unpriced)”");
   await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeDisabled();
+  // typing a price on the line prices it for this order
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByLabel("Price of Gold edges (unpriced)").fill("250");
+  await expect(page.getByTestId("summary")).not.toContainText("Price not configured");
+  await page.getByRole("button", { name: /^6\s*Finalize/ }).click();
+  await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeEnabled();
+});
+
+test("album items table: search to add, edit description / qty / price / discount, totals, columns", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "reception");
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Table album", sheets: 30 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  const t = page.getByTestId("album-items-1");
+  // printing (sample 12x36 ₹120 × 30) is an automatic row
+  await expect(page.getByTestId("album-lines-1")).toContainText("automatic");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹3,600");
+  // search and add from inside the table
+  await t.getByRole("button", { name: "Add item" }).click();
+  await expect(t.getByLabel("Search products")).toBeFocused();
+  await t.getByLabel("Search products").fill("uv spot");
+  await t.getByRole("option", { name: /UV spot finish/ }).click();
+  await expect(t.getByLabel("Quantity of UV spot finish (sample, per sheet)")).toHaveValue("30");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹4,050");             // + 30 × 15
+  // Enter adds the single match; a duplicate is refused
+  await t.getByLabel("Search products").fill("mini book");
+  await t.getByLabel("Search products").press("Enter");
+  await expect(t.getByLabel("Quantity of Mini book (sample)")).toHaveValue("1");
+  await t.getByLabel("Search products").fill("mini book"); await t.getByLabel("Search products").press("Enter");
+  await expect(t.getByRole("alert")).toContainText("Already on this album");
+  await t.getByLabel("Search products").fill("");
+  // edit a row like an invoice
+  await t.getByLabel("Description of Mini book (sample)").fill("Parents copy");
+  await t.getByLabel("Quantity of Mini book (sample)").fill("2");                   // 2 × 450
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹4,950");
+  await t.getByLabel("Price of Mini book (sample)").fill("400");                   // 2 × 400
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹4,850");
+  await t.getByLabel("Discount on Mini book (sample)").fill("10");
+  await t.getByLabel("Discount type for Mini book (sample)").selectOption("percent"); // − 80
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹4,770");
+  await expect(page.getByTestId("album-lines-1")).toContainText("− ₹80 off");
+  await expect(page.getByTestId("total-qty-1")).toHaveText("62");                  // 30 printing + 30 UV + 2
+  // menu: back to the catalog price, remove the discount
+  await t.getByRole("button", { name: "More for Mini book (sample)" }).click();
+  await t.getByRole("menuitem", { name: "Use catalog price" }).click();
+  await t.getByRole("button", { name: "More for Mini book (sample)" }).click();
+  await t.getByRole("menuitem", { name: "Remove discount" }).click();
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹4,950");
+  // columns can be hidden
+  await t.getByRole("button", { name: "Columns" }).click();
+  await t.getByRole("dialog", { name: "Columns" }).getByLabel("Discount").uncheck();
+  await expect(t.getByLabel("Discount on Mini book (sample)")).toHaveCount(0);
+  await t.getByRole("dialog", { name: "Columns" }).getByLabel("Discount").check();
+  // a big line discount needs an admin (reception is refused at finalize)
+  await t.getByLabel("Discount on Mini book (sample)").fill("80");                 // ₹720 of ₹4,950 at catalog prices ≈ 14.5% > 10%
+  await t.getByLabel("Discount type for Mini book (sample)").selectOption("percent");
+  await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
+  await expect(page.getByTestId("invoice-preview").or(page.locator("body"))).toContainText("less 80% discount");
+  await next(page);
+  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await expect(page.getByRole("alert")).toContainText("needs an admin");
 });
 
 test("drafts: save, leave, resume with everything kept; steps keep their data", async ({ page }) => {
