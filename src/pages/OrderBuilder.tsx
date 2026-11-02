@@ -13,7 +13,7 @@ import { CUSTOMERS, ORDERS } from "../lib/data";
 import { LAMINATION, PAPER, SIZES, WORK_GROUPS } from "../lib/pricing";
 import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
-import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, pathOf, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
+import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
 import { DRAFTS, addDays, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
@@ -306,12 +306,11 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
     set({ items: id ? [...rest, { itemId: id, qty: 1 }] : rest });
   };
   const design = { mode: a.design?.mode || (rateCard("design") ? "card" as const : "per_sheet" as const), amount: a.design?.amount ?? "" };
-  // sheet allocation: per-sheet items are grouped by their top category (Paper, Lamination…); each group should add up to the album's sheets
+  // sheet allocation: the quantities of all per-sheet items together should add up to the album's sheets
   const albumSheets = Number(a.sheets) || 0;
-  const groupOf = (itemId: string) => { const it = itemById(itemId); return it ? pathOf(it.categoryId)[0]?.name ?? "Other" : "Other"; };
-  const sheetGroups = new Map<string, number>();
-  for (const x of a.items) { const it = itemById(x.itemId); if (it?.method !== "per_sheet") continue; const q = x.sheetQty == null || x.sheetQty === "" ? albumSheets : Number(x.sheetQty) || 0; sheetGroups.set(groupOf(x.itemId), (sheetGroups.get(groupOf(x.itemId)) ?? 0) + q); }
-  const sheetBalance = (it: { id: string; categoryId: string }): SheetBalance | null => { const g = groupOf(it.id); const used = sheetGroups.get(g) ?? 0; return { group: g, used, balance: albumSheets - used }; };
+  let sheetsUsed = 0, perSheetLines = 0;
+  for (const x of a.items) { const it = itemById(x.itemId); if (it?.method !== "per_sheet") continue; perSheetLines++; sheetsUsed += x.sheetQty == null || x.sheetQty === "" ? albumSheets : Number(x.sheetQty) || 0; }
+  const sheetBalance = (): SheetBalance => ({ group: "this album", used: sheetsUsed, balance: albumSheets - sheetsUsed });
   const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
@@ -372,14 +371,12 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, set, onDuplicat
           <tr><td colSpan={4} className="py-1 text-right font-extrabold">Album total</td><td className="text-right font-extrabold tabular-nums" data-testid={`album-total-${n}`}>{money(priced.total)}</td><td /></tr>
         </tfoot>}
       </table></div>
-      {sheetGroups.size > 0 && albumSheets > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2" data-testid={`sheet-allocation-${n}`} aria-label="Sheet allocation">
-          {[...sheetGroups].map(([g, used]) => { const bal = albumSheets - used; return (
-            <span key={g} className={cx("rounded-lg border px-3 py-1.5 text-xs font-semibold", bal === 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : bal > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700")} data-testid={`sheet-balance-${g}`}>
-              {g}: {used} of {albumSheets} sheets · {bal === 0 ? "all allocated ✓" : bal > 0 ? `balance ${bal}` : `${-bal} over`}
-            </span>); })}
-        </div>
-      )}
+      {perSheetLines > 0 && albumSheets > 0 && (() => { const bal = albumSheets - sheetsUsed; return (
+        <div className="mt-3" data-testid={`sheet-allocation-${n}`} aria-label="Sheet allocation">
+          <span className={cx("inline-block rounded-lg border px-3 py-1.5 text-xs font-semibold", bal === 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : bal > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700")} data-testid={`sheet-balance-${n}`}>
+            Sheets: {sheetsUsed} of {albumSheets} allocated · {bal === 0 ? "all allocated ✓" : bal > 0 ? `balance ${bal}` : `${-bal} over`}
+          </span>
+        </div>); })()}
       <div className="mt-4"><Field label="Additional requirements & notes"><textarea aria-label="Album notes" className="h-20 w-full rounded-lg border border-line p-3 text-sm outline-none focus:border-brand" value={a.notes} maxLength={1000} onChange={(e) => set({ notes: e.target.value })} /></Field></div>
     </section>
   );

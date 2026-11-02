@@ -169,7 +169,7 @@ test("delete from the Prices tab: one row, or several selected", async ({ page }
   await expect(page.getByLabel("Rate for Sample — Covers ▸ Leatherette cover (sample)")).toBeVisible();
 });
 
-test("sheet balance: per-sheet items in a group share the album's sheets; the next item starts at the balance", async ({ page }) => {
+test("sheet balance: all per-sheet items share the album's sheets; the next item starts at the balance", async ({ page }) => {
   test.setTimeout(120_000);
   await seedRole(page, "admin");
   await page.goto("/catalog");
@@ -196,17 +196,23 @@ test("sheet balance: per-sheet items in a group share the album's sheets; the ne
   await expect(p1.getByLabel("Quantity")).toHaveValue("30");                        // first one: all sheets
   await p1.getByLabel("Quantity").fill("5");
   await p1.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("sheet-balance-Lamination")).toHaveText("Lamination: 5 of 30 sheets · balance 25");
+  await expect(page.getByTestId("sheet-balance-1")).toHaveText("Sheets: 5 of 30 allocated · balance 25");
 
   await addLam("HOLOGRAM-HOLOGRAM LINE");
   await expect(p1.getByLabel("Quantity")).toHaveValue("25");                        // starts at the balance
-  await expect(p1.getByTestId("sheet-balance-hint")).toHaveText("· balance 25 of 30 in Lamination");
+  await expect(p1.getByTestId("sheet-balance-hint")).toHaveText("· balance 25 of 30");
   await p1.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("sheet-balance-Lamination")).toHaveText("Lamination: 30 of 30 sheets · all allocated ✓");
+  await expect(page.getByTestId("sheet-balance-1")).toHaveText("Sheets: 30 of 30 allocated · all allocated ✓");
   await expect(page.getByTestId("per-copy-1")).toContainText("5,875");              // printing 30×90 (demo sample) + 5×85 + 25×110
 
   await a1.getByLabel("Sheets", { exact: true }).fill("40");
-  await expect(page.getByTestId("sheet-balance-Lamination")).toHaveText("Lamination: 30 of 40 sheets · balance 10");
+  await expect(page.getByTestId("sheet-balance-1")).toHaveText("Sheets: 30 of 40 allocated · balance 10");
+  // a Paper item counts toward the same total
+  await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Paper" });
+  await p1.getByLabel("Item").selectOption({ label: "TRANSPARENT" });
+  await expect(p1.getByLabel("Quantity")).toHaveValue("10");
+  await p1.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByTestId("sheet-balance-1")).toHaveText("Sheets: 40 of 40 allocated · all allocated ✓");
   await a1.getByLabel("Quantity of HOLOGRAM-HOLOGRAM LINE").fill("40");
-  await expect(page.getByTestId("sheet-balance-Lamination")).toHaveText("Lamination: 45 of 40 sheets · 5 over");
+  await expect(page.getByTestId("sheet-balance-1")).toHaveText("Sheets: 55 of 40 allocated · 15 over");
 });

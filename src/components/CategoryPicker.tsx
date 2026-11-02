@@ -10,7 +10,7 @@ const LEVEL = ["Category", "Subcategory", "Level 3", "Level 4"];
 /** Dependent dropdowns: each level shows only the active children of the level above (and only branches that hold something usable);
  *  changing a level clears everything below it. The item list shows the active items of the deepest level chosen. */
 /** sheets: the album's sheet count — a per-sheet item's quantity follows it automatically unless the user types another number. */
-/** sheetBalance: for a per-sheet item, how many of the album's sheets its group (top category, e.g. Paper) already uses — the Qty starts at the balance. */
+/** sheetBalance: how many of the album's sheets the per-sheet items already use — a new per-sheet item's Qty starts at the balance. */
 export type SheetBalance = { group: string; used: number; balance: number };
 export function CategoryPicker({ accept, onAdd, label = "Add item", testId, sheets, sheetBalance }: { accept: (i: CItem) => boolean; onAdd: (itemId: string, qty: number, sheetQty?: number) => string | null; label?: string; testId?: string; sheets?: number | string; sheetBalance?: (i: CItem) => SheetBalance | null }) {
   useStore();
@@ -48,7 +48,7 @@ export function CategoryPicker({ accept, onAdd, label = "Add item", testId, shee
     if (!item) { setMsg("Choose an item"); return; }
     const q = Number(qty);
     if (item.method === "per_unit" && (!Number.isInteger(q) || q < 1)) { setMsg("Enter a whole-number quantity of 1 or more"); return; }
-    if (item.method === "per_sheet" && bal && bal.used > 0 && bal.balance <= 0 && (sheetQty === "0" || sheetQty === "")) { setMsg(`All ${autoSheets} sheets are already allocated in ${bal.group} — reduce another line first, or type a quantity`); return; }
+    if (item.method === "per_sheet" && bal && bal.used > 0 && bal.balance <= 0 && (sheetQty === "0" || sheetQty === "")) { setMsg(`All ${autoSheets} sheets are already allocated — reduce another line first, or type a quantity`); return; }
     let sq: number | undefined;
     if (item.method === "per_sheet" && sheetQty != null && sheetQty !== autoSheets) {
       sq = Number(sheetQty);
@@ -82,7 +82,7 @@ export function CategoryPicker({ accept, onAdd, label = "Add item", testId, shee
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1 text-xs text-sub">{METHOD_LABEL[item.method]}{item.rate != null ? ` · standard ${money(item.rate)} / ${item.unit}` : " · priced by requirement"}{item.description ? ` · ${item.description}` : ""}</div>
           {item.method === "per_unit" && <label className="text-[11px] font-bold text-sub">Qty<input aria-label="Quantity" type="number" min={1} step={1} className={cx(inputCls, "mt-1 w-24")} value={qty} onChange={(e) => setQty(e.target.value)} /></label>}
-          {item.method === "per_sheet" && <label className="text-[11px] font-bold text-sub">Qty (sheets){bal && bal.used > 0 ? <span className={cx("ml-1 font-semibold", bal.balance > 0 ? "text-amber-700" : "text-rose-600")} data-testid="sheet-balance-hint">· balance {Math.max(bal.balance, 0)} of {autoSheets} in {bal.group}</span>
+          {item.method === "per_sheet" && <label className="text-[11px] font-bold text-sub">Qty (sheets){bal && bal.used > 0 ? <span className={cx("ml-1 font-semibold", bal.balance > 0 ? "text-amber-700" : "text-rose-600")} data-testid="sheet-balance-hint">· balance {Math.max(bal.balance, 0)} of {autoSheets}</span>
               : sheetQty == null ? <span className="ml-1 font-semibold text-emerald-700">· auto = album sheets</span> : <button type="button" onClick={() => setSheetQty(null)} className="ml-1 font-semibold text-brand hover:underline">· back to auto</button>}
             <input aria-label="Quantity" type="number" min={1} step={1} className={cx(inputCls, "mt-1 w-24")} placeholder="Sheets" value={sheetQty ?? autoSheets} onChange={(e) => setSheetQty(e.target.value)} /></label>}
           {(item.method === "fixed_per_album" || item.method === "one_time_order") && <label className="text-[11px] font-bold text-sub">Qty<input aria-label="Quantity" disabled className={cx(inputCls, "mt-1 w-24 bg-slate-100")} value={item.method === "fixed_per_album" ? "1 / album" : "1 / order"} readOnly /></label>}
