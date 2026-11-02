@@ -6,7 +6,7 @@ import { CUSTOMERS, ORDERS, type Customer, type Order } from "./data";
 import { INVOICES, type Invoice, type Line } from "./finance";
 import { loadSettings } from "./localState";
 import { DISCOUNT_APPROVAL_PCT, blankAlbum, type AlbumSpec } from "./pricing";
-import { ITEMS, RATES, newId, pricingSettings } from "./catalog2";
+import { ITEMS, RATES, newId, pricingSettings, registerItemUsage } from "./catalog2";
 import { priceOrder, type DraftAlbum, type OrderDraft, type PricedOrder } from "./orderPricing";
 import { mobileError, TODAY } from "./format";
 import { notifyOrderCreated } from "./events";
@@ -28,6 +28,7 @@ export interface PricingRecord {
 export const DRAFTS: StoredDraft[] = persistArray<StoredDraft>("order_drafts", []);
 export const PRICING: PricingRecord[] = persistArray<PricingRecord>("order_pricing", []);
 export const pricingOf = (orderCode: string) => PRICING.find((p) => p.orderId === orderCode);
+registerItemUsage(() => new Set(PRICING.flatMap((p) => [...p.snapshot.albums.flatMap((a) => a.lines.map((l) => l.itemId)), ...p.snapshot.orderLines.map((l) => l.itemId)])));
 
 // ───────── drafts ─────────
 const todayIso = () => { const d = TODAY; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { seedRole } from "./helpers";
+import { seedRole, buildOrder } from "./helpers";
 
 // Product list import (the previous system's hierarchy) + the Prices grid + CSV round trip, then the price used in an order.
 const items = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("albumpro.v1.cat2_items") ?? "[]") as { name: string; rate: number | null; method: string; unit: string }[]);
@@ -93,4 +93,43 @@ test("import the product list, price it in bulk, use the price in an order", asy
   await a1.getByRole("button", { name: "Match GLOSSY to album sheets" }).click();
   await expect(a1.getByLabel("Quantity of GLOSSY")).toHaveValue("14");
   await expect(page.getByTestId("per-copy-1")).toHaveText("₹2,340");              // 14×130 + 450 + 14×5
+});
+
+test("delete an item and a whole category branch; items used on orders are protected", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await page.goto("/catalog");
+  await page.getByRole("button", { name: "Import product list" }).click();
+  await page.getByRole("tab", { name: "Categories & items" }).or(page.getByRole("button", { name: "Categories & items" })).first().click();
+
+  // one item
+  await page.getByTestId("cat-Bag").click();
+  await page.getByRole("button", { name: "Delete JUTE BAG" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Bag ▸ JUTE BAG");
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("“JUTE BAG” deleted").first()).toBeVisible();
+  await expect(page.getByTestId("item-JUTE BAG")).toHaveCount(0);
+
+  // a whole branch: Bag ▸ NORMAL (3 items) and MATHCINGBAG (2) go with Bag
+  await page.getByRole("button", { name: "Delete category Bag" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("2 sub-categories and 5 item(s)");
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("cat-Bag")).toBeVisible();                        // cancel keeps everything
+  await page.getByRole("button", { name: "Delete category Bag" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("“Bag” deleted").first()).toBeVisible();
+  await expect(page.getByTestId("cat-Bag")).toHaveCount(0);
+  await expect.poll(async () => (await items(page)).filter((i) => ["12X18", "12X15", "12X9", "JUTE BAG"].includes(i.name)).length).toBe(0);
+
+  // an item on a finalized order cannot be deleted (sample cover used by an order)
+  await buildOrder(page, { albums: [{ name: "Album", sheets: 10, cover: "Leatherette cover (sample)" }], finalize: true });
+  await page.goto("/catalog");
+  await page.getByTestId("cat-Sample — Covers").click();
+  await page.getByRole("button", { name: "Delete Leatherette cover (sample)" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText(/used on existing orders, so it cannot be deleted/).first()).toBeVisible();
+  await expect(page.getByTestId("item-Leatherette cover (sample)")).toBeVisible();
+  await page.getByRole("button", { name: "Delete category Sample — Covers" }).click();
+  await expect(page.getByText(/holds 1 item\(s\) used on existing orders/).first()).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
 });

@@ -55,6 +55,8 @@ registerCatalog2Backend({
     const { data, error } = await sb().rpc("cat_import_tree", { p: entries }); if (error) return error.message;
     const e = await loadCatalog(); if (e) return e; return Number(data ?? 0);
   },
+  async deleteItem(id) { const { error } = await sb().rpc("cat_delete_item", { p_item: id }); return msg(error); },
+  async deleteCategory(id) { const { error } = await sb().rpc("cat_delete_category", { p_cat: id }); return msg(error); },
   async setPrices(rows) { const { error } = await sb().rpc("cat_set_prices", { p: rows }); return msg(error); },
 });
 

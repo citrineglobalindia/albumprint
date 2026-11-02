@@ -74,6 +74,8 @@ type Backend = {
   importClassic: () => Promise<number | string>;
   importTree: (entries: TreeEntry[]) => Promise<number | string>;
   setPrices: (rows: PriceRow[]) => Promise<string | null>;
+  deleteItem: (id: string) => Promise<string | null>;
+  deleteCategory: (id: string) => Promise<string | null>;
   load: () => Promise<string | null>;
 };
 let backend: Backend | null = null;
@@ -332,4 +334,43 @@ export async function importPricesCsv(text: string): Promise<{ added: number; pr
   }
   const e = await savePrices(updates); if (e) return { error: e };
   return { added, priced: updates.length };
+}
+
+// ───────── delete ─────────
+/** Demo mode: which item ids appear on finalized orders (registered by orders2 to avoid a circular import). The database checks this itself. */
+let usedItems: () => Set<string> = () => new Set();
+export const registerItemUsage = (f: () => Set<string>) => { usedItems = f; };
+const USED_MSG = (name: string) => `“${name}” is used on existing orders, so it cannot be deleted — switch it off (Inactive) instead`;
+
+/** What deleting a category removes: itself, its sub-categories, their items and rate rules. */
+export function branchSummary(categoryId: string) {
+  const cats = [categoryId, ...descendantsOf(categoryId)];
+  const items = ITEMS.filter((i) => cats.includes(i.categoryId));
+  const used = usedItems(); const usedCount = items.filter((i) => used.has(i.id)).length;
+  return { categories: cats.length, items: items.length, used: usedCount };
+}
+export async function deleteItem(id: string): Promise<string | null> {
+  const it = itemById(id); if (!it) return "Item not found";
+  if (backendOn) { if (!backend) return NOT_CONNECTED; const e = await backend.deleteItem(id); if (e) return e; }
+  else if (usedItems().has(id)) return USED_MSG(it.name);
+  ITEMS.splice(ITEMS.indexOf(it), 1);
+  for (let k = RATES.length - 1; k >= 0; k--) if (RATES[k]!.itemId === id) RATES.splice(k, 1);
+  notify();
+  if (!backendOn) logAudit({ entity: "catalog_item", entityId: id, action: "delete", detail: `${pathLabel(it.categoryId)} ▸ ${it.name}` });
+  return null;
+}
+export async function deleteCategory(id: string): Promise<string | null> {
+  const c = categoryById(id); if (!c) return "Category not found";
+  const sum = branchSummary(id);
+  if (backendOn) { if (!backend) return NOT_CONNECTED; const e = await backend.deleteCategory(id); if (e) return e; }
+  else if (sum.used) return `“${c.name}” holds ${sum.used} item(s) used on existing orders, so it cannot be deleted — switch it off (Inactive) instead`;
+  const label = pathLabel(id);
+  const cats = new Set([id, ...descendantsOf(id)]);
+  const gone = new Set(ITEMS.filter((i) => cats.has(i.categoryId)).map((i) => i.id));
+  for (let k = RATES.length - 1; k >= 0; k--) if (gone.has(RATES[k]!.itemId)) RATES.splice(k, 1);
+  for (let k = ITEMS.length - 1; k >= 0; k--) if (gone.has(ITEMS[k]!.id)) ITEMS.splice(k, 1);
+  for (let k = CATEGORIES.length - 1; k >= 0; k--) if (cats.has(CATEGORIES[k]!.id)) CATEGORIES.splice(k, 1);
+  notify();
+  if (!backendOn) logAudit({ entity: "catalog_category", entityId: id, action: "delete", detail: `${label} (${sum.categories} categor${sum.categories === 1 ? "y" : "ies"}, ${sum.items} item(s))` });
+  return null;
 }

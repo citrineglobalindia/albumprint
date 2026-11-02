@@ -3,11 +3,13 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FolderPlus, ListTree, Li
 import { Field, LineTabs, PageHeader, Panel, Pill, SlideOver, Td, Th, Toggle, cx, inputCls, tableCls, trCls } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { PriceGrid } from "../components/PriceGrid";
+import { useConfirm } from "../components/ConfirmDialog";
+import "../lib/orders2";                                   // registers which items are on finalized orders (delete protection in demo mode)
 import { useStore } from "../lib/store";
 import { backendOn } from "../lib/supabase";
 import { LAMINATION, PAPER, SIZES } from "../lib/pricing";
 import {
-  CATEGORIES, ITEMS, KIND_LABEL, MAX_DEPTH, METHOD_LABEL, RATES, SCOPE_LABEL, categoryById, childrenOf, descendantsOf, importClassic, importProductList, itemsIn, loadCatalog2, loadSampleCatalog, pathLabel, pricingSettings,
+  CATEGORIES, ITEMS, KIND_LABEL, MAX_DEPTH, METHOD_LABEL, RATES, SCOPE_LABEL, categoryById, childrenOf, descendantsOf, deleteCategory, deleteItem, branchSummary, importClassic, importProductList, itemsIn, loadCatalog2, loadSampleCatalog, pathLabel, pricingSettings,
   removeRate, saveCategory, saveItem, savePricingSettings, saveRate, seedDemoCatalog, type CItem, type Category, type OptionKind, type PricingMethod,
 } from "../lib/catalog2";
 import { scopeOf } from "../lib/orderPricing";
@@ -24,6 +26,16 @@ export default function CatalogAdmin() {
   const [itemForm, setItemForm] = useState<Partial<CItem> & { categoryId: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dialog, confirm] = useConfirm();
+  const askDeleteCategory = (c: Category) => {
+    const b = branchSummary(c.id);
+    const what = [b.categories > 1 && `${b.categories - 1} sub-categor${b.categories - 1 === 1 ? "y" : "ies"}`, b.items && `${b.items} item(s) and their rates`].filter(Boolean).join(" and ");
+    if (b.used) { show(`“${c.name}” holds ${b.used} item(s) used on existing orders, so it cannot be deleted — switch it off (Inactive) instead`); return; }
+    confirm({ title: `Delete “${c.name}”?`, message: `${pathLabel(c.id)}${what ? ` — this also deletes ${what}` : ""}. Saved drafts that use these items will ask for a replacement. This cannot be undone.`, confirmLabel: "Delete", danger: true },
+      async () => { const e = await deleteCategory(c.id); if (e) { show(e); return; } setSel(c.parentId); show(`“${c.name}” deleted`); });
+  };
+  const askDeleteItem = (i: CItem) => confirm({ title: `Delete “${i.name}”?`, message: `${pathLabel(i.categoryId)} ▸ ${i.name}${RATES.some((r) => r.itemId === i.id) ? " and its rate rules" : ""}. Saved drafts that use it will ask for a replacement. This cannot be undone.`, confirmLabel: "Delete", danger: true },
+    async () => { const e = await deleteItem(i.id); show(e ?? `“${i.name}” deleted`); });
   const [toast, show] = useToast();
   useEffect(() => { seedDemoCatalog(); void loadCatalog2().then((e) => e && setErr(e)); }, []);
   const cur = categoryById(sel);
@@ -75,6 +87,7 @@ export default function CatalogAdmin() {
                   action={<div className="flex gap-2">
                     <button onClick={() => setCatForm({ id: cur.id, parentId: cur.parentId, name: cur.name, sort: cur.sort, active: cur.active })} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><Pencil className="size-3.5" />Edit</button>
                     {cur.depth < MAX_DEPTH && <button onClick={() => setCatForm({ parentId: cur.id, name: "", sort: childrenOf(cur.id).length + 1, active: true })} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><FolderPlus className="size-3.5" />Add {LEVEL[cur.depth]?.toLowerCase()}</button>}
+                    <button aria-label={`Delete category ${cur.name}`} onClick={() => askDeleteCategory(cur)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="size-3.5" />Delete</button>
                   </div>}>
                   <div className="flex flex-wrap gap-2 text-xs">{childrenOf(cur.id).map((k) => <button key={k.id} onClick={() => setSel(k.id)} className={cx("rounded-full border border-line px-3 py-1 font-semibold hover:bg-brand-soft", !k.active && "text-sub line-through")}>{k.name}</button>)}
                     {!childrenOf(cur.id).length && <span className="text-sub">No sub-categories (that is fine — levels are optional).</span>}</div>
@@ -88,7 +101,8 @@ export default function CatalogAdmin() {
                         <Td className="font-semibold">{i.name}{i.kind && <Pill tone="indigo" className="ml-2 !py-0 text-[10px]">{KIND_LABEL[i.kind]}</Pill>}{i.sample && <Pill tone="amber" className="ml-1 !py-0 text-[10px]">Sample</Pill>}</Td>
                         <Td className="text-sub">{i.code ?? "—"}</Td><Td className="text-xs">{METHOD_LABEL[i.method]}</Td><Td className="text-right tabular-nums">{fmt(i.rate)}</Td><Td>{i.unit}</Td>
                         <Td>{RATES.filter((r) => r.itemId === i.id).length || "—"}</Td><Td><Pill tone={i.active ? "green" : "slate"}>{i.active ? "Active" : "Inactive"}</Pill></Td>
-                        <Td><button aria-label={`Edit ${i.name}`} onClick={() => setItemForm({ ...i })} className="text-xs font-bold text-brand hover:underline">Edit</button></Td>
+                        <Td className="whitespace-nowrap"><button aria-label={`Edit ${i.name}`} onClick={() => setItemForm({ ...i })} className="text-xs font-bold text-brand hover:underline">Edit</button>
+                          <button aria-label={`Delete ${i.name}`} onClick={() => askDeleteItem(i)} className="ml-3 align-middle text-rose-600 hover:text-rose-700"><Trash2 className="inline size-4" /></button></Td>
                       </tr>))}
                       {!itemsIn(cur.id).length && <tr><td colSpan={8} className="p-6 text-center text-sm text-sub">No items directly in this category.</td></tr>}
                     </tbody>
@@ -101,6 +115,7 @@ export default function CatalogAdmin() {
       )}
       {catForm && <CategoryForm f={catForm} onClose={() => setCatForm(null)} onSaved={(id, m) => { setCatForm(null); setSel(id); show(m); }} />}
       {itemForm && <ItemForm f={itemForm} onClose={() => setItemForm(null)} onSaved={(m) => { show(m); }} />}
+      {dialog}
       {toast}
     </div>
   );

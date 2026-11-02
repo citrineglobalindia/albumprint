@@ -51,5 +51,21 @@ select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text || '/
 select t.eq($$select l->>'qty' from jsonb_array_elements(t.sq('{"sheetQty": ""}')->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '30', 'sheet qty: blank means auto');
 select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": "2.5"}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: a fraction is refused');
 select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": 0}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: zero is refused');
+
+-- delete (0040)
+select t.as('admin');
+select t.err($$select cat_delete_item(t.id('i_leather'))$$, 'delete: an item used on an order is kept', 'used on existing orders');
+select t.err($$select cat_delete_category(t.id('covers'))$$, 'delete: a category holding an item used on an order is kept', 'used on existing orders');
+select t.eq($$select count(*)::text from cat_items where id = t.id('i_leather')$$, '1', 'delete: (still there)');
+select t.ok($$select cat_delete_item((select id from cat_items where name = 'Sheet lam'))$$, 'delete: an unused item');
+select t.eq($$select count(*)::text from cat_items where name = 'Sheet lam'$$, '0', 'delete: (gone)');
+select t.eq($$select cat_delete_category((select id from cat_categories where name = 'Bulk Paper'))::text$$, '{"items": 3, "categories": 7}', 'delete: a whole branch (sub-categories and items)');
+select t.eq($$select count(*)::text from cat_categories where name in ('Bulk Paper', '170 GSM', 'SINGLE SIDE', 'A3 PAPER')$$, '0', 'delete: (branch gone)');
+select t.as('system');
+select t.eq($$select count(*)::text from audit_log where entity in ('cat_items', 'cat_categories') and action = 'delete'$$, '11', 'delete: every deleted row is audited');
+select t.as('reception');
+select t.err($$select cat_delete_item((select id from cat_items where name = 'JUTE BAG'))$$, 'delete: only an administrator (item)', 'administrator');
+select t.err($$select cat_delete_category((select id from cat_categories where name = 'Bulk Bag'))$$, 'delete: only an administrator (category)', 'administrator');
+select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED
