@@ -12,7 +12,7 @@ import { useStore, useSlashFocus } from "../lib/store";
 import { fmtDate, TODAY } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
-import { FILES, MAX_TEXT, fmtSize } from "../lib/files";
+import { FILES, MAX_TEXT, fmtSize, uploadsRequired } from "../lib/files";
 import { backendOn } from "../lib/supabase";
 import { slaState } from "../lib/sla";
 import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
@@ -257,7 +257,7 @@ export default function ColourGrading() {
                   <div className="mt-1 h-1 overflow-hidden rounded bg-line"><div className="h-full bg-brand transition-all" style={{ width: `${x.progress ?? 5}%` }} /></div>
                 </li>
               ))}
-              {files.length === 0 && uploading.length === 0 && <li className="text-xs text-sub">No graded files yet.</li>}
+              {files.length === 0 && uploading.length === 0 && <li className="text-xs text-sub" data-testid="no-files">No graded files yet.{!uploadsRequired() && " Uploading is optional: you can submit without files (e.g. put the drive link in the internal note)."}</li>}
             </ul>
 
             {canEdit && cur.status === "In Progress" && (<>

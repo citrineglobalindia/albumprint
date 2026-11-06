@@ -14,7 +14,7 @@ import { ProcessTracker } from "../components/ProcessTracker";
 import { pricingOf } from "../lib/orders2";
 import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
-import { FILES, addFile, lockFile, archiveFile, downloadFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
+import { FILES, uploadsRequired, addFile, lockFile, archiveFile, downloadFile, fmtSize, type FileCategory, type FileRec, type FileState } from "../lib/files";
 import { proofApproved } from "../lib/proofs";
 import { cancelOrder, closeOrder, moveStage, nextStages, reopenOrder, setHold, type Result } from "../lib/workflow";
 import { editOrder } from "../lib/orderEdit";
@@ -91,7 +91,7 @@ export default function OrderDetail() {
   // Gate hints so the user knows why a forward step will be refused before they try it.
   const hints: string[] = [];
   if (o.stage === "final_approval" && !printingOnly && !proofApproved(o.id)) hints.push("Release to Printing needs the client's approval on the latest proof (see Client Proofing).");
-  if (o.stage === "files_received" && printingOnly && !FILES.some((f) => f.orderId === o.id && f.category === "Final Print" && !f.archived)) hints.push("Upload a print-ready file (category Final Print) before moving to Printing.");
+  if (o.stage === "files_received" && printingOnly && uploadsRequired() && !FILES.some((f) => f.orderId === o.id && f.category === "Final Print" && !f.archived)) hints.push("Upload a print-ready file (category Final Print) before moving to Printing.");
   if (o.stage === "qc" && o.qc !== "passed") hints.push("QC must pass before the order can be marked Ready for Delivery.");
   if (o.stage === "delivered" && !o.closed && bal > 0) hints.push(`${inr(bal)} is still outstanding — closing will need an override reason.`);
 

@@ -62,5 +62,20 @@ reset role; set role anon;
 do $$ begin perform order_stage_history(current_setting('t.any_order')::uuid); raise exception 'FAIL history: anon could read the stage history';
   exception when insufficient_privilege then raise notice 'ok - history: nothing without signing in'; end $$;
 reset role;
+
+-- uploads are optional unless the admin requires them (0050)
+reset role;
+update settings set value = value || '{"wf_require_uploads": false}' where key = 'workflow';
+select set_config('t.up_order', t.neworder('colour_grading')::text, false);
+insert into tasks(order_id, kind, assignee) values (current_setting('t.up_order')::uuid, 'grading', (select v from t.aa where k = 'colour'))
+  on conflict do nothing;
+update tasks set assignee = (select v from t.aa where k = 'colour') where order_id = current_setting('t.up_order')::uuid and kind = 'grading';
+select t.as('colour');
+select t.ok($$update tasks set status = 'in_progress' where kind = 'grading' and order_id = current_setting('t.up_order')::uuid$$, 'uploads optional: grader starts');
+select t.ok($$update tasks set status = 'submitted' where kind = 'grading' and order_id = current_setting('t.up_order')::uuid$$, 'uploads optional: grader submits without a graded file');
+reset role;
+update settings set value = value || '{"wf_require_uploads": true}' where key = 'workflow';
+select t.eq($$select uploads_required()::text$$, 'true', 'uploads required: the switch is read');
+update settings set value = value || '{"wf_require_uploads": false}' where key = 'workflow';
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

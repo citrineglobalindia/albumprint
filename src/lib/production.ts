@@ -2,7 +2,7 @@ import { notifyQcFailed } from "./events";
 import { persistArray } from "./persist";
 import { ORDERS, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
-import { FILES, addFile } from "./files";
+import { FILES, addFile, uploadsRequired } from "./files";
 import { moveStage, setHold, closeOrder, reopenOrder, nextStages } from "./workflow";
 import { notify } from "./store";
 import type { RoleKey } from "./auth";
@@ -135,7 +135,7 @@ export function submitGrading(orderId: string): Out {
   const g = gate(orderId, "grading"); if (isOut(g)) return g;
   const j = gjob(orderId); if (!j) return no("No grading job for this order");
   if (j.status !== "In Progress") return no(j.status === "Rework" ? "Acknowledge the revision before resubmitting" : "Only jobs in progress can be submitted");
-  if (!gradedFiles(orderId).length) return no("Upload at least one graded file before submitting");
+  if (uploadsRequired() && !gradedFiles(orderId).length) return no("Upload at least one graded file before submitting");
   const r = moveStage(orderId, "admin_approval"); if (!r.ok) return no(r.error);
   const resub = j.rounds > 0;
   const prev = { status: j.status, rounds: j.rounds, submittedAt: j.submittedAt, revision: j.revision, ack: j.revisionAck, files: gradedFiles(orderId).map((f) => [f, f.state] as const) };

@@ -1,7 +1,7 @@
 import { notifyStage } from "./events";
 import { ORDERS, STAGES, stageLabel, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
-import { hasPrintReadyFile } from "./files";
+import { hasPrintReadyFile, uploadsRequired } from "./files";
 import { proofApproved } from "./proofs";
 import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
@@ -63,7 +63,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   }
   if (!opts.override) {                                                                                   // gates
     if (o.stage === "final_approval" && to === "printing" && flowOf(o) === "Design + Printing" && !proofApproved(o.id)) return fail("Final client approval is required before release to printing");   // ALB-FR-0495
-    if (o.stage === "files_received" && to === "printing" && flowOf(o) === "Printing" && !hasPrintReadyFile(o.id)) return fail("Upload a print-ready file (category Final Print) before printing");               // ALB-FR-0077
+    if (o.stage === "files_received" && to === "printing" && flowOf(o) === "Printing" && uploadsRequired() && !hasPrintReadyFile(o.id)) return fail("Upload a print-ready file (category Final Print) before printing");               // ALB-FR-0077
     if (to === "ready_for_delivery" && !qcPassed(o)) return fail("QC must pass before Ready for Delivery");                                                                                              // ALB-FR-0496
   }
   const from = o.stage; const prev = { progress: o.progress, qc: o.qc };

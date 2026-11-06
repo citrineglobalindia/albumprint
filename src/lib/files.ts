@@ -1,6 +1,7 @@
 import { persistArray } from "./persist";
 import { logAudit, currentActor } from "./audit";
 import { backendOn } from "./supabase";
+import { loadSettings } from "./localState";
 import { notify } from "./store";
 import { reportDbError, writeThrough } from "./db/core";
 import { dbArchiveFile, dbLockFile, signedUrl, storagePathFor, uploadAndRegister } from "./db/files";
@@ -46,6 +47,8 @@ export function addFile(orderId: string, category: FileCategory, name: string, s
   return { ok: true, file: rec, done };
 }
 export const filesFor = (orderId: string) => FILES.filter((f) => f.orderId === orderId && !f.archived && !f.pending);
+/** Settings › Workflow › "Require file uploads": off (default) lets a grader submit and a printing-only order go to printing without an upload. */
+export const uploadsRequired = () => loadSettings().wf_require_uploads === true;
 export const hasPrintReadyFile = (orderId: string) => FILES.some((f) => f.orderId === orderId && f.category === "Final Print" && !f.archived && !f.pending);
 export function lockFile(id: string) {
   const f = FILES.find((x) => x.id === id); if (!f) return;
