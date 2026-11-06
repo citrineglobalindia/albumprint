@@ -10,6 +10,7 @@ import { fmtDate, inr } from "../lib/format";
 import CostingPanel from "../components/CostingPanel";
 import OrderPricingPanel from "../components/OrderPricingPanel";
 import { AssignOrder } from "../components/AssignOrder";
+import { ProcessTracker } from "../components/ProcessTracker";
 import { pricingOf } from "../lib/orders2";
 import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
@@ -153,6 +154,10 @@ export default function OrderDetail() {
             );
           })}
         </div>
+        <details className="mt-3 border-t border-line pt-3" open>
+          <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-sub">Process · who does each step</summary>
+          <div className="mt-2"><ProcessTracker o={o} role={role} tick={tick} /></div>
+        </details>
       </Panel>
 
       {pricingOf(o.id) ? <OrderPricingPanel o={o} show={show} /> : <CostingPanel o={o} show={show} fail={fail} />}

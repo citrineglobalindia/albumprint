@@ -1,3 +1,4 @@
+import { loadSettings } from "../lib/localState";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Upload, Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
@@ -76,6 +77,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   useStore();
   const { role } = useAuth();
   const isAdmin = role === "admin";
+  const needsReview = loadSettings().wf_design_review === true;          // Settings › General: admin reviews designs before the client (off: the designer sends the proof)
   const meta = metaFor(order.id);
   const proof = latestProof(order.id);
   const clientApproved = proofApproved(order.id);
@@ -306,7 +308,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   };
   const openSend = () => {
     const m = validate(); if (m) return err(m);
-    if (!meta.adminApproved && !isAdmin) return err("Admin must approve the design before it is sent to the client");
+    if (needsReview && !meta.adminApproved && !isAdmin) return err("Admin must approve the design before it is sent to the client");
     setSendErr(""); setSendOpen(true);
   };
   const cust = CUSTOMERS.find((c) => c.name === order.customer);
@@ -627,16 +629,16 @@ function DesignWorkspace({ order }: { order: Order }) {
             {stage === "designing" && (
               <div className="mt-4 space-y-2">
                 {status === "Pending Admin Review" && !isAdmin && <Banner tone="blue">Submitted - waiting for admin review</Banner>}
-                {!meta.adminApproved && !isAdmin && (
+                {needsReview && !meta.adminApproved && !isAdmin && (
                   <button onClick={submitForReview} disabled={meta.submitted} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark disabled:bg-slate-300"><CheckCircle2 className="size-4" />{meta.submitted ? "Pending admin review" : "Submit for admin review"}</button>
                 )}
-                {isAdmin && !meta.adminApproved && (
+                {isAdmin && needsReview && !meta.adminApproved && (
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={approveDesign} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700"><ShieldCheck className="size-4" />Approve design</button>
                     <button onClick={() => { setBackPage(String(pageNo)); setBackErr(""); setBackOpen(true); }} className="h-11 rounded-xl border border-rose-300 text-sm font-bold text-rose-600 hover:bg-rose-50">Send back with correction</button>
                   </div>
                 )}
-                {(meta.adminApproved || isAdmin) && (
+                {(meta.adminApproved || isAdmin || !needsReview) && (
                   <button onClick={openSend} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white hover:bg-brand-dark"><Send className="size-4" />{proof ? (proof.status === "corrections" ? `Resubmit to client (v${proof.version + 1})` : "Send new proof to client") : "Send for Client Review"}</button>
                 )}
               </div>

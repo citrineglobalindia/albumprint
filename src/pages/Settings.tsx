@@ -104,7 +104,7 @@ const parse = <T,>(s: string | boolean | undefined, d: T): T => { try { return J
 const INIT: Record<string, Val> = {
   name: "Priya's Memories Photography", website: "www.priyasmemories.com", phone: "+91 98765 43210", email: "info@priyasmemories.com",
   address: "123, Main Road, Indiranagar\nBengaluru, Karnataka - 560038", currency: "INR (₹)", tax: "18%", prefix: "ALB", nextNo: "00073",
-  autoAssign: true, clientLink: true, deliveryNoPay: false, notify: true,
+  autoAssign: true, wf_design_review: false, clientLink: true, deliveryNoPay: false, notify: true,
   legal: "Priya's Memories Photography Pvt. Ltd.", gstin: "29ABCDE1234F1Z5", pan: "ABCDE1234F", state: "Karnataka", caddr: "123, Main Road, Indiranagar, Bengaluru - 560038",
   wf_cg: true, wf_design: true, wf_release: true, wf_disc: true, tat_cg: "2", tat_design: "5", tat_print: "3", disc_limit: "10",
   n_assign: true, n_overdue: true, n_qc: true, n_proof: true, n_ready: true, n_due: false,
@@ -167,7 +167,7 @@ const validate = (v: Record<string, Val>): Errs => {
   if (s("disc_limit") && !(Number(s("disc_limit")) >= 0 && Number(s("disc_limit")) <= 100)) e.disc_limit = "Enter a percentage between 0 and 100";
   return e;
 };
-const GENERAL_KEYS = ["name", "website", "phone", "email", "address", "currency", "tax", "prefix", "nextNo", "autoAssign", "clientLink", "deliveryNoPay", "notify", "logo"];
+const GENERAL_KEYS = ["name", "website", "phone", "email", "address", "currency", "tax", "prefix", "nextNo", "autoAssign", "wf_design_review", "clientLink", "deliveryNoPay", "notify", "logo"];
 const KEY_SEC: Record<string, string> = Object.fromEntries([
   ...GENERAL_KEYS.map((k) => [k, "general"]),
   ...SECTIONS.flatMap((x) => (x.groups ?? []).flatMap((g) => g.fields.map((f) => [f.k, x.key]))),
@@ -461,7 +461,7 @@ function General({ v, set, errs, show }: { v: Record<string, Val>; set: (k: stri
   const s = (k: string) => String(v[k] ?? "");
   const [logo, setLogo] = useState<string | null>(() => { try { return localStorage.getItem("albumpro.logo"); } catch { return null; } });
   const toggles: [string, string, string][] = [
-    ["autoAssign", "Auto Assign to Next Department", "Automatically move order to next stage after approval"],
+    ["wf_design_review", "Admin Reviews Designs Before the Client", "Off: the designer sends the proof straight to the client; the admin approves before printing. On: the admin checks every design first."],
     ["deliveryNoPay", "Allow Delivery Without Full Payment", "Permits delivery even if final payment is pending"],
     ["clientLink", "Enable Client Approval Link", "Allow clients to review and approve albums online"],
     ["notify", "Enable Notifications", "Send email/WhatsApp notifications to users and clients"],

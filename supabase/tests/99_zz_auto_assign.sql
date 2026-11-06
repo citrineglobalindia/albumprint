@@ -52,5 +52,15 @@ select set_config('t.rec_order', t.neworder('colour_grading')::text, false);
 select t.as('system');
 select t.eq($$select (assignee = (select v from t.aa where k = 'colour'))::text from orders where id = current_setting('t.rec_order')::uuid$$, 'true', 'auto-assign: works whoever moves the order');
 update settings set value = '{}' where key = 'auto_assign';
+
+-- stage history for the process tracker (0048)
+select t.as('designer');
+select t.eq($$select string_agg(stage, '>' order by at) from order_stage_history((select v from t.aa where k = 'o2'))$$, 'new_order>colour_grading>admin_approval>designing', 'history: any staff member sees an order''s stage moves');
+select t.as('system');
+select set_config('t.any_order', (select id::text from orders limit 1), false);
+reset role; set role anon;
+do $$ begin perform order_stage_history(current_setting('t.any_order')::uuid); raise exception 'FAIL history: anon could read the stage history';
+  exception when insufficient_privilege then raise notice 'ok - history: nothing without signing in'; end $$;
+reset role;
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED
