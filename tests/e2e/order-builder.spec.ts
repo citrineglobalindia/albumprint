@@ -394,3 +394,46 @@ test("a half-entered order is saved as a draft automatically and can be resumed"
   await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");
   await expect.poll(() => page.evaluate(() => (JSON.parse(localStorage.getItem("albumpro.v1.order_drafts") ?? "[]") as { payload: { albums: { copies: number | string }[] } }[]).map((x) => String(x.payload.albums[0]?.copies)))).toEqual(["3"]);
 });
+
+test("the 'rate card not set up' notice links to the rate-card form and back to the order", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  // switch the sample printing rate card off so the notice appears
+  await page.goto("/catalog");
+  await page.getByTestId("cat-Sample — Printing").click();
+  await page.getByRole("button", { name: "Edit Album printing (sample rates)" }).click();
+  await page.getByRole("switch", { name: "Item active" }).click();
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByText("Item saved").first()).toBeVisible();
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Notice album", sheets: 20 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  const notice = page.getByTestId("missing-rate-card");
+  await expect(notice).toContainText("The printing rate card is not set up");
+  await expect(page).toHaveURL(/draft=/);                                           // the order is already a draft
+  await notice.getByRole("link", { name: "Set up the printing rate card →" }).click();
+  // the catalog opens with the rate-card form
+  await expect(page).toHaveURL(/\/catalog\?setup=printing/);
+  await expect(page.getByTestId("return-banner")).toContainText("Set up the printing rate card");
+  await expect(page.getByLabel("Use as")).toHaveValue("printing");
+  await expect(page.getByLabel("Pricing method")).toHaveValue("per_sheet");
+  await expect(page.getByRole("switch", { name: "Item active" })).toHaveAttribute("aria-checked", "true");   // the existing card, switched back on
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByText("Item saved").first()).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await page.getByRole("link", { name: "← Back to the order" }).click();
+  await expect(page).toHaveURL(/\/orders\/new\?draft=/);
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await expect(page.getByTestId("album-1").getByLabel("Album name")).toHaveValue("Notice album");
+  await expect(page.getByTestId("missing-rate-card")).toHaveCount(0);
+});
+
+test("non-admins see the notice without a link", async ({ page }) => {
+  await seedRole(page, "reception");
+  await page.addInitScript(() => { const k = "albumpro.v1.cat2_items"; try { const a = JSON.parse(localStorage.getItem(k) ?? "[]") as { kind?: string; active: boolean }[]; if (!a.length) return; a.forEach((i) => { if (i.kind === "printing") i.active = false; }); localStorage.setItem(k, JSON.stringify(a)); } catch { /* first load */ } });
+  await page.goto("/orders/new");                                                    // first visit creates the demo catalog
+  await expect.poll(() => page.evaluate(() => (JSON.parse(localStorage.getItem("albumpro.v1.cat2_items") ?? "[]") as unknown[]).length)).toBeGreaterThan(0);
+    await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "R album", sheets: 10 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await expect(page.getByTestId("missing-rate-card")).toContainText("an admin adds it in Catalog & Pricing");
+  await expect(page.getByTestId("missing-rate-card").getByRole("link")).toHaveCount(0);
+});

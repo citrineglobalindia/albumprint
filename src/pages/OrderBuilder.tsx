@@ -319,6 +319,7 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
     if (full) return `All ${albumSheets} sheets are already allocated — reduce another line first`;
     set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null;
   };
+  const isAdmin = useAuth().role === "admin";
   const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
@@ -355,7 +356,10 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
           {designErr && (a.design?.amount ?? "") !== "" && <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">{designErr}</p>}
         </div>
       )}
-      {missingCards.length > 0 && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">The {missingCards.join(" and ")} rate card is not set up — an admin adds it in Catalog & Pricing. Until then this album shows “Price not configured”.</p>}
+      {missingCards.length > 0 && <p className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="missing-rate-card">
+        <span>The {missingCards.join(" and ")} rate card is not set up{isAdmin ? "" : " — an admin adds it in Catalog & Pricing"}. Until then this album shows “Price not configured”.</span>
+        {isAdmin && (missingCards as string[]).map((k) => <Link key={k} to={`/catalog?setup=${k}&return=${encodeURIComponent(window.location.pathname + window.location.search)}`} className="rounded-md bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700">Set up the {k} rate card →</Link>)}
+      </p>}
       <AlbumItemsTable a={a} n={n} priced={priced} set={set} taxRate={taxRate}
         accept={(i) => i.method !== "one_time_order" && i.kind !== "printing" && i.kind !== "design"}
         onAdd={(id) => { const it = itemById(id); if (!it) return "Item not found"; const b = it.method === "per_sheet" ? sheetBalance() : null; return addItem(id, 1, b && b.used > 0 ? (b.balance > 0 ? b.balance : undefined) : undefined, !!b && b.used > 0 && b.balance <= 0); }}

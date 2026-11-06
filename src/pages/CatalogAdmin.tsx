@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FolderPlus, ListTree, Library, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { Field, LineTabs, PageHeader, Panel, Pill, SlideOver, Td, Th, Toggle, cx, inputCls, tableCls, trCls } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -37,7 +38,25 @@ export default function CatalogAdmin() {
   const askDeleteItem = (i: CItem) => confirm({ title: `Delete “${i.name}”?`, message: `${pathLabel(i.categoryId)} ▸ ${i.name}${RATES.some((r) => r.itemId === i.id) ? " and its rate rules" : ""}. Saved drafts that use it will ask for a replacement. This cannot be undone.`, confirmLabel: "Delete", danger: true },
     async () => { const e = await deleteItem(i.id); show(e ?? `“${i.name}” deleted`); });
   const [toast, show] = useToast();
-  useEffect(() => { seedDemoCatalog(); void loadCatalog2().then((e) => e && setErr(e)); }, []);
+  // ?setup=printing|design opens the rate-card form (from the order builder's "not set up" notice); ?return= is where "Back to the order" goes
+  const [params] = useSearchParams();
+  const setup = params.get("setup") === "printing" || params.get("setup") === "design" ? (params.get("setup") as "printing" | "design") : null;
+  const rawReturn = params.get("return") ?? "";
+  const returnTo = rawReturn.startsWith("/") && !rawReturn.startsWith("//") ? rawReturn : null;
+  useEffect(() => {
+    seedDemoCatalog();
+    void loadCatalog2().then((e) => {
+      if (e) { setErr(e); return; }
+      if (!setup) return;
+      const existing = ITEMS.find((i) => i.kind === setup);
+      if (existing) { setSel(existing.categoryId); setItemForm({ ...existing, active: true }); return; }
+      const word = setup === "printing" ? /print/i : /design/i;
+      const cat = CATEGORIES.find((c) => word.test(c.name)) ?? childrenOf(null)[0];
+      if (!cat) { setErr("Add a category first (e.g. “Printing”), then add the rate card in it"); return; }
+      setSel(cat.id);
+      setItemForm({ categoryId: cat.id, name: setup === "printing" ? "Album printing" : "Album design", method: "per_sheet", unit: "sheet", kind: setup, active: true });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const cur = categoryById(sel);
 
   const move = async (c: Category, dir: -1 | 1) => {
@@ -71,6 +90,10 @@ export default function CatalogAdmin() {
         <button disabled={busy} onClick={async () => { setBusy(true); const r = await importProductList(); setBusy(false); if (typeof r === "string") show(r); else { show(r ? `Product list imported — ${r} item(s) added. Enter their prices in the Prices tab.` : "The product list is already in the catalog"); setTab("prices"); } }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-bold text-white hover:bg-brand-dark disabled:opacity-50"><ListTree className="size-4" />{busy ? "Importing…" : "Import product list"}</button>
         {backendOn && <button onClick={async () => { const r = await importClassic(); show(typeof r === "string" ? r : `${r} item(s) copied from the classic catalog`); }} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-bold hover:bg-brand-soft"><Upload className="size-4" />Import classic catalog</button>}
       </PageHeader>
+      {returnTo && <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" data-testid="return-banner">
+        <span className="min-w-0 flex-1">{setup ? `Set up the ${setup} rate card: choose its category, enter the rate per sheet and save. Size / paper / finish rates can be added under “Rates by requirement”.` : "You came here from an order."} Your order is saved as a draft.</span>
+        <Link to={returnTo} className="h-9 rounded-lg bg-sky-700 px-4 py-2 text-xs font-bold text-white hover:bg-sky-800">← Back to the order</Link>
+      </div>}
       {err && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">Could not load the catalog: {err}</p>}
       <LineTabs className="mb-5" value={tab} onChange={setTab} tabs={[{ key: "tree", label: "Categories & items" }, { key: "prices", label: "Prices" }, { key: "settings", label: "Tax & defaults" }]} />
       {tab === "settings" ? <SettingsCard show={show} /> : tab === "prices" ? <PriceGrid show={show} /> : (
