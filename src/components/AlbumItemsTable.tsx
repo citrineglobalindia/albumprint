@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Columns3, MoreVertical, Plus, Search, X } from "lucide-react";
 import { cx } from "./ui";
-import { ITEMS, itemById, pathLabel, usableItem, type CItem } from "../lib/catalog2";
+import { ITEMS, itemById, pathLabel, pathOf, usableItem, type CItem } from "../lib/catalog2";
+
+/** On screen an item shows every level: "Paper - NT - 125 GSM - Glossy". */
+export const fullName = (i: CItem) => [...pathOf(i.categoryId).map((c) => c.name), i.name].join(" - ");
 import { money, type DraftAlbum, type DraftItem, type PricedOrder } from "../lib/orderPricing";
 
 type Line = PricedOrder["albums"][number]["lines"][number];
@@ -55,8 +58,8 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
             onChange={(e) => { setQ(e.target.value); setMsg(""); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEnter(); } if (e.key === "Escape") setQ(""); }} />
           {results.length > 0 && <ul role="listbox" aria-label="Matching products" className="absolute right-0 z-30 mt-1 max-h-72 w-full min-w-[300px] overflow-y-auto rounded-xl border border-line bg-white p-1 shadow-xl">
             {results.map((i) => <li key={i.id}><button type="button" role="option" aria-selected={false} onClick={() => add(i.id)} className="w-full rounded-lg px-3 py-2 text-left hover:bg-brand-soft">
-              <span className="block text-sm font-semibold">{i.name}{i.code ? <span className="ml-1 text-xs text-sub">({i.code})</span> : null}</span>
-              <span className="block text-[11px] text-sub">{pathLabel(i.categoryId)} · {i.rate != null ? `${money(i.rate)} / ${i.unit}` : "price not set"}</span></button></li>)}
+              <span className="block text-sm font-semibold">{fullName(i)}{i.code ? <span className="ml-1 text-xs text-sub">({i.code})</span> : null}</span>
+              <span className="block text-[11px] text-sub">{i.rate != null ? `${money(i.rate)} / ${i.method === "per_sheet" ? "sheet" : i.unit}` : "price not set"}</span></button></li>)}
           </ul>}
         </div>
         <div className="relative">
@@ -86,46 +89,47 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
             const di = a.items.find((x) => x.itemId === l.itemId && l.kind === "item");
             const it = di ? itemById(di.itemId) : undefined;
             const auto = !di;
+            const nm = it?.name ?? l.name;                                                // short name for labels; the row shows the full path
             const unit = l.method === "per_sheet" ? "Sheets" : l.method === "fixed_per_album" ? "Album" : (l.unit || "pcs");
             const eff = l.rate;
             return (
               <tr key={`${l.kind}${l.itemId}${k}`} className={cx("border-t border-line align-middle", auto && "bg-slate-50/60")}>
                 <td className="px-2 py-2 font-bold">{k + 1}</td>
-                <td className="px-1.5 py-2"><span className="font-bold">{l.name}</span>
+                <td className="px-1.5 py-2"><span className="font-bold" data-testid="line-name">{it ? fullName(it) : l.name}</span>
                   {auto && <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">{l.kind === "design" && !l.itemId ? "entered" : "automatic"}</span>}
-                  <span className="block text-[11px] text-sub">{it ? pathLabel(it.categoryId) : l.rule ?? (l.kind === "printing" ? "Printing rate card" : "Design")}</span></td>
-                {cols.desc && <td className="px-1.5">{di ? <input aria-label={`Description of ${l.name}`} className={cx(cell, "w-28")} maxLength={200} placeholder="e.g. 12 × 30" value={di.note ?? ""} onChange={(e) => upd(di.itemId, { note: e.target.value })} />
+                  <span className="block text-[11px] text-sub">{it ? (di?.price ? "price set on this order" : l.rule ?? "") : l.rule ?? (l.kind === "printing" ? "Printing rate card" : "Design")}</span></td>
+                {cols.desc && <td className="px-1.5">{di ? <input aria-label={`Description of ${nm}`} className={cx(cell, "w-28")} maxLength={200} placeholder="e.g. 12 × 30" value={di.note ?? ""} onChange={(e) => upd(di.itemId, { note: e.target.value })} />
                   : <span className="text-xs text-sub">{l.scope === "album" ? "Once per album" : "Every copy"}</span>}</td>}
                 <td className="px-1.5 text-center">
-                  {di && l.method === "per_unit" ? <input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className={cx(cell, "w-16 text-center")} value={di.qty} onChange={(e) => upd(di.itemId, { qty: num(e.target.value) })} />
-                    : di && l.method === "per_sheet" ? <span className="inline-flex items-center gap-1"><input aria-label={`Quantity of ${l.name}`} type="number" min={1} step={1} className={cx(cell, "w-16 text-center")} value={di.sheetQty ?? a.sheets}
+                  {di && l.method === "per_unit" ? <input aria-label={`Quantity of ${nm}`} type="number" min={1} step={1} className={cx(cell, "w-16 text-center")} value={di.qty} onChange={(e) => upd(di.itemId, { qty: num(e.target.value) })} />
+                    : di && l.method === "per_sheet" ? <span className="inline-flex items-center gap-1"><input aria-label={`Quantity of ${nm}`} type="number" min={1} step={1} className={cx(cell, "w-16 text-center")} value={di.sheetQty ?? a.sheets}
                         onChange={(e) => upd(di.itemId, { sheetQty: e.target.value === "" || e.target.value === String(a.sheets) ? null : e.target.value })} />
                       {di.sheetQty == null || di.sheetQty === "" ? <span className="text-[10px] font-semibold text-emerald-700" title="Follows the album's sheet count">auto</span>
-                        : <button type="button" aria-label={`Match ${l.name} to album sheets`} onClick={() => upd(di.itemId, { sheetQty: null })} className="text-[10px] font-semibold text-brand hover:underline" title="Follow the album's sheet count again">↺</button>}</span>
+                        : <button type="button" aria-label={`Match ${nm} to album sheets`} onClick={() => upd(di.itemId, { sheetQty: null })} className="text-[10px] font-semibold text-brand hover:underline" title="Follow the album's sheet count again">↺</button>}</span>
                     : <span className="tabular-nums">{l.scope === "copy" ? l.qty : 1}</span>}
                 </td>
                 <td className="px-1.5"><span className="text-xs text-sub">{unit}</span></td>
-                <td className="px-1.5 text-center">{di ? <input aria-label={`Price of ${l.name}`} inputMode="decimal" className={cx(cell, "w-20 text-right", l.missing && "border-rose-300 bg-rose-50", di.price && "border-brand/50")}
+                <td className="px-1.5 text-center">{di ? <input aria-label={`Price of ${nm}`} inputMode="decimal" className={cx(cell, "w-20 text-right", l.missing && "border-rose-300 bg-rose-50", di.price && "border-brand/50")}
                     placeholder={l.missing ? "Not set" : "₹"} title={di.price ? `Catalog price ${l.listRate != null ? money(l.listRate) : "not set"} — typed on this order` : "Catalog price — type to change it for this order"}
                     value={di.price ?? (l.listRate != null ? String(l.listRate) : "")}
                     onChange={(e) => { const v = e.target.value.replace(/[₹,\s]/g, ""); upd(di.itemId, { price: v === "" || (l.listRate != null && Number(v) === l.listRate && v === String(l.listRate)) ? null : v }); }} />
                   : <span className={cx("tabular-nums", l.missing && "font-bold text-rose-600")}>{l.missing ? "Not set" : money(eff!)}</span>}</td>
                 {cols.withTax && <td className="px-1.5 text-center"><span className="tabular-nums text-sub" title={taxRate ? `Including ${taxRate}% tax` : "Tax is off for this order"}>{eff == null || l.missing ? "—" : money(withTax(eff))}</span></td>}
                 {cols.discount && <td className="px-1.5 text-center">{di ? <span className="inline-flex">
-                    <input aria-label={`Discount on ${l.name}`} inputMode="decimal" className={cx(cell, "w-14 rounded-r-none text-right")} placeholder="0" value={di.disc?.value ?? ""}
+                    <input aria-label={`Discount on ${nm}`} inputMode="decimal" className={cx(cell, "w-14 rounded-r-none text-right")} placeholder="0" value={di.disc?.value ?? ""}
                       onChange={(e) => { const v = e.target.value.replace(/[₹,%\s]/g, ""); upd(di.itemId, { disc: v === "" ? null : { type: di.disc?.type ?? "fixed", value: v } }); }} />
-                    <select aria-label={`Discount type for ${l.name}`} className={cx(cell, "-ml-px w-12 rounded-l-none px-1")} value={di.disc?.type ?? "fixed"} onChange={(e) => upd(di.itemId, { disc: { type: e.target.value as "fixed" | "percent", value: di.disc?.value ?? "" } })}>
+                    <select aria-label={`Discount type for ${nm}`} className={cx(cell, "-ml-px w-12 rounded-l-none px-1")} value={di.disc?.type ?? "fixed"} onChange={(e) => upd(di.itemId, { disc: { type: e.target.value as "fixed" | "percent", value: di.disc?.value ?? "" } })}>
                       <option value="fixed">₹</option><option value="percent">%</option></select></span>
                   : <span className="text-xs text-sub">—</span>}</td>}
                 <td className="whitespace-nowrap px-1.5 text-right"><span className="text-[14px] font-extrabold tabular-nums">{l.missing ? "—" : money(l.amount)}</span>
                   {!l.missing && l.scope === "copy" && (priced?.copies ?? 1) > 1 && <span className="block text-[10px] text-sub">{money(l.unitAmount)} × {priced!.copies} copies</span>}
                   {!!l.discount && <span className="block text-[10px] font-semibold text-emerald-700">− {money(Math.round(l.discount * (l.scope === "copy" ? priced?.copies ?? 1 : 1) * 100) / 100)} off</span>}</td>
                 <td className="relative pr-1 text-right">{di && <>
-                  <button type="button" aria-label={`More for ${l.name}`} onClick={() => setMenu(menu === di.itemId ? null : di.itemId)} className="grid size-8 place-items-center rounded-lg hover:bg-slate-100"><MoreVertical className="size-4" /></button>
+                  <button type="button" aria-label={`More for ${nm}`} onClick={() => setMenu(menu === di.itemId ? null : di.itemId)} className="grid size-8 place-items-center rounded-lg hover:bg-slate-100"><MoreVertical className="size-4" /></button>
                   {menu === di.itemId && <div role="menu" className="absolute right-2 top-10 z-30 w-48 rounded-xl border border-line bg-white p-1 text-left shadow-xl" onMouseLeave={() => setMenu(null)}>
                     {di.price != null && <button type="button" role="menuitem" onClick={() => { upd(di.itemId, { price: null }); setMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50">Use catalog price</button>}
                     {di.disc && <button type="button" role="menuitem" onClick={() => { upd(di.itemId, { disc: null }); setMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50">Remove discount</button>}
-                    <button type="button" role="menuitem" aria-label={`Remove ${l.name}`} onClick={() => { set({ items: a.items.filter((x) => x.itemId !== di.itemId) }); setMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50">Remove item</button>
+                    <button type="button" role="menuitem" aria-label={`Remove ${nm}`} onClick={() => { set({ items: a.items.filter((x) => x.itemId !== di.itemId) }); setMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50">Remove item</button>
                   </div>}</>}</td>
               </tr>);
           })}
@@ -195,11 +199,10 @@ function NewLine({ no, accept, onPick, onCancel }: { no: number; accept: (i: CIt
         {err && <p role="alert" className="mb-2 text-xs font-semibold text-rose-600">{err}</p>}
         {shown.length ? (
           <ul id="new-line-options" ref={listRef} role="listbox" aria-label="Products" className="max-h-64 overflow-y-auto rounded-xl border border-line bg-white p-1">
-            {shown.map(({ i, path }, k) => (
+            {shown.map(({ i }, k) => (
               <li key={i.id} data-i={k}><button type="button" role="option" aria-selected={k === cur} onMouseEnter={() => setHi(k)} onClick={() => pick(i.id)}
                 className={cx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left", k === cur ? "bg-brand-soft" : "hover:bg-slate-50")}>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{i.name}{i.code ? <span className="ml-1 text-xs font-normal text-sub">({i.code})</span> : null}</span>
-                  <span className="block truncate text-[11px] text-sub">{path}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold" title={fullName(i)}>{fullName(i)}{i.code ? <span className="ml-1 text-xs font-normal text-sub">({i.code})</span> : null}</span></span>
                 <span className="shrink-0 text-xs tabular-nums text-sub">{i.rate != null ? `${money(i.rate)} / ${i.method === "per_sheet" ? "sheet" : i.unit}` : "price not set"}</span>
               </button></li>))}
             {all.length > shown.length && <li className="px-3 py-2 text-[11px] text-sub">{all.length - shown.length} more — type to narrow the list</li>}

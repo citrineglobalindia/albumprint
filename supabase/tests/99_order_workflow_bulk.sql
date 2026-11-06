@@ -46,9 +46,9 @@ insert into cat_items(category_id, name, pricing_method, unit, rate) select id, 
 create function t.sq(extra text) returns jsonb language sql as $$
   select order_price(jsonb_build_object('orderType', 'printing_only', 'albums', jsonb_build_array(jsonb_build_object('id', 'x', 'name', 'A', 'sheets', 30, 'copies', 2, 'size', '', 'paper', '', 'finish', '',
     'items', jsonb_build_array(jsonb_build_object('itemId', (select id from cat_items where name = 'Sheet lam'), 'qty', 1) || coalesce(extra, '{}')::jsonb))), 'orderCharges', '[]'::jsonb, 'discount', jsonb_build_object('type', 'none', 'value', 0))) $$;
-select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text from jsonb_array_elements(t.sq(null)->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '30/90.00', 'sheet qty: a per-sheet item follows the album sheets (30 × ₹3)');
-select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text || '/' || (l->>'amount')::numeric::text from jsonb_array_elements(t.sq('{"sheetQty": 12}')->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '12/36.00/72.00', 'sheet qty: an explicit sheet quantity (12 × ₹3, × 2 copies)');
-select t.eq($$select l->>'qty' from jsonb_array_elements(t.sq('{"sheetQty": ""}')->'albums'->0->'lines') l where l->>'name' = 'Sheet lam'$$, '30', 'sheet qty: blank means auto');
+select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text from jsonb_array_elements(t.sq(null)->'albums'->0->'lines') l where l->>'name' = 'Bulk Bag - Sheet lam'$$, '30/90.00', 'sheet qty: a per-sheet item follows the album sheets (30 × ₹3)');
+select t.eq($$select l->>'qty' || '/' || (l->>'unitAmount')::numeric::text || '/' || (l->>'amount')::numeric::text from jsonb_array_elements(t.sq('{"sheetQty": 12}')->'albums'->0->'lines') l where l->>'name' = 'Bulk Bag - Sheet lam'$$, '12/36.00/72.00', 'sheet qty: an explicit sheet quantity (12 × ₹3, × 2 copies)');
+select t.eq($$select l->>'qty' from jsonb_array_elements(t.sq('{"sheetQty": ""}')->'albums'->0->'lines') l where l->>'name' = 'Bulk Bag - Sheet lam'$$, '30', 'sheet qty: blank means auto');
 select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": "2.5"}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: a fraction is refused');
 select t.eq($$select string_agg(e->>'message', '|') from jsonb_array_elements(t.sq('{"sheetQty": 0}')->'errors') e where e->>'message' like '%Sheet lam%'$$, 'Album 1: “Sheet lam” needs a sheet quantity of 1 or more (whole number)', 'sheet qty: zero is refused');
 
@@ -111,7 +111,7 @@ select t.eq($$select (t.lp('{"price":"100"}')->>'reduction')::numeric::text$$, '
 -- an unpriced item can be priced on the line
 select t.as('system');
 insert into cat_items(category_id, name, pricing_method, unit) values (t.id('covers'), 'Unpriced cover', 'per_unit', 'pcs');
-select t.eq($$select concat_ws('/', l->>'missing', l->>'unitAmount') from jsonb_array_elements(order_price(jsonb_set(t.payload(), '{albums,0,items}', ('[{"itemId":"' || (select id from cat_items where name = 'Unpriced cover') || '","qty":2,"price":"300"}]')::jsonb))->'albums'->0->'lines') l where l->>'name' = 'Unpriced cover'$$, 'false/600', 'line price: an item with no catalog price can be priced on the order');
+select t.eq($$select concat_ws('/', l->>'missing', l->>'unitAmount') from jsonb_array_elements(order_price(jsonb_set(t.payload(), '{albums,0,items}', ('[{"itemId":"' || (select id from cat_items where name = 'Unpriced cover') || '","qty":2,"price":"300"}]')::jsonb))->'albums'->0->'lines') l where l->>'name' = 'Covers - Unpriced cover'$$, 'false/600', 'line price: an item with no catalog price can be priced on the order');
 -- finalize: line discounts go into the invoice discount; a large line discount needs an admin
 select t.as('reception');
 insert into order_drafts(payload) select jsonb_set(jsonb_set(t.payload(), '{albums,0,items,0}', (t.payload()->'albums'->0->'items'->0) || '{"disc":{"type":"fixed","value":"100"}}'), '{discount}', '{"type":"none","value":""}') || jsonb_build_object('customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Line discount', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
@@ -142,5 +142,12 @@ select t.as('reception');
 do $$ begin begin update pricing_settings set printing_mode = 'included'; exception when others then null; end; end $$;
 select t.as('system');
 select t.eq($$select printing_mode from pricing_settings$$, 'separate', 'printing mode: a non-admin cannot change it');
+
+-- full item names (0045): categories, then the item
+select t.as('system');
+select t.eq($$select l->>'name' from jsonb_array_elements(t.price(t.payload())->'albums'->0->'lines') l where l->>'itemId' = (select v from t.p36 where k = 'i_leather')$$, 'Covers - Leatherette cover', 'full name: one category level');
+insert into cat_items(category_id, name, pricing_method, unit, rate) values (t.id('wooden'), 'Walnut', 'per_unit', 'pcs', 99);
+select t.eq($$select cat_item_label(i) from cat_items i where name = 'Walnut'$$, 'Extras Boxes Premium Wooden - Walnut', 'full name: four category levels, top first');
+select t.eq($$select l->>'name' from jsonb_array_elements(t.price(t.payload())->'albums'->0->'lines') l where l->>'kind' = 'printing'$$, 'Album printing', 'full name: the printing line keeps its own name');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

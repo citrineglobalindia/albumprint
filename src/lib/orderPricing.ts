@@ -1,4 +1,4 @@
-import type { CItem, PricingMethod, PricingSettings, Rate } from "./catalog2";
+import type { Category, CItem, PricingMethod, PricingSettings, Rate } from "./catalog2";
 
 // The order pricing engine. The same rules run in the database (order_price in supabase/migrations/0036), which is the authority when an order is
 // finalized; this copy gives live totals while the user types. Money is handled in paise (integers) so nothing drifts:
@@ -61,14 +61,21 @@ export function resolveRate(item: CItem, rates: Rate[], size: string | null, pap
 
 export const scopeOf = (m: PricingMethod): Scope => (m === "per_sheet" || m === "per_unit" ? "copy" : m === "fixed_per_album" ? "album" : "order");
 
-function priceLine(item: CItem, qty: number, sheets: number, size: string | null, paper: string | null, finish: string | null, kind: PricedLine["kind"], rates: Rate[]) {
+/** The name an item carries on the order and the invoice: its categories, then the item — "Paper NT 125 GSM - Glossy". The database builds the same (cat_item_label). */
+export function itemLabel(item: CItem, categories?: Category[]): string {
+  if (!categories?.length) return item.name;
+  const byId = new Map(categories.map((c) => [c.id, c])); const path: string[] = [];
+  for (let c = byId.get(item.categoryId), n = 0; c && n < 6; c = c.parentId ? byId.get(c.parentId) : undefined, n++) path.unshift(c.name);
+  return path.length ? `${path.join(" ")} - ${item.name}` : item.name;
+}
+function priceLine(item: CItem, qty: number, sheets: number, size: string | null, paper: string | null, finish: string | null, kind: PricedLine["kind"], rates: Rate[], label?: string) {
   const q = item.method === "per_sheet" ? sheets : item.method === "per_unit" ? qty : 1;
   const { rate, rule } = resolveRate(item, rates, size, paper, finish);
   const missing = rate == null;
-  return { kind, itemId: item.id, name: item.name, unit: item.unit, method: item.method, scope: scopeOf(item.method), optionKind: item.kind ?? null, qty: q, rate, rule, missing, unitAmountP: missing ? 0 : q * P(rate!) };
+  return { kind, itemId: item.id, name: label ?? item.name, unit: item.unit, method: item.method, scope: scopeOf(item.method), optionKind: item.kind ?? null, qty: q, rate, rule, missing, unitAmountP: missing ? 0 : q * P(rate!) };
 }
 
-export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate[] }, settings: PricingSettings): PricedOrder {
+export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate[]; categories?: Category[] }, settings: PricingSettings): PricedOrder {
   const errs: PriceError[] = []; const err = (path: string, message: string) => errs.push({ path, message });
   const otype = d.orderType, designed = otype === "design_printing";
   if (otype !== "design_printing" && otype !== "printing_only") err("orderType", "Choose the order type");
@@ -120,7 +127,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
         if (!isWhole(it.qty, 1e5) || Number(it.qty) < 1) { err(`album.${ai}.items`, `Album ${ai}: “${ci.name}” needs a quantity of 1 or more (whole number)`); continue; }
         qty = Number(it.qty);
       }
-      const l = priceLine(ci, qty, itemSheets, size, paper, finish, "item", catalog.rates);
+      const l = priceLine(ci, qty, itemSheets, size, paper, finish, "item", catalog.rates, itemLabel(ci, catalog.categories));
       const ov = String(it.price ?? "").trim();
       if (ov !== "" && !MONEY.test(ov)) { err(`album.${ai}.items`, `Album ${ai}: enter a valid price for “${ci.name}” (0 or more, up to 2 decimals)`); continue; }
       const rate = ov !== "" ? Number(ov) : l.rate, missing = ov !== "" ? false : l.missing;
@@ -156,7 +163,7 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
     if (ci.method !== "one_time_order") { err("orderCharges", `“${ci.name}” is not a one-time order charge`); continue; }
     if (seen.has(ci.id)) { err("orderCharges", `“${ci.name}” is added twice`); continue; }
     seen.add(ci.id);
-    const l = priceLine(ci, 1, 1, null, null, null, "item", catalog.rates);
+    const l = priceLine(ci, 1, 1, null, null, null, "item", catalog.rates, itemLabel(ci, catalog.categories));
     orderLines.push({ position: orderLines.length + 1, kind: "item", itemId: l.itemId, name: l.name, unit: l.unit, method: l.method, scope: "order", optionKind: l.optionKind, qty: l.qty, rate: l.rate, rule: l.rule, missing: l.missing,
       unitAmount: R(l.unitAmountP), amount: R(l.unitAmountP), perCopy: null });
     if (l.missing) { anyMissing = true; err("orderCharges", `Price not configured for “${ci.name}”`); } else { subP += l.unitAmountP; listSubP += l.unitAmountP; }

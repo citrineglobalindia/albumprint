@@ -189,6 +189,7 @@ test("album items table: search to add, edit description / qty / price / discoun
   await t.getByLabel("New line product").fill("uv spot");
   await t.getByRole("listbox", { name: "Products" }).getByRole("option", { name: /UV spot finish/ }).click();
   await expect(t.getByTestId("new-line")).toHaveCount(0);                            // the line became the item
+  await expect(t.getByTestId("line-name").filter({ hasText: "UV spot" })).toHaveText("Sample — Extras - Premium - UV spot finish (sample, per sheet)");   // every level on screen
   await expect(t.getByLabel("Quantity of UV spot finish (sample, per sheet)")).toHaveValue("30");
   await expect(page.getByTestId("album-total-1")).toHaveText("₹4,050");             // + 30 × 15
   // in the new line: arrow keys + Enter pick the highlighted product; a duplicate is refused and the line stays open
@@ -233,6 +234,7 @@ test("album items table: search to add, edit description / qty / price / discoun
   await t.getByLabel("Discount type for Mini book (sample)").selectOption("percent");
   await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
   await expect(page.getByTestId("invoice-preview").or(page.locator("body"))).toContainText("less 80% discount");
+  await expect(page.locator("body")).toContainText("Sample — Extras Premium Keepsakes - Mini book (sample)");                  // the invoice name: categories, then the item
   await next(page);
   await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByRole("alert")).toContainText("needs an admin");

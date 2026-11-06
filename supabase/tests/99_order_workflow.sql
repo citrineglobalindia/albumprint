@@ -171,7 +171,7 @@ update cat_rates set rate = 99 where item_id = t.id('i_PRN') and size = '12x36' 
 update cat_items set rate = 9999, active = false where id = t.id('i_leather');
 select t.eq($$select total::text from order_pricing where order_id = (select id from orders where customer_id = t.id('cust'))$$, '3546.00', 'history: the finalized total is unchanged after the catalog changed');
 select t.eq($$select (snapshot->'albums'->0->'lines'->0->>'rate') from order_pricing where order_id = (select id from orders where customer_id = t.id('cust'))$$, '12.00', 'history: the snapshot keeps the old rate');
-select t.eq($$select name || ' @ ' || rate::text from order_charge_lines where order_id = (select id from orders where customer_id = t.id('cust')) and album_position = 1 and name like 'Leatherette%'$$, 'Leatherette cover @ 500.00', 'history: the stored line keeps the old item name and rate');
+select t.eq($$select name || ' @ ' || rate::text from order_charge_lines where order_id = (select id from orders where customer_id = t.id('cust')) and album_position = 1 and name like '%Leatherette%'$$, 'Covers - Leatherette cover @ 500.00', 'history: the stored line keeps the old item name and rate');
 select t.ok($$select 1 where (t.price(t.payload())->>'canFinalize') = 'false'$$, 'history: the same selections now price differently / cannot use the deactivated item');
 update cat_rates set rate = 12 where item_id = t.id('i_PRN') and size = '12x36' and paper = 'Matte' and finish is null;
 update cat_items set rate = 500, active = true where id = t.id('i_leather');

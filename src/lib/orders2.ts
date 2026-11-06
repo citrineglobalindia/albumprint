@@ -6,7 +6,7 @@ import { CUSTOMERS, ORDERS, type Customer, type Order } from "./data";
 import { INVOICES, type Invoice, type Line } from "./finance";
 import { loadSettings } from "./localState";
 import { DISCOUNT_APPROVAL_PCT, blankAlbum, type AlbumSpec } from "./pricing";
-import { ITEMS, RATES, newId, pricingSettings, registerItemUsage } from "./catalog2";
+import { CATEGORIES, ITEMS, RATES, newId, pricingSettings, registerItemUsage } from "./catalog2";
 import { priceOrder, type DraftAlbum, type OrderDraft, type PricedOrder } from "./orderPricing";
 import { mobileError, TODAY } from "./format";
 import { notifyOrderCreated } from "./events";
@@ -48,7 +48,7 @@ export function customerName(d: OrderDraft): string {
   return c?.studio ?? "";
 }
 export const draftTitle = (d: OrderDraft) => [customerName(d) || "New order", d.event.name || d.event.type].filter(Boolean).join(" · ");
-export const price = (d: OrderDraft) => priceOrder(d, { items: ITEMS, rates: RATES }, pricingSettings());
+export const price = (d: OrderDraft) => priceOrder(d, { items: ITEMS, rates: RATES, categories: CATEGORIES }, pricingSettings());
 
 /** What is still missing before the order can be finalized (the server checks the same). */
 export function draftProblems(d: OrderDraft): { step: number; message: string }[] {
