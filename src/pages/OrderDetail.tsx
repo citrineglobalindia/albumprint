@@ -9,6 +9,7 @@ import { ORDERS, STAGES, stageLabel, stageTone, type Order, type StageKey } from
 import { fmtDate, inr } from "../lib/format";
 import CostingPanel from "../components/CostingPanel";
 import OrderPricingPanel from "../components/OrderPricingPanel";
+import { AssignOrder } from "../components/AssignOrder";
 import { pricingOf } from "../lib/orders2";
 import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
@@ -160,7 +161,7 @@ export default function OrderDetail() {
         <div className="min-w-0 space-y-5">
           <Panel title="Order Details">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              {[["Order ID", o.id], ["Order Type", o.workflow], ["Event", o.event], ...(o.couple ? [["Couple", o.couple]] : []), ...(o.workGroup ? [["Work Group", o.workGroup]] : []), ["Priority", <PriorityPill key="p" p={o.priority} />], ["Order Date", fmtDate(o.pendingAt)], ["Expected Delivery", fmtDate(o.due)], ["Assigned To", <span key="a" className="inline-flex items-center gap-1.5"><Avatar name={o.assignee} size={20} />{o.assignee}</span>], ["Progress", <ProgressBar key="g" value={o.progress} className="mt-2 w-24" />]].map(([k, v]) => (
+              {[["Order ID", o.id], ["Order Type", o.workflow], ["Event", o.event], ...(o.couple ? [["Couple", o.couple]] : []), ...(o.workGroup ? [["Work Group", o.workGroup]] : []), ["Priority", <PriorityPill key="p" p={o.priority} />], ["Order Date", fmtDate(o.pendingAt)], ["Expected Delivery", fmtDate(o.due)], ["Assigned To", <AssignOrder key="a" o={o} canAssign={isAdmin} onDone={(m, ok) => (ok ? show(m) : fail(m))} />], ["Progress", <ProgressBar key="g" value={o.progress} className="mt-2 w-24" />]].map(([k, v]) => (
                 <div key={String(k)}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
               ))}
             </dl>

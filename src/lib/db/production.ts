@@ -4,6 +4,7 @@ import { currentActor } from "../audit";
 import { GJOBS, PJOBS, INSPECTIONS, RTASKS, DRECS, COLORISTS, OPERATORS, PSTAGES, PAPERS, DMODES, can, blankMarks,
   type GJob, type GStatus, type GEvent, type PJob, type PStage, type PExc, type ExcKind, type Vendor, type Inspection, type ReworkTask, type ReturnDept, type DRec, type DMode } from "../production";
 import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "./core";
+import { registerStaffDirectory } from "../autoAssign";
 
 // Colour grading, printing, QC and delivery ⇄ tasks, print_*, qc_inspections, rework_tasks, deliveries, production_events.
 // The UI changes the shared arrays first (optimistic) and calls the db* functions here; writes run one after another so they reach
@@ -13,6 +14,7 @@ type Res = { error: { message: string } | null };
 
 /* ───────── staff directory (names ⇄ profile ids) ───────── */
 let STAFF: { id: string; name: string; role: string }[] = [];
+registerStaffDirectory(() => STAFF);                                                  // auto-assign / the order page's Assign list
 export const staffName = (id?: string | null) => (id ? STAFF.find((s) => s.id === id)?.name : undefined);
 export const staffId = (name?: string) => (name ? STAFF.find((s) => s.name === name)?.id : undefined);
 /** Active staff display names (database mode), for assignee pickers. */

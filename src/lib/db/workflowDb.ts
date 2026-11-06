@@ -1,12 +1,16 @@
 import { staffId } from "./production";
 import { ORDERS } from "../data";
-import { backendOn, sb, writeThrough } from "./core";
+import { backendOn, rehydrate, sb, writeThrough } from "./core";
 
 // Background database writes behind the client workflow engine (src/lib/workflow.ts). The engine applies the change locally first
 // (optimistic) and calls these; if the database refuses (it enforces the same rules), `revert` restores the previous local state.
 export function dbAdvance(orderUid: string | undefined, to: string, reason: string | undefined, override: boolean, revert: () => void) {
   if (!backendOn || !orderUid) return;
-  writeThrough("Moving order", () => sb().rpc("advance_order", { p_order: orderUid, p_to: to, p_reason: reason ?? null, p_override: override }) as never, revert);
+  writeThrough("Moving order", async () => {
+    const r = await sb().rpc("advance_order", { p_order: orderUid, p_to: to, p_reason: reason ?? null, p_override: override });
+    if (!r.error) void rehydrate(["customers and orders", "production"]);   // the server may have auto-assigned the order (and its grading job)
+    return r;
+  }, revert);
 }
 export function dbSetHold(orderUid: string | undefined, hold: boolean, reason: string, revert: () => void) {
   if (!backendOn || !orderUid) return;

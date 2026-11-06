@@ -13,6 +13,7 @@ import { useRef } from "react";
 import { backendOn } from "../lib/supabase";
 import { loadSettings, saveSettings } from "../lib/localState";
 import { getSlaRules } from "../lib/sla";
+import { AutoAssignSettings } from "../components/AutoAssignSettings";
 
 type Val = string | boolean;
 type Fld =
@@ -411,6 +412,7 @@ export default function Settings() {
           {backendOn && <p className="text-xs text-sub" data-testid="shared-note">Saved to the shared database: every staff member sees these values.{(sec === "email" || sec === "whatsapp") && " The SMTP password and WhatsApp access token are never stored here; keep them in your provider or server configuration."}</p>}
           {sec === "workflow" && <StageEditor value={str("wf_stages")} onChange={(x) => set("wf_stages", x)} error={errs.wf_stages} />}
           {sec === "workflow" && <BusinessHours v={v} set={set} errs={errs} />}
+          {sec === "workflow" && <AutoAssignSettings show={show} />}
           {sec === "data" && <DataStorage show={show} />}
           {sec === "backup" && <BackupPanel show={show} />}
           {sec === "audit" && (

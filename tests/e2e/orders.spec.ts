@@ -142,3 +142,40 @@ test("menu: the order-type lists follow the Orders permission", async ({ page })
   await expect(page).not.toHaveURL(/design-orders/);                                           // no Orders access → sent home
   await expect(page.locator("#app-sidebar").getByRole("link", { name: "Printing Orders", exact: true })).toHaveCount(0);
 });
+
+test("assign an order to a colour grader from the order page; auto-assign rule picks the grader when an order reaches Colour Grading", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await page.goto("/");
+  const pick = (stage: string) => page.evaluate((st) => (JSON.parse(localStorage.getItem("albumpro.v1.orders") ?? "[]") as { id: string; stage: string; workflow: string; hold?: boolean }[]).find((o) => o.stage === st && o.workflow === "Design + Printing" && !o.hold)?.id, stage);
+  await expect.poll(() => pick("colour_grading")).toBeTruthy();
+  // 1) by hand, at Colour Grading
+  const cg = (await pick("colour_grading"))!;
+  await page.goto(`/orders/${cg}`);
+  const at = page.getByTestId("assigned-to");
+  await at.getByRole("button", { name: /Assign|Change/ }).click();
+  await at.getByLabel("Assign to").selectOption("Karthik V");
+  await expect(at.getByText("this also assigns the grading job")).toBeVisible();
+  await at.getByRole("button", { name: "Assign", exact: true }).click();
+  await expect(at).toContainText("Karthik V");
+  await page.goto("/colour-grading");
+  await expect(page.locator("tbody tr", { hasText: cg })).toContainText("Karthik V");   // the grader's queue follows
+  // 2) the admin sets auto-assign for Colour Grading
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /^Workflow/ }).first().click();
+  const aa = page.getByTestId("auto-assign-settings");
+  await aa.getByLabel("Auto-assign Colour Grading").selectOption("least_busy");
+  await aa.getByRole("button", { name: "Save auto-assign" }).click();
+  await expect(page.getByText("Auto-assign rules saved").first()).toBeVisible();
+  // an order moved into Colour Grading gets the grader automatically
+  const fr = await page.evaluate(() => { const a = JSON.parse(localStorage.getItem("albumpro.v1.orders") ?? "[]") as { id: string; stage: string; workflow: string; hold?: boolean }[]; return a.find((o) => o.stage === "files_received" && o.workflow === "Design + Printing" && !o.hold)?.id; });
+  test.skip(!fr, "no Design + Printing order at Files Received in the demo data");
+  await page.goto(`/orders/${fr}`);
+  const graders = await page.evaluate(() => (JSON.parse(localStorage.getItem("albumpro.v1.staff") ?? "null") as { name: string; role: string }[] | null)?.filter((x) => x.role === "Colour Grading").map((x) => x.name) ?? []);
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  await expect(page.getByTestId("assigned-to")).toContainText("auto-assign on");
+  const who = (await page.getByTestId("assigned-to").locator("xpath=.").innerText()).replace(/Change|auto-assign on/g, "").replace(/^[A-Z]{1,2}\n?/, "").trim();
+  if (graders.length) expect(graders).toContain(who);                                       // someone from Colour Grading (the least busy)
+  await page.goto("/colour-grading");
+  await expect(page.locator("tbody tr", { hasText: fr! })).toContainText(who);             // and the grading job is theirs
+});

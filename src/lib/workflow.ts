@@ -6,6 +6,7 @@ import { proofApproved } from "./proofs";
 import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
 import { dbAdvance, dbSetHold, dbSetSla } from "./db/workflowDb";
+import { autoAssignLocal } from "./autoAssign";
 
 // Client-side mirror of the database's advance_order() (supabase/migrations/0002_rules.sql).
 // When the backend is connected, moveStage() becomes a thin call to that function; callers don't change.
@@ -72,6 +73,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   notify();
   dbAdvance(o.uid, to, reason || undefined, !!opts.override, () => { o.stage = from; o.progress = prev.progress; o.qc = prev.qc; notify(); });
   notifyStage(o, from, to);
+  autoAssignLocal(o, to);                                                                                // demo: the admin's auto-assign rule (the database applies it itself)
   logAudit({ entity: "order", entityId: o.id, action: overridden ? "stage_override" : "stage_change", from: stageLabel(from), to: stageLabel(to), reason: reason || undefined, override: overridden || undefined });
   return { ok: true, order: o };
 }

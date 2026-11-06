@@ -9,6 +9,7 @@ import type { RoleKey } from "./auth";
 import { backendOn } from "./supabase";
 import { reportDbError } from "./db/core";
 import * as D from "./db/production";
+import { registerGradingAssign } from "./autoAssign";
 
 // With the backend on, every action below changes the shared arrays first (optimistic) and then writes to the database through ./db/production;
 // the database enforces the same rules, and a refusal reverts the local change. Demo mode is unchanged.
@@ -536,3 +537,13 @@ export function closeWithChecks(orderId: string, override?: string): Out {
   const r = closeOrder(orderId, { override: !!override?.trim(), reason: override }); return r.ok ? ok(`${orderId} closed`) : no(r.error);
 }
 export function reopen(orderId: string, reason: string): Out { const r = reopenOrder(orderId, reason); return r.ok ? ok(`${orderId} reopened`) : no(r.error); }
+
+/** Auto-assign / the order page put a grader on the order's grading job (created if missing). Demo mode only — the database does this itself. */
+registerGradingAssign((orderId, who) => {
+  const o = ord(orderId); if (!o || o.workflow === "Printing") return;
+  if (!COLORISTS.includes(who)) COLORISTS.push(who);
+  const ex = gjob(orderId);
+  if (ex) ex.colorist = who;
+  else GJOBS.unshift({ orderId, colorist: who, priority: o.priority, due: o.due, status: "New", instructions: "Standard grading, keep skin tones natural.", internalNote: "", rounds: 0, events: [{ at: new Date().toISOString(), by: who, text: "Assigned" }] } as GJob);
+  notify();
+});
