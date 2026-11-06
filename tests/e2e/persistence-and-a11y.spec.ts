@@ -114,3 +114,13 @@ test("a recorded payment survives a reload", async ({ page }) => {
   await page.reload();
   await expect(page.getByText("₹1,234").first()).toBeVisible();
 });
+
+test("pages never scroll the whole window (only the content area scrolls; hidden inputs stay inside it)", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 820 });
+  await seedRole(page, "admin");
+  for (const url of ["/orders/IDP00072", "/orders", "/", "/catalog", "/invoices", "/payments", "/files"]) {
+    await page.goto(url); await page.waitForTimeout(600);
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    expect(h, `window scroll height on ${url}`).toBeLessThanOrEqual(821);
+  }
+});

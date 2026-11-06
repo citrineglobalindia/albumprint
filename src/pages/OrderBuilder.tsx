@@ -5,6 +5,7 @@ import { Field, Pill, Toggle, cx, inputCls } from "../components/ui";
 import { Combobox } from "../components/controls";
 import { CategoryPicker, type SheetBalance } from "../components/CategoryPicker";
 import { AlbumItemsTable } from "../components/AlbumItemsTable";
+import { ShareInvoice } from "../components/ShareInvoice";
 import { InvoiceView } from "../components/InvoiceView";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
@@ -134,6 +135,11 @@ export default function OrderBuilder() {
   useEffect(() => { if (step === 4) { let live = true; void previewSnapshot(d, p).then((x) => live && setSnap(x)); return () => { live = false; }; } }, [step, d, p]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const snapshotOf = async (): Promise<InvoiceSnapshot> => previewSnapshot(d, p);
+  /** The issued invoice (as saved at finalize) — what is shared and printed. */
+  const issuedSnapshot = async (): Promise<InvoiceSnapshot> => {
+    const saved = done ? (await import("../lib/orders2")).pricingOf(done.code)?.snapshot : undefined;
+    return saved ?? { ...(await snapshotOf()), invoiceNumber: done?.invoiceNumber, orderCode: done?.code, revision: done?.revision };
+  };
   const pdf = async (kind: "open" | "download") => {
     const s = done ? (await import("../lib/orders2")).pricingOf(done.code)?.snapshot ?? await snapshotOf() : await snapshotOf();
     const blob = await invoicePdf(s, { preview: !done, paid });
@@ -211,7 +217,7 @@ export default function OrderBuilder() {
                 <div className="flex flex-wrap gap-2"><button onClick={() => void pdf("open")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><FileText className="size-4" />Preview PDF</button></div>
               </div>
             )}
-            {step === 5 && (done ? <Done r={done} onPdf={pdf} onNew={() => { nav("/orders/new"); window.location.reload(); }} /> : (
+            {step === 5 && (done ? <Done r={done} onPdf={pdf} paid={paid} snapshot={issuedSnapshot} onNew={() => { nav("/orders/new"); window.location.reload(); }} /> : (
               <section className="rounded-2xl border border-line bg-white p-5" aria-label="Finalize">
                 <h2 className="text-lg font-extrabold">Finalize order</h2>
                 <p className="mb-4 text-sm text-sub">The server checks every price again, creates the order and its albums, and issues the invoice with its final number. Prices, item names and tax are saved with the order, so later catalog changes never alter it.</p>
@@ -437,7 +443,7 @@ function Summary({ p, paid, onPick }: { p: PricedOrder; paid: number; onPick: (i
   );
 }
 
-function Done({ r, onPdf, onNew }: { r: FinalizeResult; onPdf: (k: "open" | "download") => void; onNew: () => void }) {
+function Done({ r, onPdf, onNew, snapshot, paid = 0 }: { r: FinalizeResult; onPdf: (k: "open" | "download") => void; onNew: () => void; snapshot: () => Promise<InvoiceSnapshot>; paid?: number }) {
   return (
     <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6" aria-label="Order finalized" data-testid="finalized">
       <div className="flex items-center gap-3"><CheckCircle2 className="size-8 text-emerald-600" /><div><h2 className="text-lg font-extrabold">Order {r.code} is finalized</h2>
@@ -445,6 +451,7 @@ function Done({ r, onPdf, onNew }: { r: FinalizeResult; onPdf: (k: "open" | "dow
       <div className="mt-4 flex flex-wrap gap-2">
         <button onClick={() => onPdf("download")} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark"><Download className="size-4" />Download invoice PDF</button>
         <button onClick={() => onPdf("open")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><Printer className="size-4" />Open / print</button>
+        <ShareInvoice snapshot={snapshot} paid={paid} />
         <Link to={`/orders/${r.code}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft">Open the order</Link>
         <button onClick={onNew} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><Plus className="size-4" />Create another order</button>
       </div>

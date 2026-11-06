@@ -52,7 +52,7 @@ export function InvoiceView({ s, paid = 0, preview = false }: { s: InvoiceSnapsh
           {s.orderLines.map((l) => <div key={l.position} className="flex justify-between py-0.5"><span>{l.name}</span><span className={cx("tabular-nums", l.missing ? "font-bold text-rose-600" : "font-semibold")}>{l.missing ? "Price not configured" : money(l.amount)}</span></div>)}
         </section>
       )}
-      <dl className="ml-auto mt-4 max-w-sm space-y-1 text-[13px]" data-testid="invoice-totals">
+      <dl className="ml-auto mt-4 max-w-sm space-y-1 text-[13px] [&_dt]:whitespace-nowrap [&>div]:gap-4" data-testid="invoice-totals">
         <div className="flex justify-between"><dt className="text-sub">Subtotal</dt><dd className="font-semibold tabular-nums">{money(s.subtotal)}</dd></div>
         {s.discountAmount > 0 && <div className="flex justify-between"><dt className="text-sub">Discount {s.discountType === "percent" ? `(${s.discountValue}%)` : "(fixed)"}</dt><dd className="font-semibold tabular-nums">− {money(s.discountAmount)}</dd></div>}
         {s.taxEnabled && <><div className="flex justify-between"><dt className="text-sub">Taxable amount</dt><dd className="tabular-nums">{money(s.taxable)}</dd></div><div className="flex justify-between"><dt className="text-sub">{s.taxLabel} @ {s.taxRate}%</dt><dd className="font-semibold tabular-nums">{money(s.tax)}</dd></div></>}

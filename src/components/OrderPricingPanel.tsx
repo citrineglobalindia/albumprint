@@ -8,6 +8,7 @@ import { useAuth } from "../lib/auth";
 import type { Order } from "../lib/data";
 import { DRAFTS, cancelReopen, pricingOf, reopenOrder } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
+import { ShareInvoice } from "./ShareInvoice";
 
 /** A finalized order's pricing: the invoice exactly as issued, its PDF, and the admin-only authorized edit (reopen). */
 export default function OrderPricingPanel({ o, show }: { o: Order; show: (m: string) => void }) {
@@ -32,6 +33,7 @@ export default function OrderPricingPanel({ o, show }: { o: Order; show: (m: str
       action={<div className="flex flex-wrap gap-2">
         <Pill tone={pr.status === "finalized" ? "green" : "amber"} icon={pr.status === "finalized" ? Lock : AlertTriangle}>{pr.status === "finalized" ? "Prices locked" : "Being edited"}</Pill>
         <button onClick={() => void pdf(false)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft"><Download className="size-3.5" />PDF</button>
+        <ShareInvoice compact snapshot={async () => pr.snapshot} paid={o.paid} />
         <button onClick={() => void pdf(true)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft"><Printer className="size-3.5" />Print</button>
         {isAdmin && pr.status === "finalized" && <button onClick={() => setAsking(true)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800 hover:bg-amber-50"><Pencil className="size-3.5" />Edit (reopen)</button>}
       </div>} >

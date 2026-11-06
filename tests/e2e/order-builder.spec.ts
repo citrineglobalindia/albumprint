@@ -504,3 +504,48 @@ test("company name on the invoice: admin default + per-order choice for allowed 
   await page.getByRole("switch", { name: "Show company name on invoice" }).click();
   await expect(page.getByTestId("invoice-business-name")).toBeVisible();
 });
+
+test("share the issued invoice: image download, WhatsApp chat with the customer, share sheet fallback", async ({ page, context }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { albums: [{ name: "Share album", sheets: 10 }], finalize: true });
+  const fin = page.getByTestId("finalized");
+  await expect(fin).toBeVisible();
+  const inv = (await page.getByTestId("done-invoice").textContent())!.trim();
+  // the invoice as a picture
+  const dl = page.waitForEvent("download");
+  await fin.getByRole("button", { name: "Download image" }).click();
+  const d = await dl;
+  expect(d.suggestedFilename()).toBe(`${inv}.png`);
+  const bytes = await (await d.createReadStream()).toArray().then((c) => Buffer.concat(c as Buffer[]));
+  expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+  const ink = await page.evaluate(async (b64) => {                                          // a real rendered invoice, not a blank image: count dark pixels
+    const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode();
+    const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const x = c.getContext("2d")!; x.drawImage(img, 0, 0);
+    const px = x.getImageData(0, 0, c.width, c.height).data; let dark = 0;
+    for (let i = 0; i < px.length; i += 16) if (px[i]! < 120 && px[i + 1]! < 120 && px[i + 2]! < 160) dark++;
+    return { dark, w: img.width, h: img.height };
+  }, bytes.toString("base64"));
+  expect(ink.w).toBeGreaterThan(1000);
+  expect(ink.dark).toBeGreaterThan(2000);
+  // WhatsApp on a computer: a chat with the customer's number and the message; the image is downloaded to attach
+  await context.route(/wa\.me|whatsapp\.com/, (r) => r.fulfill({ status: 200, contentType: "text/html", body: "<p>WhatsApp</p>" }));   // no internet here: answer wa.me ourselves
+  const pop = context.waitForEvent("page");
+  const dl2 = page.waitForEvent("download");
+  await fin.getByRole("button", { name: "WhatsApp" }).click();
+  const wa = await pop; await dl2;
+  expect(wa.url()).toMatch(/^https:\/\/wa\.me\/91\d{10}\?text=/);
+  expect(decodeURIComponent(wa.url())).toContain(`Invoice ${inv}`);
+  expect(decodeURIComponent(wa.url())).toMatch(/91\d{10}/);                                  // the customer's mobile with the country code
+  await wa.close();
+  await expect(page.getByTestId("share-msg")).toContainText("attach it in the chat");
+  // "Share invoice" uses the share sheet where the browser has one; this test browser has none → it downloads instead
+  const dl3 = page.waitForEvent("download");
+  await fin.getByRole("button", { name: "Share invoice" }).click();
+  await dl3;
+  await expect(page.getByTestId("share-msg")).toContainText("can't share files directly");
+  // the order page has the same buttons
+  await fin.getByRole("link", { name: "Open the order" }).click();
+  await expect(page.getByRole("button", { name: "Share invoice" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "WhatsApp" })).toBeVisible();
+});
