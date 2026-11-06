@@ -125,5 +125,22 @@ insert into order_drafts(payload) select jsonb_set(jsonb_set(t.payload(), '{albu
 insert into t.p36 select 'draft_bc', id::text from order_drafts where payload->'event'->>'name' = 'Big cut';
 select t.err($$select finalize_order_v2(t.id('draft_bc'))$$, 'finalize: a price cut + order discount over the limit needs an admin', 'needs an admin');
 select t.as('system');
+
+-- printing charge setting (0044)
+select t.as('system');
+select t.eq($$select printing_mode from pricing_settings$$, 'separate', 'printing mode: separate by default (as before)');
+select t.eq($$select count(*)::text from jsonb_array_elements(t.price(t.payload())->'albums'->0->'lines') l where l->>'kind' = 'printing'$$, '1', 'printing mode: separate — a printing line on the album');
+update pricing_settings set printing_mode = 'included';
+select t.eq($$select count(*)::text from jsonb_array_elements(t.price(t.payload())->'albums'->0->'lines') l where l->>'kind' = 'printing'$$, '0', 'printing mode: included — no printing line');
+select t.eq($$select (t.price(t.payload())->'albums'->0->>'perCopy')::numeric::text$$, '870.00', 'printing mode: included — the album is priced from its items (1230 − printing 30 × 12)');
+update cat_items set active = false where option_kind = 'printing';
+select t.eq($$select count(*)::text from jsonb_array_elements(t.price(t.payload())->'errors') e where e->>'path' = 'catalog.printing'$$, '0', 'printing mode: included — no printing rate card needed');
+update cat_items set active = true where option_kind = 'printing';
+update pricing_settings set printing_mode = 'separate';
+select t.err($$update pricing_settings set printing_mode = 'sometimes'$$, 'printing mode: only included or separate', 'check');
+select t.as('reception');
+do $$ begin begin update pricing_settings set printing_mode = 'included'; exception when others then null; end; end $$;
+select t.as('system');
+select t.eq($$select printing_mode from pricing_settings$$, 'separate', 'printing mode: a non-admin cannot change it');
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

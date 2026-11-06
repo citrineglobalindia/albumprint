@@ -437,3 +437,28 @@ test("non-admins see the notice without a link", async ({ page }) => {
   await expect(page.getByTestId("missing-rate-card")).toContainText("an admin adds it in Catalog & Pricing");
   await expect(page.getByTestId("missing-rate-card").getByRole("link")).toHaveCount(0);
 });
+
+test("Tax & defaults: printing charge A (included) / B (separate)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Mode album", sheets: 30 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await expect(page.getByTestId("album-lines-1")).toContainText("automatic");              // B (default): a printing line
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹3,600");                    // 30 × ₹120 (12x36)
+  await page.goto("/catalog");
+  await page.getByRole("tab", { name: "Tax & defaults" }).or(page.getByRole("button", { name: "Tax & defaults" })).first().click();
+  await expect(page.getByLabel("B · Charged separately")).toBeChecked();
+  await page.getByLabel("A · Included in the sheet prices").check();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Pricing settings saved").first()).toBeVisible();
+  await page.goto("/orders/new?drafts=1");
+  await page.getByRole("dialog", { name: "Saved drafts" }).getByRole("button", { name: /Sharma Studio/ }).first().click();
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await expect(page.getByTestId("album-lines-1")).not.toContainText("automatic");          // A: no printing line
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹0");
+  await expect(page.getByTestId("missing-rate-card")).toHaveCount(0);
+  const t = page.getByTestId("album-items-1");
+  await t.getByRole("button", { name: "Add item" }).click();
+  await t.getByLabel("New line product").fill("uv spot"); await t.getByLabel("New line product").press("Enter");
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹450");                       // only the items: 30 × ₹15
+});

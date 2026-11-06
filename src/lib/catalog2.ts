@@ -12,7 +12,10 @@ export type OptionKind = "printing" | "design" | "cover" | "binding" | "box";
 export interface Category { id: string; parentId: string | null; name: string; depth: number; sort: number; active: boolean; sample?: boolean }
 export interface CItem { id: string; categoryId: string; name: string; code?: string; description?: string; method: PricingMethod; rate: number | null; unit: string; kind?: OptionKind; sort: number; active: boolean; sample?: boolean }
 export interface Rate { id: string; itemId: string; size?: string; paper?: string; finish?: string; rate: number }
-export interface PricingSettings { taxEnabled: boolean; taxLabel: string; taxRate: number; defaultDeliveryDays: number }
+/** printingMode: "separate" = every album gets a printing line (printing rate card × sheets); "included" = no separate printing charge
+ *  (the per-sheet paper / lamination prices already include printing). Older databases without the setting behave as "separate". */
+export type PrintingMode = "included" | "separate";
+export interface PricingSettings { taxEnabled: boolean; taxLabel: string; taxRate: number; defaultDeliveryDays: number; printingMode?: PrintingMode }
 
 export const METHOD_LABEL: Record<PricingMethod, string> = { per_sheet: "Rate per sheet (per copy)", per_unit: "Rate per item / unit (per copy)", fixed_per_album: "Fixed amount per album", one_time_order: "One-time charge per order" };
 export const SCOPE_LABEL = { copy: "Per copy", album: "Per album", order: "Per order" } as const;
@@ -23,7 +26,7 @@ export const CATEGORIES: Category[] = persistArray<Category>("cat2_categories", 
 export const ITEMS: CItem[] = persistArray<CItem>("cat2_items", []);
 export const RATES: Rate[] = persistArray<Rate>("cat2_rates", []);
 const SETTINGS: PricingSettings[] = persistArray<PricingSettings>("cat2_settings", []);
-export const DEFAULT_PRICING_SETTINGS: PricingSettings = { taxEnabled: false, taxLabel: "Tax", taxRate: 0, defaultDeliveryDays: 14 };
+export const DEFAULT_PRICING_SETTINGS: PricingSettings = { taxEnabled: false, taxLabel: "Tax", taxRate: 0, defaultDeliveryDays: 14, printingMode: "separate" };
 export const pricingSettings = (): PricingSettings => ({ ...DEFAULT_PRICING_SETTINGS, ...(SETTINGS[0] ?? {}) });
 
 export function replaceCatalog(p: { categories?: Category[]; items?: CItem[]; rates?: Rate[]; settings?: PricingSettings }) {
@@ -168,6 +171,7 @@ export async function savePricingSettings(s: PricingSettings): Promise<string | 
   if (!s.taxLabel.trim()) return "Enter the tax label (for example GST)";
   if (!(s.taxRate >= 0 && s.taxRate <= 100)) return "The tax rate must be between 0 and 100%";
   if (!(Number.isInteger(s.defaultDeliveryDays) && s.defaultDeliveryDays >= 0 && s.defaultDeliveryDays <= 365)) return "Default delivery days must be a whole number from 0 to 365";
+  if (s.printingMode && s.printingMode !== "included" && s.printingMode !== "separate") return "Choose how printing is charged";
   const rec = { ...s, taxLabel: s.taxLabel.trim(), taxRate: Math.round(s.taxRate * 100) / 100 };
   if (backendOn) { if (!backend) return NOT_CONNECTED; const e = await backend.saveSettings(rec); if (e) return e; }
   SETTINGS.splice(0, SETTINGS.length, rec); notify(); return null;

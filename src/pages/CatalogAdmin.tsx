@@ -230,6 +230,16 @@ function SettingsCard({ show }: { show: (m: string) => void }) {
   const save = async () => { setMsg(""); const e = await savePricingSettings({ ...s, taxRate: Number(s.taxRate), defaultDeliveryDays: Number(s.defaultDeliveryDays) }); if (e) setMsg(e); else show("Pricing settings saved"); };
   return (
     <Panel title="Tax & defaults" subtitle="Tax is optional. When it is on, it is charged on the amount after discount and rounded to the paisa." className="max-w-2xl">
+      <fieldset className="mb-5 rounded-xl border border-line p-4" data-testid="printing-mode">
+        <legend className="px-1 text-sm font-bold">Printing charge</legend>
+        <p className="mb-3 text-xs text-sub">How printing is charged on every album. Changing this affects new orders and drafts only — finalized orders keep their invoice.</p>
+        {([["included", "A · Included in the sheet prices", "No separate printing line. Albums are priced from the items you add (paper / lamination per sheet, covers, bags…). No printing rate card needed."],
+           ["separate", "B · Charged separately", "Every album gets a printing line: sheets × the printing rate card (set it up as an item with “Use as: Printing rate card”)."]] as const).map(([v, label, hint]) => (
+          <label key={v} className={cx("mb-2 flex cursor-pointer gap-3 rounded-lg border px-3 py-2.5", (s.printingMode ?? "separate") === v ? "border-brand bg-brand-soft/50" : "border-line hover:bg-slate-50")}>
+            <input type="radio" name="printing-mode" className="mt-1" checked={(s.printingMode ?? "separate") === v} onChange={() => setS({ ...s, printingMode: v })} aria-label={label} />
+            <span><span className="block text-sm font-bold">{label}</span><span className="block text-xs text-sub">{hint}</span></span>
+          </label>))}
+      </fieldset>
       <div className="mb-4 flex items-center justify-between rounded-xl border border-line px-4 py-3"><div><div className="text-sm font-bold">Charge tax on orders</div><div className="text-xs text-sub">No rate is assumed — set your own.</div></div><Toggle label="Charge tax" on={s.taxEnabled} onChange={(v) => setS({ ...s, taxEnabled: v })} /></div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Tax label"><input aria-label="Tax label" className={inputCls} value={s.taxLabel} maxLength={30} onChange={(e) => setS({ ...s, taxLabel: e.target.value })} placeholder="GST" /></Field>

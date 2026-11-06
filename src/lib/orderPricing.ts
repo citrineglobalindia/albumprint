@@ -84,7 +84,8 @@ export function priceOrder(d: OrderDraft, catalog: { items: CItem[]; rates: Rate
     if (copies < 1) err(`album.${ai}.copies`, `Album ${ai}: copies must be a positive whole number`);
     if (!clean(a.name)) err(`album.${ai}.name`, `Album ${ai}: enter an album name or reference`);
     const raw: (ReturnType<typeof priceLine> & { note?: string | null; listRate?: number | null; priceEdited?: boolean; grossP?: number; ldP?: number; listP?: number; dtype?: "fixed" | "percent" | null; dval?: number })[] = [];
-    if (!prn) { err("catalog.printing", "Printing rate card is not set up. Ask an admin to add it in Catalog."); anyMissing = true; }
+    if (settings.printingMode === "included") { /* printing is part of the per-sheet item prices: no separate printing line */ }
+    else if (!prn) { err("catalog.printing", "Printing rate card is not set up. Ask an admin to add it in Catalog."); anyMissing = true; }
     else { const l = priceLine(prn, 1, sheets, size, paper, finish, "printing", catalog.rates); raw.push(l); if (l.missing) { anyMissing = true; err(`album.${ai}.printing`, `Album ${ai}: printing price not configured for this size / paper / finish`); } }
     const dmode = a.design?.mode || (dsn ? "card" : "per_sheet");             // no choice yet: the rate card if there is one, else a typed per-sheet rate
     if (designed && dmode !== "card" && dmode !== "per_sheet" && dmode !== "fixed") err(`album.${ai}.design`, `Album ${ai}: choose how design is charged`);

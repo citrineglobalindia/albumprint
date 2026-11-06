@@ -320,7 +320,7 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
     set({ items: [...a.items, sheetQty != null ? { itemId: id, qty, sheetQty } : { itemId: id, qty }] }); return null;
   };
   const isAdmin = useAuth().role === "admin";
-  const missingCards = [!rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
+  const missingCards = [pricingSettings().printingMode !== "included" && !rateCard("printing") && "printing", designed && design.mode === "card" && !rateCard("design") && "design"].filter(Boolean);
   return (
     <section className="rounded-2xl border border-line bg-white p-5" aria-label={`Album ${n}`} data-testid={`album-${n}`}>
       <div className="mb-4 flex flex-wrap items-center gap-2"><h2 className="text-base font-extrabold">Album {n} of {total}</h2>
