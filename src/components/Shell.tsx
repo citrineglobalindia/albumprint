@@ -12,6 +12,7 @@ import { useAuth, ROLES } from "../lib/auth";
 import { notifStore, onNotifArrive, useNotifs } from "../lib/notifStore";
 import { useNewOrder } from "./NewOrderWizard";
 import A11yLayer from "./A11yLayer";
+import { LiveBadge } from "./LiveBadge";
 import { useToast } from "./Toast";
 import { onDbError } from "../lib/db/core";
 
@@ -217,6 +218,7 @@ function Topbar({ openPalette, onMenu, menuOpen }: { openPalette: () => void; on
         <SearchBox openPalette={openPalette} />
       </div>
       <div className="flex items-center gap-1 sm:gap-5">
+        <LiveBadge />
         <button type="button" onClick={openPalette} aria-label="Search" data-testid="search-icon" className="grid size-11 place-items-center rounded-xl md:hidden"><Search className="size-5" /></button>
         <div className="relative">
           <button onClick={() => { setBell(!bell); setHelp(false); }} className="relative grid size-11 place-items-center text-ink" aria-label="Notifications" aria-haspopup="dialog" aria-expanded={bell}>

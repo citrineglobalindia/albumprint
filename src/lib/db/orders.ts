@@ -97,9 +97,14 @@ async function hydrate() {
     c.dues = mine.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
     c.lastOrder = mine.map((o) => o.pendingAt).sort().at(-1) ?? c.since;
   }
+  // a refresh keeps the detail (albums, items, costing) of orders that were opened, then re-reads it so it stays current
+  const opened = ORDERS.filter((o) => o.uid && (o.albums || o.items || o.costing));
+  const prev = new Map(opened.map((o) => [o.uid!, o]));
+  for (const o of orders) { const p = o.uid ? prev.get(o.uid) : undefined; if (p) { o.albums ??= p.albums; o.items ??= p.items; o.costing ??= p.costing; } }
   ORDERS.splice(0, ORDERS.length, ...orders);
   CUSTOMERS.splice(0, CUSTOMERS.length, ...customers);
   notify();
+  for (const o of opened.slice(0, 5)) void loadOrderDetail(o.id);
 }
 if (backendOn) registerHydrator("customers and orders", hydrate);
 

@@ -25,7 +25,10 @@ export function fileFromRow(r: Row): FileRec | null {
 
 async function hydrate() {
   const rows = await q<Row[]>("Loading files", sb().from("order_files").select("*").order("uploaded_at", { ascending: false }) as never);
-  FILES.splice(0, FILES.length, ...(rows ?? []).map(fileFromRow).filter((f): f is FileRec => !!f));
+  if (!rows) return;
+  const loaded = rows.map(fileFromRow).filter((f): f is FileRec => !!f), ids = new Set(loaded.map((f) => f.id));
+  const uploading = FILES.filter((f) => f.pending && !ids.has(f.id));     // a live refresh must not drop uploads still in progress
+  FILES.splice(0, FILES.length, ...uploading, ...loaded);
   notify();
 }
 if (backendOn) registerHydrator("files", hydrate);

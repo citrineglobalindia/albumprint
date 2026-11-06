@@ -126,7 +126,10 @@ export function uploadGraded(orderId: string, name: string, size: number, file?:
   if (j.status !== "In Progress") return no(j.status === "Rework" ? "Acknowledge the revision request before uploading" : "Start grading before uploading graded files");
   if (!/\.(jpe?g|tiff?|zip)$/i.test(name)) return no(`${name} — only JPG, TIFF or ZIP allowed`);
   const r = addFile(orderId, "Graded", name, size, file); if (!r.ok) return no(r.error);
-  gev(j, `Uploaded ${name} (v${r.file.version})`); notify(); return ok(`${name} uploaded as v${r.file.version}`);
+  if (!r.done) { gev(j, `Uploaded ${name} (v${r.file.version})`); notify(); return ok(`${name} uploaded as v${r.file.version}`); }
+  const rec = r.file;                                                     // the history line is written once the bytes are actually stored
+  void r.done.then((d) => { if (d.ok) { gev(j, `Uploaded ${name} (v${rec.version})`); notify(); } });
+  return ok(`Uploading ${name}…`);
 }
 export function submitGrading(orderId: string): Out {
   const g = gate(orderId, "grading"); if (isOut(g)) return g;

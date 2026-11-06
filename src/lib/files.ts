@@ -13,7 +13,11 @@ export type FileState = "Draft" | "Submitted" | "Approved" | "Rejected" | "Locke
 export interface FileRec { progress?: number; id: string; orderId: string; category: FileCategory; name: string; ext: string; size: number; version: number; state: FileState; archived?: boolean; by: string; at: string; checksum?: string; path?: string; pending?: boolean }
 export const FILES: FileRec[] = persistArray<FileRec>("files", []);
 export const ALLOWED_EXT = ["jpg", "jpeg", "png", "tif", "tiff", "psd", "pdf", "zip", "ai", "indd", "cdr"];
-export const MAX_BYTES = 5 * 1024 ** 3;
+/** Largest file one upload may be. With the backend on this is the Supabase project's per-file upload limit (Free plan: 50 MB; Pro: set in
+ *  Storage settings, up to 500 GB) — set VITE_MAX_UPLOAD_MB to match it. Checked before sending so a too-big file fails at once with a clear message. */
+export const MAX_BYTES = backendOn ? (Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 50) * 1024 ** 2 : 5 * 1024 ** 3;
+const limitText = () => (MAX_BYTES >= 1024 ** 3 ? `${MAX_BYTES / 1024 ** 3} GB` : `${Math.round(MAX_BYTES / 1024 ** 2)} MB`);
+export const MAX_TEXT = limitText();
 export type FileResult = { ok: true; file: FileRec; done?: Promise<{ ok: boolean; error?: string }> } | { ok: false; error: string };
 
 /**
@@ -23,7 +27,7 @@ export type FileResult = { ok: true; file: FileRec; done?: Promise<{ ok: boolean
 export function addFile(orderId: string, category: FileCategory, name: string, size: number, file?: File): FileResult {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (!ALLOWED_EXT.includes(ext)) return { ok: false, error: `.${ext} is not an allowed file type` };
-  if (size > MAX_BYTES) return { ok: false, error: "File exceeds the 5 GB limit" };
+  if (size > MAX_BYTES) return { ok: false, error: `${name} is ${fmtSize(size)} — the limit is ${MAX_TEXT} per file` };
   const version = Math.max(0, ...FILES.filter((f) => f.orderId === orderId && f.category === category && f.name === name).map((f) => f.version)) + 1;   // never overwrite silently
   const id = backendOn && typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `F${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const rec: FileRec = { id, orderId, category, name, ext, size, version, state: "Draft", by: currentActor().name, at: new Date().toISOString() };
@@ -35,7 +39,9 @@ export function addFile(orderId: string, category: FileCategory, name: string, s
     rec.pending = false; rec.progress = undefined; rec.path = s.path; rec.version = s.version; rec.checksum = s.row.checksum ?? undefined; rec.at = s.row.uploaded_at ?? rec.at; notify(); return { ok: true as const };
   }, (e) => {
     const i = FILES.indexOf(rec); if (i >= 0) FILES.splice(i, 1);
-    reportDbError(`Uploading ${name}`, e); notify(); return { ok: false as const, error: String((e as { message?: string })?.message ?? e) };
+    const raw = String((e as { message?: string })?.message ?? e), code = String((e as { statusCode?: string })?.statusCode ?? "");
+    const msg = code === "413" || /413|too large|exceeded the maximum/i.test(raw) ? `the file is larger than the storage limit (${MAX_TEXT} per file)` : raw;
+    reportDbError(`Uploading ${name}`, { message: msg }); notify(); return { ok: false as const, error: msg };
   });
   return { ok: true, file: rec, done };
 }

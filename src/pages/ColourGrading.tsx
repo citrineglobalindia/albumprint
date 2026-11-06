@@ -12,7 +12,8 @@ import { useStore, useSlashFocus } from "../lib/store";
 import { fmtDate, TODAY } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
-import { fmtSize } from "../lib/files";
+import { FILES, MAX_TEXT, fmtSize } from "../lib/files";
+import { backendOn } from "../lib/supabase";
 import { slaState } from "../lib/sla";
 import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
 
@@ -108,7 +109,7 @@ export default function ColourGrading() {
       if (r.ok) n++; else bad.push(r.msg);
     });
     setRejected(bad);
-    if (n) show(`${n} graded file${n > 1 ? "s" : ""} added to ${cur.orderId}`);
+    if (n) show(backendOn ? `Uploading ${n} file${n > 1 ? "s" : ""} to ${cur.orderId}…` : `${n} graded file${n > 1 ? "s" : ""} added to ${cur.orderId}`);
     else if (bad[0]) show(bad[0]);
   };
   const saveJob = () => {
@@ -126,6 +127,7 @@ export default function ColourGrading() {
   const o = cur ? ordOf(cur.orderId) : null;
   const closed = !!o?.closed;
   const files = cur ? gradedFiles(cur.orderId) : [];
+  const uploading = cur ? FILES.filter((x) => x.orderId === cur.orderId && x.category === "Graded" && x.pending) : [];
   const dr = cur ? (draft[cur.orderId] ?? { d: cur.draft ?? "", n: cur.internalNote }) : { d: "", n: "" };
   const sla = o ? slaState(o) : null;
   const canEdit = work && !closed;
@@ -249,7 +251,13 @@ export default function ColourGrading() {
                   <span className="text-sub">v{x.version} · {fmtSize(x.size)}</span><Pill tone={x.state === "Approved" ? "green" : x.state === "Rejected" ? "red" : x.state === "Submitted" ? "violet" : "slate"}>{x.state}</Pill>
                 </li>
               ))}
-              {files.length === 0 && <li className="text-xs text-sub">No graded files yet.</li>}
+              {uploading.map((x) => (
+                <li key={x.id} data-testid="uploading" className="rounded-lg border border-brand/40 bg-brand-soft/30 px-3 py-1.5 text-xs">
+                  <div className="flex items-center gap-2"><UploadCloud className="size-4 text-brand" /><span className="min-w-0 flex-1 truncate font-semibold">{x.name}</span><span className="text-sub">{fmtSize(x.size)} · uploading{x.progress != null ? ` ${x.progress}%` : "…"}</span></div>
+                  <div className="mt-1 h-1 overflow-hidden rounded bg-line"><div className="h-full bg-brand transition-all" style={{ width: `${x.progress ?? 5}%` }} /></div>
+                </li>
+              ))}
+              {files.length === 0 && uploading.length === 0 && <li className="text-xs text-sub">No graded files yet.</li>}
             </ul>
 
             {canEdit && cur.status === "In Progress" && (<>
@@ -259,7 +267,7 @@ export default function ColourGrading() {
                 onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
                 className={cx("mt-3 flex w-full cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-4 text-center transition", dragOver ? "border-brand bg-brand-soft ring-2 ring-brand/40" : "border-brand/50 bg-brand-soft/40")}>
                 <span className="inline-flex items-center gap-2 font-extrabold"><UploadCloud className="size-5 text-brand" />{dragOver ? "Drop to upload" : cur.rounds > 0 ? "Upload revised version" : "Upload Graded Files"}</span>
-                <span className="text-xs text-sub">Drag & drop or click · JPG, TIFF, ZIP · max 5 GB per file · new uploads become new versions</span>
+                <span className="text-xs text-sub">Drag & drop or click · JPG, TIFF, ZIP · max {MAX_TEXT} per file · new uploads become new versions</span>
               </div>
               <input ref={fileInput} data-testid="file-input" type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,.zip" className="hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
             </>)}

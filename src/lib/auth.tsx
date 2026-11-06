@@ -76,8 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && data.active && data.role in ROLES) {
         setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name);
         await hydrating;                                           // customers, orders… for this user's role
+        void import("./db").then(({ startLive }) => startLive());   // then keep it live: other people's changes show without a reload
       }
-      else { setRole(null); mirror(null); }                       // signed in but not an invited/active staff member → no access
+      else { setRole(null); mirror(null); void import("./db").then(({ stopLive }) => stopLive()); }                       // signed in but not an invited/active staff member → no access
       setLoading(false);
     };
     sb.auth.getSession().then(({ data }) => loadOnce(data.session?.user.id ?? null));
@@ -120,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: mfaFactor, code });
     return error ? { ok: false, error: /invalid|expired/i.test(error.message) ? "That code is not valid. Check the app and try again." : error.message } : { ok: true };
   };
-  const logout = () => { setMfaFactor(null); mirror(null); setRole(null); if (supabase) void supabase.auth.signOut(); };
+  const logout = () => { setMfaFactor(null); mirror(null); setRole(null); if (supabase) { void import("./db").then(({ stopLive }) => stopLive()); void supabase.auth.signOut(); } };
 
   return <Ctx.Provider value={{ role, user: backendOn ? name : role ? ROLES[role].user : "", email: backendOn ? email : role ? ROLES[role].email : "", loading, backend: backendOn, mustChangePassword: backendOn && mustChange, mfaPending: backendOn && !!mfaFactor, verifyMfa, finishPasswordChange, login, signIn, signUp, resetPassword, logout }}>{children}</Ctx.Provider>;
 }
