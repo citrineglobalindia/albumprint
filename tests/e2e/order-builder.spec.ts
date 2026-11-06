@@ -178,19 +178,34 @@ test("album items table: search to add, edit description / qty / price / discoun
   await expect(page.getByTestId("album-lines-1")).toContainText("automatic");
   await expect(page.getByTestId("album-total-1")).toHaveText("₹3,600");
   // search and add from inside the table
+  // "+ Add item" opens a new blank line: pick from the full list, or type to search, right there
   await t.getByRole("button", { name: "Add item" }).click();
-  await expect(t.getByLabel("Search products")).toBeFocused();
-  await t.getByLabel("Search products").fill("uv spot");
-  await t.getByRole("option", { name: /UV spot finish/ }).click();
+  await expect(t.getByTestId("new-line")).toBeVisible();
+  await expect(t.getByLabel("New line product")).toBeFocused();
+  await expect(t.getByRole("listbox", { name: "Products" }).getByRole("option")).not.toHaveCount(0);   // everything listed before typing
+  await t.getByLabel("New line product").press("Escape");                            // Esc closes the line
+  await expect(t.getByTestId("new-line")).toHaveCount(0);
+  await t.getByRole("button", { name: "Add item" }).click();
+  await t.getByLabel("New line product").fill("uv spot");
+  await t.getByRole("listbox", { name: "Products" }).getByRole("option", { name: /UV spot finish/ }).click();
+  await expect(t.getByTestId("new-line")).toHaveCount(0);                            // the line became the item
   await expect(t.getByLabel("Quantity of UV spot finish (sample, per sheet)")).toHaveValue("30");
   await expect(page.getByTestId("album-total-1")).toHaveText("₹4,050");             // + 30 × 15
-  // Enter adds the single match; a duplicate is refused
-  await t.getByLabel("Search products").fill("mini book");
-  await t.getByLabel("Search products").press("Enter");
+  // in the new line: arrow keys + Enter pick the highlighted product; a duplicate is refused and the line stays open
+  await t.getByRole("button", { name: "Add item" }).click();
+  await t.getByLabel("New line product").fill("mini");
+  await t.getByLabel("New line product").press("ArrowDown"); await t.getByLabel("New line product").press("ArrowUp");
+  await t.getByLabel("New line product").press("Enter");
   await expect(t.getByLabel("Quantity of Mini book (sample)")).toHaveValue("1");
-  await t.getByLabel("Search products").fill("mini book"); await t.getByLabel("Search products").press("Enter");
-  await expect(t.getByRole("alert")).toContainText("Already on this album");
-  await t.getByLabel("Search products").fill("");
+  await t.getByRole("button", { name: "Add item" }).click();
+  await t.getByLabel("New line product").fill("mini book"); await t.getByLabel("New line product").press("Enter");
+  await expect(t.getByTestId("new-line").locator("xpath=following-sibling::tr[1]").getByRole("alert")).toContainText("Already on this album");
+  await t.getByRole("button", { name: "Cancel new line" }).click();
+  // the search box at the top still works too
+  await t.getByLabel("Search products").fill("foil"); await t.getByLabel("Search products").press("Enter");
+  await expect(page.getByTestId("album-lines-1")).toContainText("Name foiling");
+  await t.getByRole("button", { name: "More for Name foiling (sample)" }).click();
+  await t.getByRole("menuitem", { name: "Remove Name foiling (sample)" }).click();
   // edit a row like an invoice
   await t.getByLabel("Description of Mini book (sample)").fill("Parents copy");
   await t.getByLabel("Quantity of Mini book (sample)").fill("2");                   // 2 × 450

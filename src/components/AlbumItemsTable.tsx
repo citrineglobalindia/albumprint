@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Columns3, MoreVertical, Plus, Search } from "lucide-react";
+import { Columns3, MoreVertical, Plus, Search, X } from "lucide-react";
 import { cx } from "./ui";
 import { ITEMS, itemById, pathLabel, usableItem, type CItem } from "../lib/catalog2";
 import { money, type DraftAlbum, type DraftItem, type PricedOrder } from "../lib/orderPricing";
@@ -22,6 +22,7 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
   const [colsOpen, setColsOpen] = useState(false);
   const [q, setQ] = useState(""); const [msg, setMsg] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);                                     // the blank line opened by "+ Add item"
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => { try { localStorage.setItem(COLS_KEY, JSON.stringify(cols)); } catch { /* private mode */ } }, [cols]);
 
@@ -128,8 +129,9 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
                   </div>}</>}</td>
               </tr>);
           })}
+            {adding && <NewLine no={lines.length + 1} accept={accept} onCancel={() => setAdding(false)} onPick={(id) => { const e = onAdd(id); if (!e) setAdding(false); return e; }} />}
             <tr className="border-t border-line"><td colSpan={20} className="p-3">
-              <button type="button" onClick={() => search.current?.focus()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line text-sm font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add item</button>
+              <button type="button" onClick={() => setAdding(true)} disabled={adding} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line text-sm font-bold text-brand hover:bg-brand-soft disabled:opacity-50"><Plus className="size-4" />Add item</button>
             </td></tr>
           </tbody>
           {priced && <tfoot className="bg-slate-50/80">
@@ -147,5 +149,63 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
         <div className="mt-2">{browse}</div>
       </details>
     </div>
+  );
+}
+
+/** A blank line in the table: search or pick a product right there. With nothing typed it lists every product (by category);
+ *  ↑ ↓ move, Enter picks (an exact item code — e.g. from a barcode scanner — is picked at once), Esc closes the line. */
+function NewLine({ no, accept, onPick, onCancel }: { no: number; accept: (i: CItem) => boolean; onPick: (id: string) => string | null; onCancel: () => void }) {
+  const [q, setQ] = useState(""); const [hi, setHi] = useState(0); const [err, setErr] = useState("");
+  const listRef = useRef<HTMLUListElement>(null);
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const all = ITEMS.filter((i) => usableItem(i) && accept(i))
+    .map((i) => ({ i, path: pathLabel(i.categoryId) }))
+    .filter(({ i, path }) => words.every((w) => `${path} ${i.name} ${i.code ?? ""}`.toLowerCase().includes(w)))
+    .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }) || a.i.sort - b.i.sort);
+  const shown = all.slice(0, 80);
+  const cur = Math.min(hi, Math.max(shown.length - 1, 0));
+  useEffect(() => { listRef.current?.querySelector<HTMLElement>(`[data-i="${cur}"]`)?.scrollIntoView({ block: "nearest" }); }, [cur]);
+  const pick = (id: string) => { const e = onPick(id); setErr(e ?? ""); };
+  const enter = () => {
+    const code = q.trim().toLowerCase();
+    const exact = code ? all.find(({ i }) => (i.code ?? "").toLowerCase() === code) : undefined;
+    if (exact) pick(exact.i.id); else if (shown[cur]) pick(shown[cur]!.i.id); else setErr("No product matches — check the name or code");
+  };
+  return (
+    <>
+      <tr className="border-t-2 border-brand/40 bg-brand-soft/40" data-testid="new-line">
+        <td className="px-2 py-2 font-bold">{no}</td>
+        <td colSpan={18} className="px-1.5 py-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-sub" />
+            <input autoFocus aria-label="New line product" role="combobox" aria-expanded aria-controls="new-line-options" aria-autocomplete="list"
+              className={cx(cell, "h-10 w-full pl-9 font-semibold")} placeholder="Search or select a product…" value={q}
+              onChange={(e) => { setQ(e.target.value); setHi(0); setErr(""); }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") { e.preventDefault(); setHi(Math.min(cur + 1, shown.length - 1)); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setHi(Math.max(cur - 1, 0)); }
+                else if (e.key === "Enter") { e.preventDefault(); enter(); }
+                else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+              }} />
+          </div>
+        </td>
+        <td className="pr-1 text-right"><button type="button" aria-label="Cancel new line" onClick={onCancel} className="grid size-8 place-items-center rounded-lg text-sub hover:bg-white"><X className="size-4" /></button></td>
+      </tr>
+      <tr className="bg-brand-soft/40"><td colSpan={20} className="px-3 pb-3">
+        {err && <p role="alert" className="mb-2 text-xs font-semibold text-rose-600">{err}</p>}
+        {shown.length ? (
+          <ul id="new-line-options" ref={listRef} role="listbox" aria-label="Products" className="max-h-64 overflow-y-auto rounded-xl border border-line bg-white p-1">
+            {shown.map(({ i, path }, k) => (
+              <li key={i.id} data-i={k}><button type="button" role="option" aria-selected={k === cur} onMouseEnter={() => setHi(k)} onClick={() => pick(i.id)}
+                className={cx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left", k === cur ? "bg-brand-soft" : "hover:bg-slate-50")}>
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{i.name}{i.code ? <span className="ml-1 text-xs font-normal text-sub">({i.code})</span> : null}</span>
+                  <span className="block truncate text-[11px] text-sub">{path}</span></span>
+                <span className="shrink-0 text-xs tabular-nums text-sub">{i.rate != null ? `${money(i.rate)} / ${i.method === "per_sheet" ? "sheet" : i.unit}` : "price not set"}</span>
+              </button></li>))}
+            {all.length > shown.length && <li className="px-3 py-2 text-[11px] text-sub">{all.length - shown.length} more — type to narrow the list</li>}
+          </ul>
+        ) : <p className="rounded-xl border border-dashed border-line bg-white p-3 text-center text-xs text-sub">{ITEMS.length ? "No product matches — check the name or code" : "No products yet — an admin adds them in Catalog & Pricing"}</p>}
+      </td></tr>
+    </>
   );
 }
