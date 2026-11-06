@@ -37,11 +37,11 @@ test.describe("mobile (390x844)", () => {
     await expect(nav).not.toBeInViewport();             // off-canvas (and inert)
     await page.getByTestId("hamburger").click();
     await expect(nav).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Orders" })).toBeInViewport();
+    await expect(nav.getByRole("link", { name: "Orders", exact: true })).toBeInViewport();
     await page.keyboard.press("Escape");
     await expect(nav).not.toBeInViewport();
     await page.getByTestId("hamburger").click();
-    await nav.getByRole("link", { name: "Orders" }).click();
+    await nav.getByRole("link", { name: "Orders", exact: true }).click();
     await expect(page).toHaveURL(/\/orders$/);
     await expect(nav).not.toBeInViewport();
   });

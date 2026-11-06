@@ -78,6 +78,8 @@ export default function App() {
             <Route path="audit" element={page(<AuditLog />)} />
             <Route path="files" element={page(<FilesPage />)} />
             <Route path="orders" element={page(<Orders />)} />
+            <Route path="design-orders" element={page(<Orders key="design" kind="Design + Printing" />)} />
+            <Route path="printing-orders" element={page(<Orders key="printing" kind="Printing" />)} />
             <Route path="customers" element={page(<Customers />)} />
             <Route path="pipeline" element={page(<Pipeline />)} />
             <Route path="colour-grading" element={page(<ColourGrading />)} />

@@ -31,10 +31,12 @@ export default function OrderBuilder() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [toast, show] = useToast();
-  const [d, setD] = useState<OrderDraft>(() => { const b = blankDraft(); const c = params.get("customer"); const cc = c ? CUSTOMERS.find((x) => x.id === c || x.uid === c) : undefined; if (cc) b.customerId = cc.uid ?? cc.id; return b; });
+  // ?type=design_printing|printing_only (from the "Design + Printing Orders" / "Printing Orders" menu) starts a new order with its type chosen
+  const presetType = !params.get("draft") && (params.get("type") === "design_printing" || params.get("type") === "printing_only") ? (params.get("type") as "design_printing" | "printing_only") : null;
+  const [d, setD] = useState<OrderDraft>(() => { const b = blankDraft(); const c = params.get("customer"); const cc = c ? CUSTOMERS.find((x) => x.id === c || x.uid === c) : undefined; if (cc) b.customerId = cc.uid ?? cc.id; if (presetType) b.orderType = presetType; return b; });
   const [draftId, setDraftId] = useState<string | undefined>(params.get("draft") ?? undefined);
-  const [step, setStep] = useState(0);
-  const [visited, setVisited] = useState(0);
+  const [step, setStep] = useState(presetType ? 1 : 0);
+  const [visited, setVisited] = useState(presetType ? 1 : 0);
   const [cur, setCur] = useState(0);
   const [errs, setErrs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);

@@ -112,3 +112,33 @@ test.describe("orders", () => {
     await expect(page.getByTestId("audit-trail")).toContainText("File uploaded");
   });
 });
+
+test("menu: Design + Printing Orders / Printing Orders list only that type and start a new order of that type", async ({ page }) => {
+  await seedRole(page, "reception");
+  await page.goto("/");
+  const side = page.getByRole("navigation", { name: "Main navigation" }).or(page.locator("#app-sidebar")).first();
+  await side.getByRole("link", { name: "Design + Printing Orders" }).click();
+  await expect(page).toHaveURL(/\/design-orders$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Design + Printing Orders");
+  const rows = page.locator("tbody tr");
+  await expect(rows.first()).toBeVisible();
+  await expect(page.locator("tbody")).not.toContainText(/\bPrinting\b(?! )/);                 // no print-only rows ("Design + Printing" only)
+  await page.getByRole("button", { name: "New Design + Printing order" }).click();
+  await expect(page).toHaveURL(/\/orders\/new\?type=design_printing/);
+  await expect(page.getByRole("button", { name: /^Search customer/ })).toBeVisible();        // straight to the customer step
+  await page.getByRole("button", { name: /Order type/ }).click();
+  await expect(page.getByRole("radio", { name: /Design \+ Printing/ })).toBeChecked();
+  await side.getByRole("link", { name: "Printing Orders", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Printing Orders");
+  await expect(page.locator("tbody")).not.toContainText("Design + Printing");
+  await page.getByRole("button", { name: "New Printing order" }).click();
+  await page.getByRole("button", { name: /Order type/ }).click();
+  await expect(page.getByRole("radio", { name: /Album Printing Only/ })).toBeChecked();
+});
+
+test("menu: the order-type lists follow the Orders permission", async ({ page }) => {
+  await seedRole(page, "printing");
+  await page.goto("/design-orders");
+  await expect(page).not.toHaveURL(/design-orders/);                                           // no Orders access → sent home
+  await expect(page.locator("#app-sidebar").getByRole("link", { name: "Printing Orders", exact: true })).toHaveCount(0);
+});

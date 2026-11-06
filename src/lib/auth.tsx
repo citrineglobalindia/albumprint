@@ -135,7 +135,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (!role) return <Navigate to="/login" replace state={{ from: pathname }} />;
   if (mustChangePassword) return <ChangePassword />;
   const base = "/" + (pathname.split("/")[1] ?? "");
-  const allowed = pathname === "/account" || ROLES[role].nav.includes(base) || pathname.startsWith("/orders/") && ROLES[role].nav.includes("/orders");
+  const ordersLike = base === "/design-orders" || base === "/printing-orders" || pathname.startsWith("/orders/");   // the order lists by type follow the Orders permission
+  const allowed = pathname === "/account" || ROLES[role].nav.includes(base) || ordersLike && ROLES[role].nav.includes("/orders");
   if (!allowed && pathname !== "/") return <Navigate to="/" replace />;
   return <>{children}</>;
 }

@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
   CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X,
-  AlarmClockCheck, Library,
+  AlarmClockCheck, Library, Paintbrush, PrinterCheck,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
@@ -15,9 +15,12 @@ import A11yLayer from "./A11yLayer";
 import { useToast } from "./Toast";
 import { onDbError } from "../lib/db/core";
 
+type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; sub?: boolean };   // sub: shown indented under the item above
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/orders", label: "Orders", icon: ClipboardList },
+  { to: "/design-orders", label: "Design + Printing Orders", icon: Paintbrush, sub: true },
+  { to: "/printing-orders", label: "Printing Orders", icon: PrinterCheck, sub: true },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/pipeline", label: "Production Pipeline", icon: KanbanSquare },
   { to: "/colour-grading", label: "Colour Grading", icon: Palette },
@@ -49,7 +52,7 @@ function useDesktop() {
 
 function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; onClose: () => void }) {
   const { role } = useAuth();
-  const items = NAV.filter((n) => ROLES[role!].nav.includes(n.to));
+  const items = (NAV as readonly NavItem[]).filter((n) => ROLES[role!].nav.includes(n.sub ? "/orders" : n.to));
   const hidden = !desktop && !open;
   const ref = useRef<HTMLElement>(null);
   useEffect(() => { if (open && !desktop) ref.current?.querySelector<HTMLElement>("a")?.focus(); }, [open, desktop]);
@@ -78,9 +81,9 @@ function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; 
           <button type="button" onClick={onClose} aria-label="Close menu" className="ml-auto grid size-11 place-items-center rounded-lg hover:bg-side-hover lg:hidden"><X className="size-5" /></button>
         </div>
         <nav className="app-nav scroll-thin flex flex-1 flex-col gap-1 overflow-y-auto" aria-label="Primary">
-          {items.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === "/"} onClick={onClose} className={({ isActive }) => cx("flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition", isActive ? "bg-brand text-white shadow-lg shadow-brand/30" : "text-slate-300 hover:bg-side-hover hover:text-white")}>
-              <Icon className="size-[18px]" aria-hidden />
+          {items.map(({ to, label, icon: Icon, sub }) => (
+            <NavLink key={to} to={to} end={to === "/" || to === "/orders"} onClick={onClose} className={({ isActive }) => cx("flex items-center gap-3 rounded-xl px-3 font-semibold transition", sub ? "ml-5 py-2 text-[13px]" : "py-2.5 text-sm", isActive ? "bg-brand text-white shadow-lg shadow-brand/30" : "text-slate-300 hover:bg-side-hover hover:text-white")}>
+              <Icon className={sub ? "size-4" : "size-[18px]"} aria-hidden />
               {label}
             </NavLink>
           ))}

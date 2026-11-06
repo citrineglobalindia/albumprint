@@ -13,7 +13,7 @@ import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { openDrafts } from "../lib/orders2";
 import { assignees } from "../lib/staffList";
-import { ORDERS, CUSTOMERS, STAGES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority } from "../lib/data";
+import { ORDERS, CUSTOMERS, STAGES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority, type WorkflowType } from "../lib/data";
 import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
 import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
 import { setHold as holdOrder, cancelOrder, type Result } from "../lib/workflow";
@@ -45,7 +45,9 @@ const csv = (v: string | null) => (v ? v.split(",").filter(Boolean) : []);
 
 interface ViewState { q: string; wf: string[]; size: string[]; prio: string[]; pay: string[]; asg: string[]; evt: string[]; stages: string[]; late: boolean; range: ReturnType<typeof packRange>; hidden: string[]; sort: SortState }
 
-export default function Orders() {
+/** kind: show only one order type (the "Design + Printing Orders" / "Printing Orders" menu entries); omitted = all orders. */
+export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
+  const scope = kind ? ORDERS.filter((o) => o.workflow === kind) : ORDERS;
   useStore();
   const newOrder = useNewOrder();
   const nav = useNavigate();
@@ -91,7 +93,7 @@ export default function Orders() {
   const show_ = (c: string) => !hidden.includes(c);
   const reset = () => { setQ(""); setWf([]); setSize([]); setPrio([]); setPay([]); setAsg([]); setEvt([]); setStages([]); setLate(false); setRange(presetRange("All Time")); setPage(1); };
 
-  const base = ORDERS.filter((o) => {
+  const base = scope.filter((o) => {
     const s = q.trim().toLowerCase();
     if (s && ![o.id, o.customer, o.mobile, o.event].some((v) => v.toLowerCase().includes(s))) return false;
     if (wf.length && !wf.includes(o.workflow)) return false;
@@ -116,12 +118,12 @@ export default function Orders() {
   const th = (k: string, label: string) => show_(k) && <SortTh key={k} k={k} sort={sort} onSort={onSort}>{label}</SortTh>;
 
   const kpis: Kpi[] = [
-    { label: "Total Orders", value: ORDERS.length, icon: ClipboardList, tone: "blue" },
-    { label: "New Orders", value: ORDERS.filter((o) => inTab(o, "new")).length, icon: PlusCircle, tone: "orange" },
-    { label: "In Progress", value: ORDERS.filter((o) => inTab(o, "progress")).length, icon: MonitorPlay, tone: "pink" },
-    { label: "Client Review Pending", value: ORDERS.filter((o) => inTab(o, "client")).length, icon: Users, tone: "pink" },
-    { label: "Ready for Printing", value: ORDERS.filter((o) => inTab(o, "print")).length, icon: ShieldCheck, tone: "green" },
-    { label: "Overdue", value: ORDERS.filter(isLate).length, icon: Clock, tone: "red", invert: true },
+    { label: kind ? "Total" : "Total Orders", value: scope.length, icon: ClipboardList, tone: "blue" },
+    { label: "New Orders", value: scope.filter((o) => inTab(o, "new")).length, icon: PlusCircle, tone: "orange" },
+    { label: "In Progress", value: scope.filter((o) => inTab(o, "progress")).length, icon: MonitorPlay, tone: "pink" },
+    { label: "Client Review Pending", value: scope.filter((o) => inTab(o, "client")).length, icon: Users, tone: "pink" },
+    { label: "Ready for Printing", value: scope.filter((o) => inTab(o, "print")).length, icon: ShieldCheck, tone: "green" },
+    { label: "Overdue", value: scope.filter(isLate).length, icon: Clock, tone: "red", invert: true },
   ];
 
   /** Runs one workflow-engine call per selected order; engine refusals are collected and shown, never swallowed. */
@@ -163,11 +165,12 @@ export default function Orders() {
 
   return (
     <div>
-      <PageHeader title="Orders" subtitle="Manage and track all album orders from design to delivery.">
+      <PageHeader title={kind === "Design + Printing" ? "Design + Printing Orders" : kind === "Printing" ? "Printing Orders" : "Orders"}
+        subtitle={kind === "Design + Printing" ? "Orders we design and print — track them from design to delivery." : kind === "Printing" ? "Print-only orders — the customer supplies print-ready designs." : "Manage and track all album orders from design to delivery."}>
         <DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} />
         <MoreButton />
         <button onClick={() => nav("/orders/new?drafts=1")} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft">Drafts{openDrafts().length ? ` (${openDrafts().length})` : ""}</button>
-        <PrimaryButton onClick={() => newOrder.open()}>Create Order</PrimaryButton>
+        <PrimaryButton onClick={() => newOrder.open(kind ? { type: kind === "Printing" ? "printing_only" : "design_printing" } : undefined)}>{kind === "Design + Printing" ? "New Design + Printing order" : kind === "Printing" ? "New Printing order" : "Create Order"}</PrimaryButton>
       </PageHeader>
 
       <KpiRow items={kpis} />
@@ -186,7 +189,7 @@ export default function Orders() {
           <button type="button" aria-expanded={fOpen} aria-controls="order-filters" onClick={() => setFOpen(!fOpen)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold sm:hidden"><SlidersHorizontal className="size-4" aria-hidden />Filters{chips.length > 0 && <span className="rounded-full bg-brand px-1.5 text-xs text-white">{chips.length}</span>}</button>
           <div id="order-filters" className={cx(fOpen ? "flex flex-wrap items-center gap-2.5" : "hidden", "w-full sm:contents")}>
           <MultiSelect className="w-36" label="Stage" options={STAGE_LABELS} value={stages} onChange={f(setStages)} />
-          <MultiSelect className="w-40" label="Workflow Type" options={["Design + Printing", "Printing"]} value={wf} onChange={f(setWf)} />
+          {!kind && <MultiSelect className="w-40" label="Workflow Type" options={["Design + Printing", "Printing"]} value={wf} onChange={f(setWf)} />}
           <MultiSelect className="w-32" label="Album Size" options={ALBUM_SIZES} value={size} onChange={f(setSize)} />
           <MultiSelect className="w-28" label="Priority" options={PRIORITIES} value={prio} onChange={f(setPrio)} />
           <MultiSelect className="w-32" label="Payment" options={PAY} value={pay} onChange={f(setPay)} />
