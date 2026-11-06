@@ -16,6 +16,7 @@ import {
 import { scopeOf } from "../lib/orderPricing";
 
 const LEVEL = ["Category", "Subcategory", "Level 3", "Level 4"];
+const BRAND_ROLES = [["reception", "Reception"], ["accounts", "Accounts"]] as const;   // the roles that create or bill orders
 const fmt = (n: number | null) => (n == null ? "—" : `₹${n.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })}`);
 
 export default function CatalogAdmin() {
@@ -230,6 +231,16 @@ function SettingsCard({ show }: { show: (m: string) => void }) {
   const save = async () => { setMsg(""); const e = await savePricingSettings({ ...s, taxRate: Number(s.taxRate), defaultDeliveryDays: Number(s.defaultDeliveryDays) }); if (e) setMsg(e); else show("Pricing settings saved"); };
   return (
     <Panel title="Tax & defaults" subtitle="Tax is optional. When it is on, it is charged on the amount after discount and rounded to the paisa." className="max-w-2xl">
+      <fieldset className="mb-5 rounded-xl border border-line p-4" data-testid="business-name-setting">
+        <legend className="px-1 text-sm font-bold">Company name on invoices</legend>
+        <div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-sm font-bold">Show the company name by default</div>
+          <div className="text-xs text-sub">Turn off to send invoices without your company name (e.g. when a studio forwards them to its own client).</div></div>
+          <Toggle label="Show company name by default" on={s.showBusinessName !== false} onChange={(v) => setS({ ...s, showBusinessName: v })} /></div>
+        <div className="text-xs font-bold text-sub">Who can change it on an order <span className="font-normal">(admins always can)</span></div>
+        <div className="mt-2 flex flex-wrap gap-2">{BRAND_ROLES.map(([r, label]) => { const on = (s.brandRoles ?? []).includes(r); return (
+          <label key={r} className={cx("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm", on ? "border-brand bg-brand-soft/50 font-semibold" : "border-line")}>
+            <input type="checkbox" aria-label={`${label} can change the company name`} checked={on} onChange={() => setS({ ...s, brandRoles: on ? (s.brandRoles ?? []).filter((x) => x !== r) : [...(s.brandRoles ?? []), r] })} />{label}</label>); })}</div>
+      </fieldset>
       <fieldset className="mb-5 rounded-xl border border-line p-4" data-testid="printing-mode">
         <legend className="px-1 text-sm font-bold">Printing charge</legend>
         <p className="mb-3 text-xs text-sub">How printing is charged on every album. Changing this affects new orders and drafts only — finalized orders keep their invoice.</p>

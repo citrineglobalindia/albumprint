@@ -16,7 +16,7 @@ import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
-import { DRAFTS, addDays, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
+import { DRAFTS, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 
 const STEPS = ["Order type", "Customer", "Event & dates", "Albums & items", "Invoice", "Finalize"];
@@ -380,6 +380,7 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
 
 function DiscountTax({ d, set, p }: { d: OrderDraft; set: (p: Partial<OrderDraft>) => void; p: PricedOrder }) {
   const st = pricingSettings();
+  const { role } = useAuth();
   const err = p.errors.find((e) => e.path === "discount")?.message;
   return (
     <section className="grid gap-4 rounded-2xl border border-line bg-white p-5 md:grid-cols-2" aria-label="Discount and tax">
@@ -396,6 +397,15 @@ function DiscountTax({ d, set, p }: { d: OrderDraft; set: (p: Partial<OrderDraft
         <div className="mb-1.5 text-[13px] font-semibold">Tax</div>
         {st.taxEnabled ? <div className="flex items-center justify-between rounded-xl border border-line px-4 py-2.5"><span className="text-sm">{st.taxLabel} @ {st.taxRate}% on the amount after discount</span><Toggle label="Apply tax" on={d.applyTax} onChange={(v) => set({ applyTax: v })} /></div>
           : <p className="rounded-xl border border-line px-4 py-2.5 text-sm text-sub">Tax is switched off in Catalog & Pricing › Tax & defaults.</p>}
+      </div>
+      <div className="md:col-span-2" data-testid="business-name-choice">
+        <div className="mb-1.5 text-[13px] font-semibold">Company name on the invoice</div>
+        {canChooseBusinessName(role) ? (
+          <div className="flex items-center justify-between rounded-xl border border-line px-4 py-2.5">
+            <span className="text-sm">{businessNameShown(d, role) ? "Shown at the top of the invoice" : "Hidden — the invoice shows no company name"}<span className="ml-2 text-xs text-sub">(default: {st.showBusinessName !== false ? "shown" : "hidden"})</span></span>
+            <Toggle label="Show company name on invoice" on={businessNameShown(d, role)} onChange={(v) => set({ showBusinessName: v })} />
+          </div>
+        ) : <p className="rounded-xl border border-line px-4 py-2.5 text-sm text-sub">{st.showBusinessName !== false ? "Shown" : "Hidden"} — set by an admin in Catalog & Pricing › Tax & defaults.</p>}
       </div>
     </section>
   );

@@ -25,6 +25,7 @@ export interface OrderDraft {
   discount: { type: "none" | "fixed" | "percent"; value: number | string };
   applyTax: boolean;
   reopenOrder?: string;
+  showBusinessName?: boolean;               // this invoice shows the company name (only admins / allowed roles can change the default)
 }
 export interface PricedLine {
   position: number; kind: "printing" | "design" | "item"; itemId: string; name: string; unit: string; method: PricingMethod; scope: Scope; optionKind?: string | null;

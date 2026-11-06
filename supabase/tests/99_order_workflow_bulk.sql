@@ -149,5 +149,30 @@ select t.eq($$select l->>'name' from jsonb_array_elements(t.price(t.payload())->
 insert into cat_items(category_id, name, pricing_method, unit, rate) values (t.id('wooden'), 'Walnut', 'per_unit', 'pcs', 99);
 select t.eq($$select cat_item_label(i) from cat_items i where name = 'Walnut'$$, 'Extras Boxes Premium Wooden - Walnut', 'full name: four category levels, top first');
 select t.eq($$select l->>'name' from jsonb_array_elements(t.price(t.payload())->'albums'->0->'lines') l where l->>'kind' = 'printing'$$, 'Album printing', 'full name: the printing line keeps its own name');
+
+-- company name on invoices (0046)
+select t.as('system');
+update pricing_settings set show_business_name = true, brand_roles = '{}';
+select t.as('reception');
+insert into order_drafts(payload) select t.payload() || jsonb_build_object('showBusinessName', false, 'discount', jsonb_build_object('type','none','value',''), 'customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Brand rec', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'd_br', id::text from order_drafts where payload->'event'->>'name' = 'Brand rec';
+select t.ok($$select finalize_order_v2(t.id('d_br'))$$, 'company name: reception finalizes');
+select t.as('system');
+select t.eq($$select (snapshot->>'showBusinessName') || '/' || (snapshot->'business' ? 'name')::text from invoices where order_id = ((select result from order_drafts where id = t.id('d_br'))->>'orderId')::uuid$$, 'true/true', 'company name: a role that is not allowed cannot hide it (the default applies)');
+update pricing_settings set brand_roles = '{reception}';
+select t.as('reception');
+insert into order_drafts(payload) select t.payload() || jsonb_build_object('showBusinessName', false, 'discount', jsonb_build_object('type','none','value',''), 'customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Brand rec 2', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'd_br2', id::text from order_drafts where payload->'event'->>'name' = 'Brand rec 2';
+select t.ok($$select finalize_order_v2(t.id('d_br2'))$$, 'company name: allowed reception finalizes');
+select t.as('system');
+select t.eq($$select (snapshot->>'showBusinessName') || '/' || (snapshot->'business' ? 'name')::text from invoices where order_id = ((select result from order_drafts where id = t.id('d_br2'))->>'orderId')::uuid$$, 'false/false', 'company name: an allowed role hides it on this invoice');
+update pricing_settings set show_business_name = false, brand_roles = '{}';
+select t.as('admin');
+insert into order_drafts(payload) select t.payload() || jsonb_build_object('showBusinessName', true, 'discount', jsonb_build_object('type','none','value',''), 'customerId', t.id('cust'), 'event', jsonb_build_object('name', 'Brand adm', 'date', to_char(current_date + 30, 'YYYY-MM-DD')));
+insert into t.p36 select 'd_ba', id::text from order_drafts where payload->'event'->>'name' = 'Brand adm';
+select t.ok($$select finalize_order_v2(t.id('d_ba'))$$, 'company name: admin finalizes');
+select t.as('system');
+select t.eq($$select snapshot->>'showBusinessName' from invoices where order_id = ((select result from order_drafts where id = t.id('d_ba'))->>'orderId')::uuid$$, 'true', 'company name: an admin can show it when the default is hidden');
+update pricing_settings set show_business_name = true;
 select t.eq($$select 'ok'$$, 'ok', 'catalog bulk done');
 \echo CATALOG BULK TESTS PASSED

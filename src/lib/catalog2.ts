@@ -15,7 +15,8 @@ export interface Rate { id: string; itemId: string; size?: string; paper?: strin
 /** printingMode: "separate" = every album gets a printing line (printing rate card × sheets); "included" = no separate printing charge
  *  (the per-sheet paper / lamination prices already include printing). Older databases without the setting behave as "separate". */
 export type PrintingMode = "included" | "separate";
-export interface PricingSettings { taxEnabled: boolean; taxLabel: string; taxRate: number; defaultDeliveryDays: number; printingMode?: PrintingMode }
+/** showBusinessName: whether invoices show your company name by default; brandRoles: roles (besides admin) that may change it on an order. */
+export interface PricingSettings { taxEnabled: boolean; taxLabel: string; taxRate: number; defaultDeliveryDays: number; printingMode?: PrintingMode; showBusinessName?: boolean; brandRoles?: string[] }
 
 export const METHOD_LABEL: Record<PricingMethod, string> = { per_sheet: "Rate per sheet (per copy)", per_unit: "Rate per item / unit (per copy)", fixed_per_album: "Fixed amount per album", one_time_order: "One-time charge per order" };
 export const SCOPE_LABEL = { copy: "Per copy", album: "Per album", order: "Per order" } as const;
@@ -26,7 +27,7 @@ export const CATEGORIES: Category[] = persistArray<Category>("cat2_categories", 
 export const ITEMS: CItem[] = persistArray<CItem>("cat2_items", []);
 export const RATES: Rate[] = persistArray<Rate>("cat2_rates", []);
 const SETTINGS: PricingSettings[] = persistArray<PricingSettings>("cat2_settings", []);
-export const DEFAULT_PRICING_SETTINGS: PricingSettings = { taxEnabled: false, taxLabel: "Tax", taxRate: 0, defaultDeliveryDays: 14, printingMode: "separate" };
+export const DEFAULT_PRICING_SETTINGS: PricingSettings = { taxEnabled: false, taxLabel: "Tax", taxRate: 0, defaultDeliveryDays: 14, printingMode: "separate", showBusinessName: true, brandRoles: [] };
 export const pricingSettings = (): PricingSettings => ({ ...DEFAULT_PRICING_SETTINGS, ...(SETTINGS[0] ?? {}) });
 
 export function replaceCatalog(p: { categories?: Category[]; items?: CItem[]; rates?: Rate[]; settings?: PricingSettings }) {

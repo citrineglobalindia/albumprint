@@ -16,7 +16,7 @@ import { notifyOrderCreated } from "./events";
 export interface Business { name?: string; legal?: string; address?: string; phone?: string; email?: string; website?: string; gstin?: string; pan?: string; state?: string }
 export interface InvoiceSnapshot extends PricedOrder {
   business: Business; customer: { id?: string; code?: string; name: string; phone?: string; email?: string; address?: string };
-  event: OrderDraft["event"]; orderCode?: string; orderDate?: string; dueDate?: string; invoiceNumber?: string; invoiceDate?: string; revision?: number;
+  event: OrderDraft["event"]; showBusinessName?: boolean; orderCode?: string; orderDate?: string; dueDate?: string; invoiceNumber?: string; invoiceDate?: string; revision?: number;
 }
 export interface FinalizeResult { orderId: string; code: string; invoiceId?: string; invoiceNumber: string; total: number; revision: number }
 export interface StoredDraft { id: string; title: string; payload: OrderDraft; updatedAt: string; result?: FinalizeResult; mine?: boolean }
@@ -126,11 +126,18 @@ function localBusiness(): Business {
   return { name: str("name") ?? "AlbumPro Studio", legal: str("legal"), address: str("caddr") ?? str("address"), phone: str("phone"), email: str("email"), website: str("website"), gstin: str("gstin"), pan: str("pan"), state: str("state") };
 }
 /** The invoice as it would look now (preview: no invoice number yet). */
+/** Who may choose, per order, whether the invoice shows the company name: admins and the roles the admin allows (Tax & defaults). */
+export const canChooseBusinessName = (role: string | null | undefined) => role === "admin" || (!!role && (pricingSettings().brandRoles ?? []).includes(role));
+/** Whether this order's invoice shows the company name: the order's choice if the user may make it, else the default. The server decides the same at finalize. */
+export const businessNameShown = (payload: OrderDraft, role: string | null | undefined) =>
+  canChooseBusinessName(role) && typeof payload.showBusinessName === "boolean" ? payload.showBusinessName : pricingSettings().showBusinessName !== false;
+const brand = (b: Business, shown: boolean): Business => (shown ? b : { ...b, name: undefined });
 export async function previewSnapshot(payload: OrderDraft, priced?: PricedOrder): Promise<InvoiceSnapshot> {
   const c = CUSTOMERS.find((x) => (x.uid ?? x.id) === payload.customerId);
   const customer = payload.newCustomer ? { name: payload.newCustomer.name.trim(), phone: payload.newCustomer.phone, email: payload.newCustomer.email || undefined, address: payload.newCustomer.address || undefined }
     : { id: c?.uid, code: c?.id, name: c?.studio ?? "", phone: c?.mobile, email: c?.email || undefined, address: [c?.address, c?.city, c?.state].filter(Boolean).join(", ") || undefined };
-  return { ...(priced ?? price(payload)), business: await businessProfile(), customer, event: payload.event, orderDate: todayIso(), dueDate: payload.event.delivery || addDays(todayIso(), pricingSettings().defaultDeliveryDays) };
+  const shown = businessNameShown(payload, currentActor().role);
+  return { ...(priced ?? price(payload)), business: brand(await businessProfile(), shown), showBusinessName: shown, customer, event: payload.event, orderDate: todayIso(), dueDate: payload.event.delivery || addDays(todayIso(), pricingSettings().defaultDeliveryDays) };
 }
 
 /** Everything charged below catalog prices (line discounts, lowered prices, the order discount) as a % of the order at catalog prices — the approval limit applies to this. */
@@ -205,7 +212,8 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
     ...p, business: {}, customer: { code: cust.id, name: cust.studio, phone: cust.mobile, email: cust.email || undefined, address: cust.address }, event: payload.event,
     orderCode: order.id, orderDate: today, dueDate: due, invoiceNumber: invoiceNo, invoiceDate: today, revision,
   };
-  snapshot.business = localBusiness();
+  snapshot.showBusinessName = businessNameShown(payload, currentActor().role);
+  snapshot.business = brand(localBusiness(), snapshot.showBusinessName);
   const inv: Invoice = {
     no: invoiceNo, kind: "invoice", orderId: order.id, customer: cust.studio, date: today, due, lines: invoiceLines(p), gstPct: 0, igst: false, discountPct: 0, status: "Sent", approval: pct > DISCOUNT_APPROVAL_PCT ? "approved" : "none",
     approvedBy: pct > DISCOUNT_APPROVAL_PCT ? currentActor().name : undefined, sentAt: new Date().toISOString(), notes: payload.event.notes || undefined,

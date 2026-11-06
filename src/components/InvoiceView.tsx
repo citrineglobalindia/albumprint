@@ -14,7 +14,7 @@ export function InvoiceView({ s, paid = 0, preview = false }: { s: InvoiceSnapsh
   return (
     <div className="rounded-2xl border border-line bg-white p-5 text-[13px] sm:p-7" data-testid="invoice-view">
       <div className="flex flex-wrap justify-between gap-4 border-b border-line pb-4">
-        <div className="min-w-0"><div className="text-lg font-extrabold text-ink">{b.name || "Your business name (set it in Settings)"}</div>
+        <div className="min-w-0">{s.showBusinessName === false ? null : <div className="text-lg font-extrabold text-ink" data-testid="invoice-business-name">{b.name || "Your business name (set it in Settings)"}</div>}
           <div className="whitespace-pre-line text-xs text-sub">{[b.legal, b.address, [b.phone, b.email].filter(Boolean).join(" · "), b.gstin ? `GSTIN ${b.gstin}` : ""].filter(Boolean).join("\n")}</div></div>
         <div className="text-right"><div className="text-xl font-extrabold text-brand">{preview ? "Invoice preview" : s.taxEnabled ? "Tax invoice" : "Invoice"}</div>
           {preview ? <div className="text-xs text-sub">The invoice number is assigned when the order is finalized</div>

@@ -14,7 +14,7 @@ const catFrom = (r: Row): Category => ({ id: r.id, parentId: r.parent_id, name: 
 const itemFrom = (r: Row): CItem => ({ id: r.id, categoryId: r.category_id, name: r.name, code: r.code ?? undefined, description: r.description ?? undefined, method: r.pricing_method, rate: n(r.rate), unit: r.unit, kind: r.option_kind ?? undefined, sort: r.sort_order, active: r.active, sample: r.is_sample || undefined });
 const rateFrom = (r: Row): Rate => ({ id: r.id, itemId: r.item_id, size: r.size ?? undefined, paper: r.paper ?? undefined, finish: r.finish ?? undefined, rate: Number(r.rate) });
 const settingsFrom = (r: Row): PricingSettings => ({ taxEnabled: r.tax_enabled, taxLabel: r.tax_label, taxRate: Number(r.tax_rate), defaultDeliveryDays: r.default_delivery_days,
-  printingMode: r.printing_mode === "included" ? "included" : "separate" });       // a database without the setting (before migration 0044) charges printing separately
+  printingMode: r.printing_mode === "included" ? "included" : "separate", showBusinessName: r.show_business_name !== false, brandRoles: Array.isArray(r.brand_roles) ? r.brand_roles : [] });       // a database without the setting (before migration 0044) charges printing separately
 
 async function loadCatalog(): Promise<string | null> {
   const [c, i, r, s] = await Promise.all([
@@ -46,10 +46,10 @@ registerCatalog2Backend({
   async removeRate(id) { const { error } = await sb().from("cat_rates").delete().eq("id", id); return msg(error); },
   async saveSettings(s) {
     const row = { tax_enabled: s.taxEnabled, tax_label: s.taxLabel, tax_rate: s.taxRate, default_delivery_days: s.defaultDeliveryDays, updated_at: new Date().toISOString() };
-    const { error } = await sb().from("pricing_settings").update({ ...row, printing_mode: s.printingMode ?? "separate" }).eq("id", true);
-    if (error && /printing_mode/.test(error.message)) {                              // the database has not had migration 0044 yet: save the rest
+    const { error } = await sb().from("pricing_settings").update({ ...row, printing_mode: s.printingMode ?? "separate", show_business_name: s.showBusinessName !== false, brand_roles: s.brandRoles ?? [] }).eq("id", true);
+    if (error && /printing_mode|show_business_name|brand_roles/.test(error.message)) {                              // the database has not had migration 0044 yet: save the rest
       const r2 = await sb().from("pricing_settings").update(row).eq("id", true);
-      return r2.error ? msg(r2.error) : "Saved — but the “Printing charge” setting needs a database update (migration 0044) before it can be changed";
+      return r2.error ? msg(r2.error) : "Saved — but the newest invoice settings need a database update (migrations 0044 / 0046) before they can be changed";
     }
     return msg(error);
   },

@@ -32,7 +32,7 @@ test("reception records a payment: DB row, server receipt no, order paid after r
   await page.getByLabel("Amount").fill("4000");
   await page.getByLabel("Reference").fill(`UTR-${TAG}-1`);
   await page.getByRole("button", { name: "Save payment" }).click();
-  await expect(page.getByText(/Received ₹4,000 — receipt RCP\d{4}\d{3,}/)).toBeVisible();
+  await expect(page.locator("#main").getByText(/Received ₹4,000 — receipt RCP\d{4}\d{3,}/)).toBeVisible();
   const row = sql(`select receipt_no || '|' || amount || '|' || mode from payments where reference = 'UTR-${TAG}-1'`);
   expect(row).toMatch(/^RCP\d{7,}\|4000\.00\|upi$/);
   expect(sql(`select paid || '/' || pay_status from orders where code = '${orderCode}'`)).toBe("4000.00/partially_paid");

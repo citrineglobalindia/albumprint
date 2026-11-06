@@ -464,3 +464,43 @@ test("Tax & defaults: printing charge A (included) / B (separate)", async ({ pag
   await t.getByLabel("New line product").fill("uv spot"); await t.getByLabel("New line product").press("Enter");
   await expect(page.getByTestId("album-total-1")).toHaveText("₹450");                       // only the items: 30 × ₹15
 });
+
+test("company name on the invoice: admin default + per-order choice for allowed roles", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { albums: [{ name: "Brand album", sheets: 10 }], finalize: false });
+  await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
+  await expect(page.getByTestId("invoice-business-name")).toBeVisible();                       // shown by default
+  await page.getByRole("switch", { name: "Show company name on invoice" }).click();            // admin hides it on this order
+  await expect(page.getByTestId("invoice-business-name")).toHaveCount(0);
+  await expect(page.getByTestId("business-name-choice")).toContainText("Hidden");
+  await next(page);
+  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await expect(page.getByTestId("finalized")).toBeVisible();
+  await expect(page.getByTestId("invoice-business-name")).toHaveCount(0);                      // the issued invoice has no company name
+  // admin: default hidden, reception may not change it
+  await page.goto("/catalog");
+  await page.getByRole("tab", { name: "Tax & defaults" }).or(page.getByRole("button", { name: "Tax & defaults" })).first().click();
+  await page.getByRole("switch", { name: "Show company name by default" }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Pricing settings saved").first()).toBeVisible();
+  await page.evaluate(() => localStorage.setItem("albumpro.role", "reception"));
+  await buildOrder(page, { albums: [{ name: "Rec album", sheets: 10 }], finalize: false });
+  await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
+  await expect(page.getByTestId("business-name-choice")).toContainText("Hidden — set by an admin");
+  await expect(page.getByRole("switch", { name: "Show company name on invoice" })).toHaveCount(0);
+  await expect(page.getByTestId("invoice-business-name")).toHaveCount(0);
+  // the admin allows reception: the switch appears
+  await page.evaluate(() => localStorage.setItem("albumpro.role", "admin"));
+  await page.goto("/catalog");
+  await page.getByRole("tab", { name: "Tax & defaults" }).or(page.getByRole("button", { name: "Tax & defaults" })).first().click();
+  await page.getByLabel("Reception can change the company name").check();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Pricing settings saved").first()).toBeVisible();
+  await page.evaluate(() => localStorage.setItem("albumpro.role", "reception"));
+  await page.goto("/orders/new?drafts=1");
+  await page.getByRole("dialog", { name: "Saved drafts" }).getByRole("button").first().click();
+  await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
+  await page.getByRole("switch", { name: "Show company name on invoice" }).click();
+  await expect(page.getByTestId("invoice-business-name")).toBeVisible();
+});

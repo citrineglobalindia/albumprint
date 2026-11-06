@@ -15,7 +15,8 @@ export async function invoicePdf(s: InvoiceSnapshot, opts: { preview?: boolean; 
   const b = s.business ?? {};
 
   // header: business (left), invoice identity (right)
-  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(15, 27, 76); doc.text(b.name || "AlbumPro Studio", L, 48);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(15, 27, 76);
+  if (s.showBusinessName !== false) doc.text(b.name || "AlbumPro Studio", L, 48);              // the company name can be hidden per invoice
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90);
   const bl = [b.legal, b.address, [b.phone, b.email].filter(Boolean).join("  ·  "), b.website, b.gstin ? `GSTIN ${b.gstin}` : "", b.pan ? `PAN ${b.pan}` : ""].filter(Boolean) as string[];
   doc.text(bl, L, 64, { maxWidth: 300 });
