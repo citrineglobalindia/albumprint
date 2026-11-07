@@ -5,6 +5,7 @@ import { GJOBS, PJOBS, INSPECTIONS, RTASKS, DRECS, COLORISTS, OPERATORS, PSTAGES
   type GJob, type GStatus, type GEvent, type PJob, type PStage, type PExc, type ExcKind, type Vendor, type Inspection, type ReworkTask, type ReturnDept, type DRec, type DMode } from "../production";
 import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "./core";
 import { registerStaffDirectory } from "../autoAssign";
+import { DJOBS } from "../designJobs";
 
 // Colour grading, printing, QC and delivery ⇄ tasks, print_*, qc_inspections, rework_tasks, deliveries, production_events.
 // The UI changes the shared arrays first (optimistic) and calls the db* functions here; writes run one after another so they reach
@@ -76,7 +77,7 @@ const tried = new Set<string>();
 
 async function hydrate() {
   const c = sb(); tried.clear();
-  const [prof, tasks, pj, plog, pexc, pven, qci, rw, dl, ev] = await Promise.all([
+  const [prof, tasks, pj, plog, pexc, pven, qci, rw, dl, ev, dtasks] = await Promise.all([
     sharedStaff(),
     q<Row[]>("Loading grading jobs", c.from("tasks").select("*").eq("kind", "grading") as never),
     q<Row[]>("Loading print jobs", c.from("print_jobs").select("*") as never),
@@ -87,6 +88,7 @@ async function hydrate() {
     q<Row[]>("Loading rework tasks", c.from("rework_tasks").select("*").order("created_at", { ascending: false }) as never),
     q<Row[]>("Loading deliveries", c.from("deliveries").select("*") as never),
     q<Row[]>("Loading production history", c.from("production_events").select("*").order("created_at", { ascending: false }).limit(3000) as never),
+    q<Row[]>("Loading design jobs", c.from("tasks").select("*").eq("kind", "design") as never),
   ]);
   STAFF = (prof ?? []).map((p) => ({ id: p.id, name: String(p.full_name), role: p.role }));
   const events = evMap(ev ?? []);
@@ -101,6 +103,8 @@ async function hydrate() {
       rounds: t.rounds ?? 0, events: events.get(`grading:${t.order_id}`) ?? [], startedAt: t.started_at ?? undefined, submittedAt: t.submitted_at ?? undefined });
   }
   GJOBS.splice(0, GJOBS.length, ...gjobs);
+  // design (0053)
+  DJOBS.splice(0, DJOBS.length, ...(dtasks ?? []).map((t) => { const o = orderByUid(t.order_id); return o ? { orderId: o.id, designer: staffName(t.assignee) ?? "", startedAt: t.started_at ?? undefined, submittedAt: t.submitted_at ?? undefined, rounds: t.rounds ?? 0, internalNote: t.internal_note ?? "", events: events.get(`design:${t.order_id}`) ?? [] } : null; }).filter((x): x is NonNullable<typeof x> => !!x));
 
   // printing
   const logBy = new Map<string, Row[]>(); for (const l of plog ?? []) (logBy.get(l.order_id) ?? logBy.set(l.order_id, []).get(l.order_id)!).push(l);

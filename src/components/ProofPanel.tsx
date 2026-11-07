@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { designSubmitted } from "../lib/designJobs";
 import { dutyBlock } from "../lib/duty";
 import { Copy, ExternalLink, Eye, RefreshCw, Ban } from "lucide-react";
 import { Panel, Pill, cx } from "./ui";
@@ -36,6 +37,7 @@ export function ProofPanel({ orderId, className }: { orderId: string; className?
     if (!order) return;
     const duty = dutyBlock(); if (duty) { show(duty); return; }
     const days = proof ? Math.max(1, Math.round((new Date(proof.expiresAt).getTime() - new Date(proof.createdAt).getTime()) / 864e5)) : 7;
+    void designSubmitted(orderId);
     const p = createProof(orderId, order.pages, proof?.sentVia ?? "Link", days); notify(); flushAll(); copy(p); if (backendOn) setFresh(proofUrl(p));
   };
   const toggle = (p: Proof, i: number) => {

@@ -1,4 +1,5 @@
 import { loadSettings } from "../lib/localState";
+import { designSubmitted } from "../lib/designJobs";
 import { dutyBlock } from "../lib/duty";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -323,6 +324,7 @@ function DesignWorkspace({ order }: { order: Order }) {
     const m = validate(); if (m) return setSendErr(m);
     const duty = dutyBlock(); if (duty) return setSendErr(duty);
     const p = createProof(order.id, order.pages, channel, d);
+    void designSubmitted(order.id);
     const r = moveStage(order.id, "client_review");
     if (!r.ok) { revokeProof(p); notify(); setSendErr(r.error); return; }
     saveMeta(order.id, { submitted: false }, "design_sent_to_client"); flushAll();

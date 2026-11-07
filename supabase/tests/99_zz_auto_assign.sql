@@ -135,5 +135,18 @@ update settings set value = value || '{"wf_require_checkin": false}' where key =
 select t.as('colour');
 select t.ok($$update tasks set internal_note = 'off' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: with the rule off, anyone can work');
 select t.as('system');
+
+-- design jobs (0053)
+select t.as('system');
+select set_config('t.dj', t.neworder('designing')::text, false);
+select t.as('colour');
+select t.err($$select design_task(current_setting('t.dj')::uuid, 'start')$$, 'design job: only designers and admins', 'only designers');
+select t.as('designer');
+select t.eq($$select status::text || ':' || (started_at is not null)::text from design_task(current_setting('t.dj')::uuid, 'start')$$, 'in_progress:true', 'design job: the designer starts');
+select t.eq($$select status::text || ':' || rounds from design_task(current_setting('t.dj')::uuid, 'submit')$$, 'submitted:1', 'design job: the proof goes out (round 1)');
+select t.eq($$select coalesce(internal_note, '') from design_task(current_setting('t.dj')::uuid, 'note', 'drive link: x')$$, 'drive link: x', 'design job: internal note');
+select t.eq($$select string_agg(text, ' > ' order by created_at) from production_events where order_id = current_setting('t.dj')::uuid and area = 'design'$$, 'Design started > Proof sent to the client (round 1)', 'design job: history');
+select t.as('system');
+select t.eq($$select count(*)::text from tasks where order_id = current_setting('t.dj')::uuid and kind = 'design'$$, '1', 'design job: one per order');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED
