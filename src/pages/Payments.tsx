@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { IndianRupee, Wallet, AlertCircle, RotateCcw, Receipt, Lock, Plus, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, SearchInput, CountTabs, TodayChip, MoreButton, PrimaryButton, SlideOver, Pagination, Td, tableCls, trCls, Field, inputCls, FilterSelect, LinkAction, cx, type Kpi } from "../components/ui";
+import { PendingDuesPanel } from "../components/Reminders";
 import { Combobox, ColumnsMenu, DateRangePicker, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, Err, desRange, inRangeOpt, isoLocal, orderOpt, rangeLabel, serRange, TODAY_ISO, useSlashSearch, type SavedRange } from "../components/pageKit";
 import { RowMenu } from "../components/RowMenu";
@@ -158,6 +159,7 @@ export default function Payments() {
       </PageHeader>
       {!finance && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />{receive ? "Receive-only access — refunds and protected finance records are limited to Accounts and Admin." : "View only."}</div>}
       <KpiRow items={kpis} cols={5} />
+      <PendingDuesPanel onDone={(m) => show(m)} />
 
       <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,0.8fr)]">
         <Panel title="Collections Trend" subtitle={`${chartDays}: collected ${inr(trend.reduce((a, d) => a + d.collected, 0))}`} action={<FilterSelect label="Trend range" className="w-36" value={chartDays} onChange={setChartDays} options={["Last 7 Days", "Last 14 Days", "Last 30 Days"]} />}>

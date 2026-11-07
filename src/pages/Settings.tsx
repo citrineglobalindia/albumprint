@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_BALANCE_TEMPLATE, DEFAULT_ORDER_TEMPLATE } from "../lib/reminders";
 import { Bell, Building2, Camera, CreditCard, FileText, FolderOpen, History, Mail, MessageCircle, Save, Settings as Cog, ShieldCheck, Workflow, Receipt, Download, Send, Eye, Search, Undo2, GripVertical, ArrowUp, ArrowDown, MonitorSmartphone, Check, X, Database, Upload, Trash2, ShieldAlert } from "lucide-react";
 import type { ComponentType } from "react";
 import { Field, FilterSelect, Panel, Pill, PageHeader, SearchInput, SlideOver, Td, Th, Toggle, inputCls, tableCls, trCls, cx } from "../components/ui";
@@ -66,7 +67,9 @@ const SECTIONS: SectionDef[] = [
   { key: "templates", label: "Document Templates", icon: FileText, title: "Document Templates", desc: "Layout and footer text for generated documents", groups: [
     { title: "Templates", cols: 2, fields: [
       { k: "tpl_inv", l: "Invoice Template", t: "select", o: ["Classic", "Modern", "Compact"] }, { k: "tpl_rcp", l: "Receipt Template", t: "select", o: ["Thermal 80mm", "A5", "A4"] },
-      { k: "tpl_foot", l: "Document Footer", t: "textarea" }, { k: "tpl_terms", l: "Terms & Conditions", t: "textarea" }] }] },
+      { k: "tpl_foot", l: "Document Footer", t: "textarea" }, { k: "tpl_terms", l: "Terms & Conditions", t: "textarea" },
+      { k: "tpl_pay_reminder", l: "WhatsApp reminder: pending payment of an order ({name} {business} {amount} {order} {event} {due})", t: "textarea" },
+      { k: "tpl_balance_reminder", l: "WhatsApp reminder: credit balance of a customer ({name} {business} {amount} {count} {lines})", t: "textarea" }] }] },
   { key: "invoice", label: "Invoice Settings", icon: Receipt, title: "Invoice Settings", desc: "Numbering, GST and payment terms for invoices", groups: [
     { title: "Numbering & Tax", cols: 2, fields: [
       { k: "inv_prefix", l: "Invoice Prefix", t: "text" }, { k: "inv_next", l: "Next Invoice Number", t: "number" },
@@ -111,7 +114,7 @@ const INIT: Record<string, Val> = {
   smtp_host: "smtp.example.com", smtp_port: "587", smtp_user: "info@priyasmemories.com", smtp_pass: "", from_name: "Priya's Memories", from_email: "info@priyasmemories.com", smtp_tls: true,
   wa_num: "+91 98765 43210", wa_id: "", wa_token: "", wa_tpl: "order_update", wa_on: false,
   st_prov: "Cloud (S3)", st_max: "50", st_ret: "12", st_types: "JPG, PNG, PSD, PDF, TIFF", st_backup: true,
-  tpl_inv: "Modern", tpl_rcp: "A5", tpl_foot: "Thank you for choosing us.", tpl_terms: "Advance is non-refundable once design work starts.",
+  tpl_inv: "Modern", tpl_rcp: "A5", tpl_foot: "Thank you for choosing us.", tpl_pay_reminder: DEFAULT_ORDER_TEMPLATE, tpl_balance_reminder: DEFAULT_BALANCE_TEMPLATE, tpl_terms: "Advance is non-refundable once design work starts.",
   inv_prefix: "INV-2026-", inv_next: "19", inv_gst: "18%", inv_terms: "9", inv_igst: true, inv_round: false, inv_footer: "Thank you for choosing us. Payment due within the terms above.", inv_tc: "Advance is non-refundable once design work starts. Goods once delivered are not returnable.",
   bh_start: "10", bh_end: "19", bh_days: "1,2,3,4,5,6", bh_holidays: "", sla_warn_pct: "75", wf_stages: JSON.stringify(DEFAULT_STAGES), notif_matrix: JSON.stringify(DEFAULT_MATRIX),
   pm_upi: true, pm_cash: true, pm_bank: true, pm_online: false, adv_pct: "50", upi_id: "priya@upi", rcp_prefix: "RCP", refund_appr: "Admin",

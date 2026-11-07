@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck, Trash2 } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls, cx } from "../components/ui";
+import { OrderReminderButton } from "../components/Reminders";
 import ProofPanel from "../components/ProofPanel";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
@@ -243,6 +244,7 @@ export default function OrderDetail() {
               <div className="flex justify-between"><span className="text-sub">Order total</span><b>{inr(o.total)}</b></div>
               <div className="flex justify-between"><span className="text-sub">Paid</span><b className="text-emerald-700">{inr(o.paid)}</b></div>
               <div className="flex justify-between border-t border-line pt-2"><span className="text-sub">Balance</span><b className={bal > 0 ? "text-rose-600" : ""}>{inr(bal)}</b></div>
+              {bal > 0 && <div className="pt-1"><OrderReminderButton o={o} onDone={(m, ok) => (ok ? show(m) : fail(m))} /></div>}
             </div>
             <ProgressBar value={o.total ? Math.round((o.paid / o.total) * 100) : 0} tone="green" className="mt-3" />
           </Panel>

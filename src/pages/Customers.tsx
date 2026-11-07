@@ -7,6 +7,8 @@ import {
   PageHeader, PrimaryButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, LineTabs, Pagination,
   tableCls, Th, Td, trCls, cx, OutlineButton, MoreButton, SlideOver, Field, inputCls, type Kpi,
 } from "../components/ui";
+import { BalanceReminderButton } from "../components/Reminders";
+import { duesByCustomer } from "../lib/reminders";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { backendOn } from "../lib/supabase";
@@ -300,7 +302,8 @@ export default function Customers() {
               <div><div className="text-[11px] text-sub">Lifetime Value</div><div className="text-lg font-extrabold">{inr(cur.lifetime)}</div></div>
               <div><div className="text-[11px] text-sub">Pending Dues</div><div className={cx("text-lg font-extrabold", cur.dues ? "text-rose-600" : "text-emerald-600")}>{inr(cur.dues)}</div></div>
             </div>
-            <div className="mt-3 flex gap-2"><PrimaryButton icon={Plus} onClick={() => newOrder.open({ customerId: cur.id })}>New Order</PrimaryButton></div>
+            <div className="mt-3 flex flex-wrap items-center gap-2"><PrimaryButton icon={Plus} onClick={() => newOrder.open({ customerId: cur.id })}>New Order</PrimaryButton>
+              <BalanceReminderButton d={duesByCustomer().find((x) => x.customer.id === cur.id)} onDone={(m) => show(m)} /></div>
             <LineTabs<"history" | "notes" | "follow"> className="mt-4" value={dtab} onChange={setDtab} tabs={[{ key: "history", label: "Order History" }, { key: "notes", label: `Notes (${myNotes.length})` }, { key: "follow", label: `Follow-ups (${openFollow})` }]} />
             {dtab === "history" && (
               <ul className="mt-3 space-y-2.5">
