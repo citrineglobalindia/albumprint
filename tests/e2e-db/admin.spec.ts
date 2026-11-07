@@ -23,6 +23,7 @@ test.describe("administration (database mode)", () => {
     await loginAs(page, "admin");
     await page.goto("/users");
     await page.getByRole("button", { name: "Add User" }).click();
+    await page.getByRole("radio", { name: "Invite by email" }).click();
     await page.getByLabel("Full name").fill("New Designer");
     await page.getByLabel("Work email").fill(mail);
     await page.getByRole("dialog").getByLabel("Role").selectOption("designer");
@@ -46,6 +47,7 @@ test.describe("administration (database mode)", () => {
     await loginAs(page, "admin");
     await page.goto("/users");
     await page.getByRole("button", { name: "Add User" }).click();
+    await page.getByRole("radio", { name: "Invite by email" }).click();
     await page.getByLabel("Full name").fill("Revoked Person");
     await page.getByLabel("Work email").fill(mail);
     await page.getByRole("button", { name: "Send invite" }).click();

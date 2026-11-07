@@ -58,4 +58,4 @@ const backend: Parameters<typeof registerAttendanceBackend>[0] = {
 };
 registerAttendanceBackend(backend);
 // today's punches load with everything else, so job screens know at once whether the person is checked in (check in before working, 0052)
-if (backendOn) registerHydrator("attendance today", async () => { const t = istDate(new Date()); const e = await backend.load(t, t); if (e) throw new Error(e); });
+if (backendOn) registerHydrator("attendance today", async () => { const { ensureMonth, monthOf: m } = await import("../attendance"); const e = await ensureMonth(m(istDate(new Date())), true); if (e) throw new Error(e); });
