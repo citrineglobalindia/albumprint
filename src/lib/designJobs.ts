@@ -1,4 +1,5 @@
 import { persistArray } from "./persist";
+import { hasModule } from "./access";
 import { ORDERS, type Order } from "./data";
 import { notify } from "./store";
 import { backendOn } from "./supabase";
@@ -43,7 +44,7 @@ async function rpc(o: Order, action: "start" | "submit" | "note", note?: string)
 
 export async function startDesign(orderId: string): Promise<Out> {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return { ok: false, msg: "Order not found" };
-  const r = currentActor().role; if (r !== "admin" && r !== "designer") return { ok: false, msg: "Only designers start design jobs" };
+  const r = currentActor().role; if (r !== "admin" && r !== "designer" && !hasModule("design")) return { ok: false, msg: "Only designers start design jobs" };
   if (o.stage !== "designing") return { ok: false, msg: `${o.id} is not in Designing` };
   const duty = dutyBlock(); if (duty) return { ok: false, msg: duty };
   const e = await rpc(o, "start"); if (e) return { ok: false, msg: e };
@@ -67,7 +68,7 @@ export async function saveDesignNote(orderId: string, note: string): Promise<Out
  *  and (WhatsApp) a chat opens with the customer and the link. Same rules as the editor's "Send for Client Review". */
 export async function sendToClient(orderId: string, via: "WhatsApp" | "Link" = "WhatsApp"): Promise<{ ok: boolean; msg: string; url?: string }> {
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return { ok: false, msg: "Order not found" };
-  const r = currentActor().role; if (r !== "admin" && r !== "designer") return { ok: false, msg: "Only designers send proofs" };
+  const r = currentActor().role; if (r !== "admin" && r !== "designer" && !hasModule("design")) return { ok: false, msg: "Only designers send proofs" };
   if (o.stage !== "designing") return { ok: false, msg: o.stage === "client_review" ? "Already with the client — resend from the editor's Client proof panel" : `${o.id} is not in Designing` };
   if (!(o.pages > 0)) return { ok: false, msg: "Add at least one page before sending" };
   const [{ correctionsFor }, { createProof, revokeProof, proofUrl }, { moveStage }, { flushAll }] = await Promise.all([import("./design"), import("./proofs"), import("./workflow"), import("./persist")]);

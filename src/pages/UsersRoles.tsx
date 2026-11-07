@@ -14,6 +14,7 @@ import { loadUsers, saveUsers } from "../lib/users";
 import { usePersistentState } from "../lib/localState";
 import { backendOn, supabase } from "../lib/supabase";
 import { ROLES } from "../lib/auth";
+import { MODULES as EXTRA_MODULES, type Module } from "../lib/access";
 import { dbInviteUser, dbListInvites, dbListPerms, dbListUsers, dbResendInvite, dbRevokeInvite, dbSavePerms, dbUpdateUser, type DbInvite, type DbUser, type PermCell } from "../lib/db/admin";
 import { LineTabs } from "../components/ui";
 
@@ -775,6 +776,9 @@ function UsersRolesDb() {
   const [slide, setSlide] = useState<null | { mode: "add" } | { mode: "edit"; id: string }>(null);
   const [f, setF] = useState({ ...DB_EMPTY, active: true });
   const [touched, setTouched] = useState(false);
+  const [how, setHow] = useState<"password" | "invite">("password");                 // create a ready login with a password, or record an invite
+  const [pw, setPw] = useState(""), [mustChange, setMustChange] = useState(true), [newPw, setNewPw] = useState("");
+  const [mods, setMods] = useState<Module[]>([]), [modsWas, setModsWas] = useState<Module[]>([]);
   const [busy, setBusy] = useState(false);
   const [toast, show] = useToast();
   const [dialog, confirm] = useConfirm();
@@ -792,7 +796,11 @@ function UsersRolesDb() {
   const pending = invites.filter((i) => i.status === "pending");
 
   const openAdd = () => { setTouched(false); setF({ ...DB_EMPTY, active: true }); setSlide({ mode: "add" }); };
-  const openEdit = (u: DbUser) => { setTouched(false); setF({ name: u.name, email: u.email, mobile: u.mobile, role: u.role, dept: u.dept, active: u.active }); setSlide({ mode: "edit", id: u.id }); };
+  const openEdit = (u: DbUser) => {
+    setTouched(false); setNewPw(""); setF({ name: u.name, email: u.email, mobile: u.mobile, role: u.role, dept: u.dept, active: u.active }); setSlide({ mode: "edit", id: u.id });
+    setMods([]); setModsWas([]);
+    void supabase!.from("user_modules").select("module").eq("user_id", u.id).then(({ data }) => { const m = ((data ?? []) as { module: Module }[]).map((x) => x.module); setMods(m); setModsWas(m); });
+  };
 
   const email = f.email.trim().toLowerCase();
   const errs = {
@@ -813,6 +821,15 @@ function UsersRolesDb() {
     if (!slide) return;
     if (slide.mode === "add") {
       if (errs.name || errs.email) return;
+      if (how === "password") {
+        if (pw.length < 8) { show("The password must be at least 8 characters"); return; }
+        setBusy(true);
+        const { error } = await supabase!.rpc("admin_create_user", { p_email: email, p_password: pw, p_name: f.name.trim(), p_role: f.role, p_department: f.dept || null, p_mobile: f.mobile.trim() || null, p_must_change: mustChange });
+        setBusy(false);
+        if (error) { show(`Could not create the user: ${error.message}`); return; }
+        setSlide(null); setPw(""); await refresh(); setTab("users");
+        show(`${f.name.trim()} can sign in now with ${email} and the password you set${mustChange ? " (they'll be asked to change it)" : ""}`); return;
+      }
       setBusy(true);
       const err = await dbInviteUser({ email, name: f.name.trim(), role: f.role, dept: f.dept, mobile: f.mobile.trim() });
       setBusy(false);
@@ -821,8 +838,11 @@ function UsersRolesDb() {
     } else if (editing) {
       if (errs.name) return;
       const patch = { name: f.name.trim(), mobile: f.mobile.trim(), role: f.role, dept: f.dept, active: f.active };
+      const add = mods.filter((m) => !modsWas.includes(m)), del = modsWas.filter((m) => !mods.includes(m));
+      if (add.length) { const { error } = await supabase!.from("user_modules").insert(add.map((module) => ({ user_id: editing.id, module }))); if (error) { show(`Modules not saved: ${error.message}`); return; } }
+      if (del.length) { const { error } = await supabase!.from("user_modules").delete().eq("user_id", editing.id).in("module", del); if (error) { show(`Modules not saved: ${error.message}`); return; } }
       setSlide(null);
-      await patchUser(editing, patch, `${patch.name} updated`);
+      await patchUser(editing, patch, `${patch.name} updated${add.length || del.length ? ` · modules: ${mods.map((m) => EXTRA_MODULES.find((x) => x.key === m)?.label).join(", ") || "role only"}` : ""}`);
     }
   };
   const toggleActive = (u: DbUser) => {
@@ -986,15 +1006,41 @@ function UsersRolesDb() {
 
       <SlideOver open={!!slide} onClose={() => setSlide(null)} title={slide?.mode === "edit" ? "Edit user" : "Add user"} footer={<>
         <button onClick={() => setSlide(null)} className="h-11 px-5 text-sm font-bold">Cancel</button>
-        <PrimaryButton icon={slide?.mode === "edit" ? Check : Mail} onClick={() => void saveUser()}>{busy ? "Saving…" : slide?.mode === "edit" ? "Save changes" : "Send invite"}</PrimaryButton>
+        <PrimaryButton icon={slide?.mode === "edit" ? Check : how === "password" ? UserPlus : Mail} onClick={() => void saveUser()}>{busy ? "Saving…" : slide?.mode === "edit" ? "Save changes" : how === "password" ? "Create user" : "Send invite"}</PrimaryButton>
       </>}>
-        {slide?.mode === "add" && <p className="mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs text-ink">This records an invitation. The person then creates their account with this email on the sign-in page (or you add them in Supabase Auth) and receives the role below automatically.</p>}
+        {slide?.mode === "add" && (
+          <div className="mb-4 flex gap-1 rounded-lg border border-line p-1 text-xs font-bold" role="radiogroup" aria-label="How to add">
+            {([["password", "Create with password"], ["invite", "Invite by email"]] as const).map(([k, l]) => <button key={k} type="button" role="radio" aria-checked={how === k} onClick={() => setHow(k)} className={cx("flex-1 rounded-md px-3 py-2", how === k ? "bg-brand text-white" : "text-sub hover:bg-slate-50")}>{l}</button>)}
+          </div>
+        )}
+        {slide?.mode === "add" && how === "invite" && <p className="mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs text-ink">This records an invitation. The person then creates their account with this email on the sign-in page (or you add them in Supabase Auth) and receives the role below automatically.</p>}
+        {slide?.mode === "add" && how === "password" && <p className="mb-4 rounded-lg bg-brand-soft px-3 py-2 text-xs text-ink">The login is ready at once — no e-mail needed. Give them the email and password; they sign in on the sign-in page.</p>}
         <Field label="Full name" required><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />{touched && errs.name && <span className={ERR}>{errs.name}</span>}</Field>
         <Field label="Work email" required><input className={inputCls} type="email" readOnly={slide?.mode === "edit"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />{touched && slide?.mode === "add" && errs.email && <span className={ERR}>{errs.email}</span>}</Field>
         <Field label="Mobile"><input className={inputCls} value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value })} /></Field>
         <Field label="Role" required><select className={inputCls} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, dept: ROLE_DEFAULT_DEPT[e.target.value] ?? f.dept })}>{DB_ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}</select></Field>
         <Field label="Department"><select className={inputCls} value={f.dept} onChange={(e) => setF({ ...f, dept: e.target.value })}>{[...new Set([...DB_DEPTS, f.dept].filter(Boolean))].map((d) => <option key={d}>{d}</option>)}</select></Field>
+        {slide?.mode === "add" && how === "password" && <>
+          <Field label="Password" required hint="At least 8 characters"><input className={inputCls} type="text" aria-label="Password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+          <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} />Ask them to change it at the first sign-in</label>
+        </>}
         {slide?.mode === "edit" && <div className="flex items-center justify-between py-1.5"><span className="text-sm font-semibold">Account active</span><Toggle on={f.active} onChange={(x) => setF({ ...f, active: x })} label="Account active" /></div>}
+        {slide?.mode === "edit" && editing && editing.role !== "admin" && (
+          <div className="mt-3 rounded-xl border border-line p-3" data-testid="extra-modules">
+            <div className="text-sm font-extrabold">Extra modules</div>
+            <p className="mb-2 text-xs text-sub">On top of the {roleLabel(editing.role)} role: tick any module this person should also work in (view and update; approvals stay with the role).</p>
+            <div className="grid grid-cols-2 gap-1.5">{EXTRA_MODULES.map((m) => (
+              <label key={m.key} className="flex items-center gap-2 text-[13px]"><input type="checkbox" aria-label={`Module ${m.label}`} checked={mods.includes(m.key)} onChange={(e) => setMods(e.target.checked ? [...mods, m.key] : mods.filter((x) => x !== m.key))} />{m.label}</label>
+            ))}</div>
+          </div>
+        )}
+        {slide?.mode === "edit" && editing && (
+          <div className="mt-3 rounded-xl border border-line p-3">
+            <div className="text-sm font-extrabold">Set a new password</div>
+            <div className="mt-2 flex gap-2"><input className={cx(inputCls, "flex-1")} aria-label="New password" type="text" autoComplete="new-password" placeholder="At least 8 characters" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+              <button type="button" disabled={newPw.length < 8} onClick={() => void supabase!.rpc("admin_set_password", { p_user: editing.id, p_password: newPw, p_must_change: true }).then(({ error }) => { if (error) show(`Could not set the password: ${error.message}`); else { setNewPw(""); show(`New password set for ${editing.name} — they'll be asked to change it at the next sign-in`); } })} className="h-11 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft disabled:opacity-40">Set password</button></div>
+          </div>
+        )}
       </SlideOver>
     </div>
   );

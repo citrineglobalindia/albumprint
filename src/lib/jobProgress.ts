@@ -1,4 +1,5 @@
 import { persistArray } from "./persist";
+import { hasModule, type Module } from "./access";
 import { ORDERS } from "./data";
 import { notify } from "./store";
 import { backendOn } from "./supabase";
@@ -22,7 +23,8 @@ export const progressOf = (orderId: string, dept: Dept) => PROGRESS.find((p) => 
 export const photosGiven = (orderId: string) => progressOf(orderId, "order")?.count;
 
 const WRITE: Record<Dept, RoleKey[]> = { order: ["admin", "reception"], grading: ["admin", "colour"], design: ["admin", "designer"], printing: ["admin", "printing"], qc: ["admin", "qc"], delivery: ["admin", "reception", "qc"] };
-export const canUpdate = (dept: Dept) => { const r = currentActor().role; return r !== "system" && WRITE[dept].includes(r as RoleKey); };
+const DEPT_MODULE: Record<Dept, Module> = { order: "order", grading: "grading", design: "design", printing: "printing", qc: "qc", delivery: "delivery" };
+export const canUpdate = (dept: Dept) => { const r = currentActor().role; return r !== "system" && (WRITE[dept].includes(r as RoleKey) || hasModule(DEPT_MODULE[dept])); };
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 export async function hydrateProgress() {

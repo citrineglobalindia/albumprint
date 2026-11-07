@@ -1,4 +1,5 @@
 import { notifyQcFailed } from "./events";
+import { hasModule, type Module } from "./access";
 import { persistArray } from "./persist";
 import { ORDERS, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
@@ -27,7 +28,9 @@ const MATRIX: Record<Area, RoleKey[]> = {
   grading: ["colour", "admin"], printing: ["printing", "admin"], qc: ["qc", "admin"], delivery: ["reception", "printing", "qc", "admin"],
   receive: ["accounts", "admin", "reception"], finance: ["accounts", "admin"],
 };
-export const can = (role: RoleKey | null | undefined, a: Area) => !!role && MATRIX[a].includes(role);
+/** The role may do it — or the admin gave this user the module as an extra (0057): grading, printing, qc, delivery, payments. */
+const AREA_MODULE: Partial<Record<Area, Module>> = { grading: "grading", printing: "printing", qc: "qc", delivery: "delivery", receive: "payments" };
+export const can = (role: RoleKey | null | undefined, a: Area) => !!role && (MATRIX[a].includes(role) || (!!AREA_MODULE[a] && hasModule(AREA_MODULE[a]!)));
 export const AREA_NAME: Record<Area, string> = { grading: "colour grading", printing: "printing", qc: "quality control", delivery: "delivery updates", receive: "payment receipt", finance: "finance" };
 export const denied = (role: RoleKey | null | undefined, a: Area) => no(`Your role (${role ?? "guest"}) cannot perform ${AREA_NAME[a]} actions`);
 

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase, backendOn } from "./supabase";
+import { extraRoutes, loadMyModules, onModules } from "./access";
 import ChangePassword from "../pages/ChangePassword";
 import MfaChallenge from "../pages/MfaChallenge";
 import { Navigate, useLocation } from "react-router-dom";
@@ -31,6 +32,8 @@ interface Auth {
 const Ctx = createContext<Auth>(null!);
 const KEY = "albumpro.role";
 
+/** The pages a user may open: their role's, plus the routes of any extra modules the admin gave them. */
+export const navOf = (r: RoleKey) => [...new Set([...ROLES[r].nav, ...extraRoutes()])];
 const mirror = (r: RoleKey | null, name = "") => {      // other modules (audit, engine) read the actor from localStorage
   try { if (r) { localStorage.setItem(KEY, r); localStorage.setItem("albumpro.actor", name); } else { localStorage.removeItem(KEY); localStorage.removeItem("albumpro.actor"); } } catch { /* ignore */ }
 };
@@ -42,6 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [modTick, bump] = useState(0); void modTick;
+  useEffect(() => onModules(() => bump((x) => x + 1)), []);                       // extra modules loaded → menus and pages update
+  useEffect(() => { if (!backendOn && role) void loadMyModules(ROLES[role].email); }, [role]);
   const [loading, setLoading] = useState(backendOn);
   const [mustChange, setMustChange] = useState(false);
   const [mfaFactor, setMfaFactor] = useState<string | null>(null);      // set while the password step is done but the authenticator code is not
@@ -75,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!alive) return;
       if (data && data.active && data.role in ROLES) {
         setRole(data.role as RoleKey); setName(data.full_name); setEmail(data.email ?? ""); setMustChange(!!data.must_change_password); mirror(data.role as RoleKey, data.full_name);
+        await loadMyModules(uid);                                  // extra modules the admin gave this user (0057)
         await hydrating;                                           // customers, orders… for this user's role
         void import("./db").then(({ startLive }) => startLive());   // then keep it live: other people's changes show without a reload
       }
@@ -89,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
-  const login = (r: RoleKey) => { mirror(r, ROLES[r].user); setRole(r); };
+  const login = (r: RoleKey) => { mirror(r, ROLES[r].user); void loadMyModules(ROLES[r].email); setRole(r); };
   const signIn: Auth["signIn"] = async (e, p) => {
     if (!supabase) return { ok: false, error: "Backend is not configured" };
     const { error } = await supabase.auth.signInWithPassword({ email: e.trim().toLowerCase(), password: p });
@@ -137,7 +144,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (mustChangePassword) return <ChangePassword />;
   const base = "/" + (pathname.split("/")[1] ?? "");
   const ordersLike = base === "/design-orders" || base === "/printing-orders" || pathname.startsWith("/orders/");   // the order lists by type follow the Orders permission
-  const allowed = pathname === "/account" || ROLES[role].nav.includes(base) || ordersLike && ROLES[role].nav.includes("/orders");
+  const nav = navOf(role);
+  const allowed = pathname === "/account" || nav.includes(base) || ordersLike && nav.includes("/orders");
   if (!allowed && pathname !== "/") return <Navigate to="/" replace />;
   return <>{children}</>;
 }

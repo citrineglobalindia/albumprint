@@ -185,5 +185,29 @@ select t.err($$update job_progress set status = 'bogus' where order_id = current
 select t.as('reception');
 select t.eq($$select string_agg(dept || '=' || count, ',' order by dept) from job_progress where order_id = current_setting('t.jp')::uuid$$, 'design=5,grading=120', 'progress: everyone sees the updates');
 select t.as('system');
+
+-- users with a password, extra modules (0057)
+select t.as('reception');
+select t.err($$select admin_create_user('x@y.local', 'Password-123', 'X Y', 'printing')$$, 'users: only an admin creates users', 'only an admin');
+select t.as('admin');
+select t.err($$select admin_create_user('short@y.local', 'abc', 'Short Pw', 'printing')$$, 'users: the password must be 8+ characters', '8 characters');
+select set_config('t.nu', admin_create_user('Lab.Helper@Studio.local', 'Password-123', 'Lab Helper', 'designer', 'Designing', '9876500099', true)::text, false);
+select t.as('system');
+select t.eq($$select p.role::text || '|' || full_name || '|' || must_change_password::text || '|' || (u.email_confirmed_at is not null)::text from profiles p join auth.users u on u.id = p.id where p.id = current_setting('t.nu')::uuid$$, 'designer|Lab Helper|true|true', 'users: the login is ready (role, name, confirmed, change password at first sign-in)');
+select t.eq($$select (encrypted_password = crypt('Password-123', encrypted_password))::text from auth.users where id = current_setting('t.nu')::uuid$$, 'true', 'users: the password works');
+select t.as('admin');
+select t.err($$select admin_create_user('lab.helper@studio.local', 'Password-123', 'Again', 'qc')$$, 'users: no duplicate logins', 'already exists');
+select t.ok($$select admin_set_password(current_setting('t.nu')::uuid, 'NewPass-4567', false)$$, 'users: the admin resets the password');
+select t.as('system');
+select t.eq($$select (encrypted_password = crypt('NewPass-4567', encrypted_password))::text from auth.users where id = current_setting('t.nu')::uuid$$, 'true', 'users: the new password works');
+-- extra modules: a designer who also handles printing
+select set_config('request.jwt.claim.sub', current_setting('t.nu'), false); set role authenticated;
+select t.eq($$select has_perm('printing', 'write')::text$$, 'false', 'modules: a designer has no printing access by role');
+reset role; select t.as('admin');
+select t.ok($$insert into user_modules(user_id, module) values (current_setting('t.nu')::uuid, 'printing')$$, 'modules: the admin gives printing to the designer');
+reset role; select set_config('request.jwt.claim.sub', current_setting('t.nu'), false); set role authenticated;
+select t.eq($$select has_perm('printing', 'write')::text || has_perm('printing', 'approve')::text || has_perm('design', 'write')::text$$, 'truefalsetrue', 'modules: now printing (work, not approvals) on top of design');
+select t.eq($$select count(*)::text from user_modules$$, '1', 'modules: a user sees their own modules');
+reset role; select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

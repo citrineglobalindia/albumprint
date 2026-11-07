@@ -8,7 +8,7 @@ import {
 import { cx } from "./ui";
 import { Avatar } from "./ui";
 import { ORDERS, CUSTOMERS } from "../lib/data";
-import { useAuth, ROLES } from "../lib/auth";
+import { useAuth, ROLES, navOf } from "../lib/auth";
 import { notifStore, onNotifArrive, useNotifs } from "../lib/notifStore";
 import { useNewOrder } from "./NewOrderWizard";
 import A11yLayer from "./A11yLayer";
@@ -55,7 +55,7 @@ function useDesktop() {
 
 function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; onClose: () => void }) {
   const { role } = useAuth();
-  const items = (NAV as readonly NavItem[]).filter((n) => ROLES[role!].nav.includes(n.sub ? "/orders" : n.to));
+  const items = (NAV as readonly NavItem[]).filter((n) => navOf(role!).includes(n.sub ? "/orders" : n.to));
   const hidden = !desktop && !open;
   const ref = useRef<HTMLElement>(null);
   useEffect(() => { if (open && !desktop) ref.current?.querySelector<HTMLElement>("a")?.focus(); }, [open, desktop]);
@@ -116,7 +116,7 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
   const [recent, setRecent] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) { setQ(""); setHi(0); setRecent(readRecent()); } }, [open]);
-  const allowed = role ? ROLES[role].nav : [];
+  const allowed = role ? navOf(role) : [];
   const term = q.trim().toLowerCase();
   const items = useMemo<Cmd[]>(() => {
     const out: Cmd[] = [];
@@ -312,7 +312,7 @@ export default function Shell() {
   useEffect(() => { if (desktop) setDrawer(false); }, [desktop]);
   useEffect(() => { document.title = `${titleFor(loc.pathname)} · AlbumPro`; }, [loc.pathname]);
   useEffect(() => {
-    const allowed = role ? ROLES[role].nav : [];
+    const allowed = role ? navOf(role) : [];
     const h = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((x) => !x); return; }
       const t = e.target as HTMLElement | null;

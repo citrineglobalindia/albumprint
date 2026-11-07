@@ -1,4 +1,5 @@
 import { persistArray } from "./persist";
+import { hasModule } from "./access";
 import { ORDERS, type Order } from "./data";
 import { notify } from "./store";
 import { backendOn } from "./supabase";
@@ -19,7 +20,7 @@ export const LAB_STATUS_LABEL: Record<LabStatus, string> = { not_sent: "Not sent
 
 export const canSeeCost = () => { const r = currentActor().role; return r === "admin" || r === "accounts"; };
 export const canManageLabs = () => currentActor().role === "admin";
-export const canMoveLabWork = () => ["admin", "reception", "printing"].includes(currentActor().role);
+export const canMoveLabWork = () => ["admin", "reception", "printing"].includes(currentActor().role) || hasModule("printing");
 export const labName = (id?: string) => LABS.find((l) => l.id === id)?.name ?? "";
 export const albumLab = (orderId: string, position: number) => ALBUM_LABS.find((a) => a.orderId === orderId && a.position === position);
 export const purchaseOf = (orderId: string, position: number) => PURCHASES.find((p) => p.orderId === orderId && p.position === position)?.amount;

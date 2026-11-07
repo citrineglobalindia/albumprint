@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ClipboardList, Palette, MessageSquareWarning, Send, CheckCircle2, Clock, Play, PenTool, Save, Image as ImageIcon } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, Pagination, PriorityPill, SlideOver, Field, inputCls, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
+import { hasModule } from "../lib/access";
 import { WorkFiles } from "../components/WorkFiles";
 import { Elapsed, JobTimer } from "../components/JobTimer";
 import { useToast } from "../components/Toast";
@@ -25,7 +26,7 @@ const pages = (id: string) => FILES.filter((f) => f.orderId === id && f.category
 export default function DesignJobs() {
   useStore();
   const { role } = useAuth();
-  const canWork = role === "admin" || role === "designer";
+  const canWork = role === "admin" || role === "designer" || hasModule("design");
   const [tab, setTab] = useState<Tab>("queue");
   const [q, setQ] = useState(""); const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
