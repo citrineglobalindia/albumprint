@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Truck, PackageCheck, Send, CheckCircle2, Lock, AlertTriangle, FileCheck2, Wallet, SlidersHorizontal } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, CountTabs, TodayChip, MoreButton, SlideOver, Pagination, Td, tableCls, trCls, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { JobProgress } from "../components/JobProgress";
 import { ColumnsMenu, DateRangePicker, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, desRange, inRangeOpt, rangeLabel, serRange, useSlashSearch, type SavedRange } from "../components/pageKit";
 import { RowMenu } from "../components/RowMenu";
@@ -187,6 +188,7 @@ export default function Delivery() {
               <Pill tone={closed ? "slate" : cur.status === "Delivered" ? "green" : cur.status === "Dispatched" ? "blue" : "amber"}>{closed ? "Closed" : cur.status}</Pill>
             </div>
             {closed && <div className="mt-3"><Banner tone="amber">Order is closed — read-only. Reopen it (admin) to make changes.</Banner></div>}
+            <JobProgress orderId={cur.orderId} dept="delivery" onDone={(m) => show(m)} />
 
             {dues > 0 && cur.status === "Ready" && (
               <div role="alert" data-testid="dues-banner" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LABS, applyAlbumLabs, canSeeCost } from "../lib/labs";
+import { applyPhotosGiven } from "../lib/jobProgress";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, FileText, Palette, Plus, Printer, Save, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { Field, Pill, Toggle, cx, inputCls } from "../components/ui";
@@ -119,6 +120,7 @@ export default function OrderBuilder() {
       if ("error" in r) { setErrs([r.error]); return; }
       setDraftId(r.draftId); setDone(r.result); setStep(5); setVisited(5);
       show(`Order ${r.result.code} finalized · invoice ${r.result.invoiceNumber}`);
+      const pg = d.event.photosGiven?.trim(); void applyPhotosGiven(r.result.code, pg ? Math.max(0, Math.floor(Number(pg))) : undefined);
       void applyAlbumLabs(r.result.code, d.albums.map((a) => ({ labId: a.labId, purchase: a.purchase }))).then((e) => { if (e) setErrs([`Order saved, but the lab details were not: ${e}`]); });
     } finally { busyRef.current = false; setBusy(false); }
   };
@@ -301,6 +303,7 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
     <section className="grid gap-x-4 rounded-2xl border border-line bg-white p-5 md:grid-cols-2" aria-label="Event details">
       <Field label="Event name" hint="e.g. Asha & Ravi wedding"><input aria-label="Event name" className={inputCls} value={ev.name} maxLength={150} onChange={(x) => e("name", x.target.value)} /></Field>
       <Field label="Order date" hint="The day the order was taken: today unless you pick an earlier date"><input aria-label="Order date" type="date" max={orderToday()} className={inputCls} value={ev.orderDate || orderToday()} onChange={(x) => e("orderDate", x.target.value)} /></Field>
+      <Field label="Photos given (optional)" hint="How many photos the customer gave for this order"><input aria-label="Photos given" type="number" min={0} step={1} className={inputCls} value={ev.photosGiven ?? ""} onChange={(x) => e("photosGiven", x.target.value)} /></Field>
       <Field label="Event date (optional)"><input aria-label="Event date" type="date" className={inputCls} value={ev.date} onChange={(x) => e("date", x.target.value)} /></Field>
       <Field label="Delivery date (optional)" hint={`If left empty: ${pricingSettings().defaultDeliveryDays} days after the order date`}><input aria-label="Delivery date" type="date" min={ev.orderDate || orderToday()} className={inputCls} value={ev.delivery} onChange={(x) => e("delivery", x.target.value)} /></Field>
       <Field label="Work group"><select aria-label="Work Group" className={inputCls} value={ev.workGroup ?? ""} onChange={(x) => e("workGroup", x.target.value)}><option value="">Select</option>{WORK_GROUPS.map((w) => <option key={w}>{w}</option>)}</select></Field>

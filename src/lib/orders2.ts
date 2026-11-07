@@ -66,6 +66,7 @@ export function draftProblems(d: OrderDraft): { step: number; message: string }[
   if (d.event.orderDate && !/^\d{4}-\d{2}-\d{2}$/.test(d.event.orderDate)) out.push({ step: 2, message: "The order date is not valid" });
   else if (od > todayIso()) out.push({ step: 2, message: "The order date cannot be in the future" });
   if (d.event.date && !/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "The event date is not valid" });
+  if (d.event.photosGiven?.trim() && !/^\d+$/.test(d.event.photosGiven.trim())) out.push({ step: 2, message: "Photos given must be a whole number (or leave it empty)" });
   d.albums.forEach((a, i) => { if (a.eventDate && !/^\d{4}-\d{2}-\d{2}$/.test(a.eventDate)) out.push({ step: 3, message: `Album ${i + 1}: the event date is not valid` }); });
   if (d.event.delivery && d.event.delivery < od) out.push({ step: 2, message: "The delivery date cannot be before the order date" });
   const p = price(d);

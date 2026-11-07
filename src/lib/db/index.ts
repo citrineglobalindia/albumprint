@@ -9,3 +9,5 @@ export { startLive, stopLive, liveState, onLiveState, queueReload, type LiveStat
 import { registerHydrator as regLabs, backendOn as onLabs } from "./core";
 import { hydrateLabs } from "../labs";
 if (onLabs) regLabs("labs", hydrateLabs);
+import { hydrateProgress } from "../jobProgress";
+if (onLabs) regLabs("job progress", hydrateProgress);

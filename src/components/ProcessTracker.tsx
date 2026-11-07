@@ -8,6 +8,9 @@ import { backendOn } from "../lib/supabase";
 import { sb } from "../lib/db/core";
 import { fmtDate } from "../lib/format";
 import type { RoleKey } from "../lib/auth";
+import { photosGiven, progressOf, statusLabel, type Dept } from "../lib/jobProgress";
+const STAGE_DEPT: Partial<Record<StageKey, Dept>> = { new_order: "order", colour_grading: "grading", designing: "design", printing: "printing", qc: "qc", ready_for_delivery: "delivery" };
+const COUNT_LABEL: Partial<Record<Dept, string>> = { grading: "Photos graded", design: "Sheets designed", printing: "Sheets printed" };
 
 // The order page's "Process": every step of this order's route, who owns it, who did it and when, and what happens next.
 type Step = { stage: StageKey; owner: string; roles: RoleKey[]; todo: string; link?: (o: Order) => string };
@@ -81,6 +84,9 @@ export function ProcessTracker({ o, role, tick }: { o: Order; role: RoleKey | nu
                 {state === "done" && <span className="text-[11px] font-bold text-emerald-700">Done</span>}
                 {state === "current" && <span className="text-[11px] font-bold text-brand">{ended ? (o.closed ? "Closed" : "Cancelled") : o.hold ? o.hold : "In progress"}</span>}
               </div>
+              {(() => { const d = STAGE_DEPT[s.stage]; const p = d ? progressOf(o.id, d) : undefined; if (!p || (p.count == null && !p.status && !p.note)) return null;
+                const total = d === "design" ? o.pages : d === "grading" ? photosGiven(o.id) : undefined;
+                return <div className="text-xs text-sub" data-testid={`step-progress-${s.stage}`}>{d === "order" ? `Photos given: ${p.count}` : [p.count != null ? `${COUNT_LABEL[d!] ?? "Count"} ${p.count}${total ? ` of ${total}` : ""}` : "", statusLabel(p.status), p.note ? `“${p.note}”` : ""].filter(Boolean).join(" · ")}{p.by && d !== "order" ? ` — ${p.by}` : ""}</div>; })()}
               {state === "done" && <div className="text-xs text-sub" data-testid="step-by">{by ? <>by <b className="text-ink">{by.actor}</b> ({ROLE_NAME[by.role] ?? by.role}) · {when(by.at)}{by.reason ? ` · “${by.reason}”` : ""}</> : "Completed"}</div>}
               {state === "current" && <>
                 <div className="text-xs text-sub">{s.todo}</div>

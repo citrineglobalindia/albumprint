@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock, Search, CheckCircle2, XCircle, Wrench, Truck, ShieldCheck, Check, X, Minus, Lock, UploadCloud } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, TodayChip, MoreButton, SlideOver, Pagination, Td, tableCls, trCls, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { JobProgress } from "../components/JobProgress";
 import { Elapsed, JobTimer } from "../components/JobTimer";
 import { ColumnsMenu, DateRangePicker, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, desRange, inRangeOpt, rangeLabel, serRange, useSlashSearch, type SavedRange } from "../components/pageKit";
@@ -158,7 +159,7 @@ export default function QualityControl() {
                 {canAct && <button onClick={() => run(startInspection(cur.id))} className="mt-3 h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Start inspection (round {history.length + 1})</button>}
               </div>
             ) : (<>
-              <div className="mb-3"><JobTimer start={insp.startedAt} end={insp.decidedAt} label="Inspection time" /></div>
+              <div className="mb-3"><JobTimer start={insp.startedAt} end={insp.decidedAt} label="Inspection time" /><JobProgress orderId={cur.id} dept="qc" onDone={(m) => show(m)} /></div>
               <h4 className="text-sm font-extrabold">Checklist</h4>
               <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
                 {CHECKS.map((c) => (

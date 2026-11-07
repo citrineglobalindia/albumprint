@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Printer, PlayCircle, Layers, Package, ShieldCheck, Flag, ArrowRight, CheckCircle2, Circle, AlertTriangle, Truck, Lock, Hourglass } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, Pagination, Td, trCls, tableCls, PrimaryButton, TodayChip, MoreButton, SlideOver, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { JobProgress } from "../components/JobProgress";
 import { Elapsed, JobTimer } from "../components/JobTimer";
 import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, DateField, Err, FieldBox, desRange, inRangeOpt, orderOpt, rangeLabel, serRange, strOpts, TODAY_ISO, useSlashSearch, type SavedRange } from "../components/pageKit";
@@ -234,6 +235,7 @@ export default function Printing() {
               </div>
             </div>
             <JobTimer start={pStart(sel)} end={pEnd(sel)} label="Printing time" paused={so.hold ? so.hold : undefined} />
+            <JobProgress orderId={sel.orderId} dept="printing" countLabel="Sheets printed" of={sel.sheets * sel.copies || undefined} onDone={(m) => show(m)} />
             {closed && <div className="mt-3"><Banner tone="amber">Order is closed — read-only.</Banner></div>}
             {!work && <div className="mt-3"><Banner tone="amber">View only — your role cannot change production.</Banner></div>}
             {sel.stage === "Sent to QC" && <div className="mt-3"><Banner tone="green">Handed to QC — order is now at {stageLabel(so.stage)}.</Banner></div>}

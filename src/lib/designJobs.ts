@@ -62,3 +62,28 @@ export async function saveDesignNote(orderId: string, note: string): Promise<Out
   const e = await rpc(o, "note", note); if (e) return { ok: false, msg: e };
   ensure(o).internalNote = note.trim(); notify(); return { ok: true, msg: "Note saved" };
 }
+
+/** Send the proof to the client straight from the design job: a new proof link (7 days), the order moves to Client Review,
+ *  and (WhatsApp) a chat opens with the customer and the link. Same rules as the editor's "Send for Client Review". */
+export async function sendToClient(orderId: string, via: "WhatsApp" | "Link" = "WhatsApp"): Promise<{ ok: boolean; msg: string; url?: string }> {
+  const o = ORDERS.find((x) => x.id === orderId); if (!o) return { ok: false, msg: "Order not found" };
+  const r = currentActor().role; if (r !== "admin" && r !== "designer") return { ok: false, msg: "Only designers send proofs" };
+  if (o.stage !== "designing") return { ok: false, msg: o.stage === "client_review" ? "Already with the client — resend from the editor's Client proof panel" : `${o.id} is not in Designing` };
+  if (!(o.pages > 0)) return { ok: false, msg: "Add at least one page before sending" };
+  const [{ correctionsFor }, { createProof, revokeProof, proofUrl }, { moveStage }, { flushAll }] = await Promise.all([import("./design"), import("./proofs"), import("./workflow"), import("./persist")]);
+  if (correctionsFor(o.id).some((c) => c.status !== "Resolved")) return { ok: false, msg: "Resolve all open corrections first (in the editor)" };
+  const duty = dutyBlock(); if (duty) return { ok: false, msg: duty };
+  const p = createProof(o.id, o.pages, via, 7);
+  const m = moveStage(o.id, "client_review");
+  if (!m.ok) { revokeProof(p); notify(); return { ok: false, msg: m.error }; }
+  await designSubmitted(o.id); flushAll();
+  const url = proofUrl(p);
+  if (via === "WhatsApp") {
+    const { CUSTOMERS } = await import("./data");
+    const c = CUSTOMERS.find((x) => x.studio === o.customer || x.name === o.customer);
+    const d = (c?.whatsapp || c?.mobile || o.mobile || "").replace(/\D/g, ""), num = d.length === 10 ? `91${d}` : d;
+    const text = `Hello ${c?.name || o.customer}, your album design for ${o.event} (${o.id}) is ready for review: ${url}\nPlease check each page and approve, or tell us the corrections. Thank you!`;
+    if (num) window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  } else { try { await navigator.clipboard.writeText(url); } catch { /* clipboard unavailable */ } }
+  return { ok: true, msg: via === "WhatsApp" ? `Proof v${p.version} sent — WhatsApp opened with the link` : `Proof v${p.version} ready — link copied`, url };
+}

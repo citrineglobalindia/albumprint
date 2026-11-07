@@ -31,6 +31,13 @@ test("designer: queue → start → upload pages → send proof → With Client,
   await panel.getByRole("button", { name: "Save" }).click();
   await expect.poll(() => sql(`select internal_note from tasks where order_id = ${O} and kind = 'design'`)).toBe("Full-size PSDs on the studio drive");
 
+  // the designer's count and status
+  const pr = panel.getByTestId("progress-design");
+  await pr.getByLabel("Sheets designed").fill("18"); await pr.getByLabel("design status").selectOption("working");
+  await pr.getByRole("button", { name: "Update" }).click();
+  await expect.poll(() => sql(`select count || ':' || status from job_progress where order_id = ${O} and dept = 'design'`)).toBe("18:working");
+  await expect(pr.getByTestId("progress-design-pct")).toHaveText("18 / 30 · 60%");
+
   // send the proof from the editor
   await panel.getByRole("link", { name: /Open editor & send proof/ }).click();
   await expect(page).toHaveURL(new RegExp(`/designing/${code}$`));

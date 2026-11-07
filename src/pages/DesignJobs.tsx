@@ -11,7 +11,9 @@ import { fmtDate, TODAY } from "../lib/format";
 import { addFile, FILES } from "../lib/files";
 import { latestProof } from "../lib/proofs";
 import { fmtDT } from "../lib/production";
-import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveDesignNote, startDesign, type DStatus } from "../lib/designJobs";
+import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveDesignNote, sendToClient, startDesign, type DStatus } from "../lib/designJobs";
+import { JobProgress } from "../components/JobProgress";
+import { photosGiven } from "../lib/jobProgress";
 import type { Order, Priority } from "../lib/data";
 
 // Album Designing — the designer's queue, like Colour Grading: every design job with its status, designer, files and a running timer;
@@ -98,12 +100,15 @@ export default function DesignJobs() {
                 <div><h3 className="text-xl font-extrabold">{cur.id}</h3><div className="text-[13px] text-sub">{cur.customer} • {cur.event} • {cur.size} • {cur.pages} pages</div></div>
                 <Pill tone={DSTATUS_TONE[s]}>{s}</Pill>
               </div>
-              <dl className="mt-3 grid grid-cols-3 gap-3 text-[13px]">
+              <dl className="mt-3 grid grid-cols-3 gap-3 text-[13px] sm:grid-cols-5">
                 <div><dt className="text-xs text-sub">Designer</dt><dd className="font-semibold">{designerOf(cur)}</dd></div>
                 <div><dt className="text-xs text-sub">Due</dt><dd className="font-semibold">{fmtDate(cur.due)}</dd></div>
                 <div><dt className="text-xs text-sub">Rounds sent</dt><dd className="font-semibold">{j?.rounds ?? 0}</dd></div>
+                <div><dt className="text-xs text-sub">Photos given</dt><dd className="font-semibold" data-testid="photos-given">{photosGiven(cur.id) ?? "—"}</dd></div>
+                <div><dt className="text-xs text-sub">Sheets</dt><dd className="font-semibold">{cur.pages}</dd></div>
               </dl>
               <JobTimer start={j?.startedAt} end={designEnd(cur)} label="Design time" paused={cur.hold ? cur.hold : undefined} />
+              <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} onDone={(m) => show(m)} />
               {s === "Corrections" && p && (
                 <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700" data-testid="client-corrections">
                   <b>Client asked for corrections (v{p.version}):</b>
@@ -112,6 +117,10 @@ export default function DesignJobs() {
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 {canWork && cur.stage === "designing" && (!j?.startedAt || s === "Corrections") && <button onClick={() => void start(cur)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark"><Play className="size-4" />{s === "Corrections" ? "Start corrections" : "Start design"}</button>}
+                {working && s !== "Corrections" && <>
+                  <button type="button" onClick={() => void sendToClient(cur.id, "WhatsApp").then((x) => show(x.msg))} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700"><Send className="size-4" />Send to client (WhatsApp)</button>
+                  <button type="button" onClick={() => void sendToClient(cur.id, "Link").then((x) => show(x.msg))} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-sm font-bold hover:bg-brand-soft">Copy client link</button>
+                </>}
                 <Link to={`/designing/${cur.id}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line px-4 text-sm font-bold hover:bg-brand-soft"><PenTool className="size-4" />{working ? "Open editor & send proof" : "Open in editor"}</Link>
               </div>
               <Field label="Internal note (not visible to client)">

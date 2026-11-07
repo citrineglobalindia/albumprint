@@ -172,5 +172,18 @@ select t.eq($$select count(*)::text from album_purchases$$, '0', 'labs: receptio
 select t.as('admin');
 select t.eq($$select amount::text from album_purchases where order_id = current_setting('t.lab_o')::uuid$$, '750.00', 'labs: the admin sees the purchase amount');
 select t.as('system');
+
+-- counts and status updates (0056)
+select t.as('system');
+select set_config('t.jp', t.neworder('colour_grading')::text, false);
+select t.as('colour');
+select t.ok($$insert into job_progress(order_id, dept, count, status) values (current_setting('t.jp')::uuid, 'grading', 120, 'working')$$, 'progress: the grader updates photos graded');
+select t.err($$insert into job_progress(order_id, dept, count) values (current_setting('t.jp')::uuid, 'design', 5)$$, 'progress: a grader cannot update design', 'row-level security');
+select t.as('designer');
+select t.ok($$insert into job_progress(order_id, dept, count, status) values (current_setting('t.jp')::uuid, 'design', 5, 'working')$$, 'progress: the designer updates sheets designed');
+select t.err($$update job_progress set status = 'bogus' where order_id = current_setting('t.jp')::uuid and dept = 'design'$$, 'progress: unknown status refused', 'check constraint');
+select t.as('reception');
+select t.eq($$select string_agg(dept || '=' || count, ',' order by dept) from job_progress where order_id = current_setting('t.jp')::uuid$$, 'design=5,grading=120', 'progress: everyone sees the updates');
+select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

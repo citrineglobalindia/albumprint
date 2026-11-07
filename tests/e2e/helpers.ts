@@ -16,7 +16,7 @@ export const noHScroll = (page: Page) => page.evaluate(() => document.documentEl
 
 export interface AlbumInput { name: string; sheets?: number; copies?: number; size?: string; paper?: string; finish?: string; cover?: string; box?: string }
 /** Drive the order builder (Order type → Customer → Event → Albums → Invoice → Finalize). Returns the order code when finalized. */
-export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegExp; newCustomer?: { name: string; phone: string }; albums?: AlbumInput[]; eventName?: string; discountPct?: string; finalize?: boolean } = {}): Promise<string | undefined> {
+export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegExp; newCustomer?: { name: string; phone: string }; albums?: AlbumInput[]; eventName?: string; discountPct?: string; finalize?: boolean; photosGiven?: string } = {}): Promise<string | undefined> {
   await page.goto("/orders/new");
   await page.getByRole("radio", { name: o.type ?? /Design \+ Printing/ }).click();
   await page.getByRole("button", { name: "Next" }).click();
@@ -31,6 +31,7 @@ export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegE
   await page.getByRole("button", { name: "Next" }).click();
   if (o.eventName) await page.getByLabel("Event name").fill(o.eventName);
   await page.getByLabel("Event date").fill("2026-12-12");
+  if (o.photosGiven) await page.getByLabel("Photos given").fill(o.photosGiven);
   await page.getByRole("button", { name: "Next" }).click();
   const albums = o.albums ?? [{ name: "Wedding album" }];
   for (const [i, a] of albums.entries()) {
