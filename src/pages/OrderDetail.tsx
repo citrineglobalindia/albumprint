@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck } from "lucide-react";
+import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck, Trash2 } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls, cx } from "../components/ui";
 import ProofPanel from "../components/ProofPanel";
 import { useNotice } from "../components/Notice";
@@ -18,6 +18,7 @@ import { FILES, uploadsRequired, addFile, lockFile, archiveFile, downloadFile, f
 import { proofApproved } from "../lib/proofs";
 import { cancelOrder, closeOrder, moveStage, nextStages, reopenOrder, setHold, type Result } from "../lib/workflow";
 import { editOrder } from "../lib/orderEdit";
+import { deleteOrder } from "../lib/orderDelete";
 import { useAuth } from "../lib/auth";
 import { useLive } from "../lib/useLive";
 
@@ -64,6 +65,9 @@ export default function OrderDetail() {
   };
   const doHold = () => askReason({ title: `Put ${o.id} on hold`, message: "Work stops and the SLA clock is flagged until the order is resumed.", confirmLabel: "Put on hold" }, (r) => report(setHold(o.id, true, r), `${o.id} put on hold`));
   const doResume = () => report(setHold(o.id, false), `${o.id} resumed`);
+  const doDelete = () => askReason({ title: `Delete ${o.id} permanently`, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
+    message: <>The order and everything under it (albums, items, jobs, proofs, files, invoices) is removed for good. Use this for test or mistaken orders; to stop a real order, <b>cancel</b> it instead (that keeps its history). Orders with recorded payments can't be deleted.</> },
+    (r) => void deleteOrder(o.id, r).then((res) => { if (res.ok) nav(o.workflow === "Printing" ? "/printing-orders" : "/orders", { state: { flash: `${o.id} deleted` } }); else fail(res.error); }));
   const doCancel = () => askReason({ title: `Cancel ${o.id}`, message: "History is preserved; the order leaves the pipeline.", confirmLabel: "Cancel order", danger: true }, (r) => report(cancelOrder(o.id, r), `${o.id} cancelled`));
   const doClose = () => {
     if (o.paid < o.total) askReason({ title: `Close ${o.id} with ${inr(bal)} outstanding`, message: "An order normally closes only when fully paid. Closing now is an admin override and is audited.", confirmLabel: "Close with override", danger: true }, (r) => report(closeOrder(o.id, { override: true, reason: r }), `${o.id} closed (override)`));
@@ -127,6 +131,7 @@ export default function OrderDetail() {
           {o.hold === "On Hold" ? <OutlineButton icon={Play} className="!h-11" onClick={doResume}>Resume</OutlineButton>
             : !o.hold && !o.closed && <OutlineButton icon={Pause} className="!h-11" onClick={doHold}>Put on hold</OutlineButton>}
           {isAdmin && !cancelled && !o.closed && <OutlineButton icon={Ban} className="!h-11 !text-rose-700" onClick={doCancel}>Cancel order</OutlineButton>}
+          {isAdmin && <OutlineButton icon={Trash2} className="!h-11 !text-rose-700" onClick={doDelete}>Delete order</OutlineButton>}
           {isAdmin && o.stage === "delivered" && !o.closed && !cancelled && <OutlineButton icon={Lock} className="!h-11" onClick={doClose}>Close order</OutlineButton>}
           {isAdmin && o.closed && <OutlineButton icon={LockOpen} className="!h-11" onClick={doReopen}>Reopen order</OutlineButton>}
           {isAdmin && !o.closed && !cancelled && <OutlineButton icon={ShieldAlert} className="!h-11" onClick={doOverride}>Admin override</OutlineButton>}

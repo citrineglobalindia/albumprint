@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Upload, Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
 import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
+import { StageTimer } from "../components/JobTimer";
 import { Combobox } from "../components/controls";
 import { Err, FieldBox, Kbd, Segmented, Banner, strOpts } from "../components/pageKit";
 import { ProofPanel } from "../components/ProofPanel";
@@ -625,6 +626,7 @@ function DesignWorkspace({ order }: { order: Order }) {
               <Pill tone={STATUS_TONE[status]}>{status}</Pill>
             </div>
             <div className="mt-3 flex items-center gap-3"><ProgressBar value={STATUS_PROGRESS[status]} tone="green" /><b className="text-xs text-emerald-600">{STATUS_PROGRESS[status]}%</b></div>
+            <StageTimer o={order} stage="designing" label="Design time" />
             {lockedFile && <div data-testid="lock-badge" className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700"><Lock className="size-3.5" />Print version locked - {lockedFile.name} v{lockedFile.version}</div>}
             {stage === "designing" && (
               <div className="mt-4 space-y-2">

@@ -60,7 +60,7 @@ test("refund over the paid amount is refused with the database message; a valid 
   await page.getByLabel("Amount").fill("5000");
   await page.getByLabel("Refund reason").fill("spec over-refund");
   await page.getByRole("button", { name: "Issue refund" }).click();
-  await expect(page.getByText(/refund 5000\.00 exceeds amount paid 4000\.00/)).toBeVisible();
+  await expect(page.locator("#main").getByText(/refund 5000\.00 exceeds amount paid 4000\.00/).first()).toBeVisible();
   expect(sql(`select count(*) from payments where order_id = '${orderId}' and kind = 'refund'`)).toBe("0");
 
   await page.getByLabel("Amount").fill("1000");

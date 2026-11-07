@@ -6,6 +6,8 @@ interface Opts {
   /** Optional drop-down shown above the reason (e.g. target stage for an admin override). */
   choice?: { label: string; options: { value: string; label: string }[] };
   placeholder?: string;
+  /** For irreversible actions: the user must type this text (e.g. the order ID) before confirming. */
+  confirmText?: string;
 }
 type Done = (reason: string, choice: string) => void;
 
@@ -20,7 +22,9 @@ function ReasonBody({ o, onCancel, onOk }: { o: Opts; onCancel: () => void; onOk
   const [reason, setReason] = useState("");
   const [choice, setChoice] = useState(o.choice?.options[0]?.value ?? "");
   const [err, setErr] = useState("");
-  const submit = () => { if (reason.trim().length < 3) { setErr("A reason is required (at least 3 characters)."); return; } onOk(reason.trim(), choice); };
+  const [typed, setTyped] = useState("");
+  const typedOk = !o.confirmText || typed.trim().toUpperCase() === o.confirmText.toUpperCase();
+  const submit = () => { if (reason.trim().length < 3) { setErr("A reason is required (at least 3 characters)."); return; } if (!typedOk) { setErr(`Type ${o.confirmText} to confirm.`); return; } onOk(reason.trim(), choice); };
   return (
     <div className="fixed inset-0 z-[75] grid place-items-center bg-ink/40 p-4" onMouseDown={onCancel}>
       <div role="dialog" aria-label={o.title} aria-modal="true" data-testid="reason-dialog" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
@@ -38,10 +42,16 @@ function ReasonBody({ o, onCancel, onOk }: { o: Opts; onCancel: () => void; onOk
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
             placeholder={o.placeholder ?? "Why is this needed? Recorded in the audit trail."} className={cx(inputCls, "h-24 resize-none py-2", err && "border-rose-400")} />
         </label>
+        {o.confirmText && (
+          <label className="mt-3 block">
+            <span className="mb-1.5 block text-[13px] font-semibold">Type <b className="font-mono">{o.confirmText}</b> to confirm</span>
+            <input data-testid="confirm-text" value={typed} onChange={(e) => { setTyped(e.target.value); setErr(""); }} autoComplete="off" className={cx(inputCls, "font-mono")} />
+          </label>
+        )}
         {err && <p id="reason-err" role="alert" className="mt-1 text-xs font-semibold text-rose-600">{err}</p>}
         <div className="mt-5 flex justify-end gap-3">
           <button type="button" onClick={onCancel} className="h-11 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button>
-          <button type="button" data-testid="reason-confirm" onClick={submit} className={cx("h-11 rounded-lg px-5 text-sm font-bold text-white", o.danger ? "bg-rose-600 hover:bg-rose-700" : "bg-brand hover:bg-brand-dark")}>{o.confirmLabel ?? "Confirm"}</button>
+          <button type="button" data-testid="reason-confirm" onClick={submit} disabled={!typedOk} className={cx("h-11 rounded-lg px-5 disabled:opacity-40 text-sm font-bold text-white", o.danger ? "bg-rose-600 hover:bg-rose-700" : "bg-brand hover:bg-brand-dark")}>{o.confirmLabel ?? "Confirm"}</button>
         </div>
       </div>
     </div>

@@ -77,5 +77,37 @@ reset role;
 update settings set value = value || '{"wf_require_uploads": true}' where key = 'workflow';
 select t.eq($$select uploads_required()::text$$, 'true', 'uploads required: the switch is read');
 update settings set value = value || '{"wf_require_uploads": false}' where key = 'workflow';
+
+-- deleting an order (0051)
+select t.as('system');
+select set_config('t.del', t.neworder('colour_grading')::text, false);
+insert into tasks(order_id, kind, assignee) values (current_setting('t.del')::uuid, 'grading', (select v from t.aa where k = 'colour')) on conflict do nothing;
+insert into production_events(order_id, area, text) values (current_setting('t.del')::uuid, 'grading', 'Grading started');
+insert into order_files(order_id, category, file_name, ext, size_bytes, storage_path) select id, 'graded', 'g.zip', 'zip', 10, code || '/graded/g.zip-v1' from orders where id = current_setting('t.del')::uuid;
+insert into proofs(order_id, version, token_hash, expires_at, status) values (current_setting('t.del')::uuid, 1, repeat('b', 64), now() + interval '7 days', 'sent');
+insert into invoices(order_id, customer_id, kind, due_date, number) select id, customer_id, 'invoice', current_date + 7, 'INV-DEL-T' from orders where id = current_setting('t.del')::uuid;
+update invoices set status = 'sent' where order_id = current_setting('t.del')::uuid;
+insert into proof_comments(proof_id, page, text) select id, 1, 'nice' from proofs where order_id = current_setting('t.del')::uuid;
+select set_config('t.delcode', (select code from orders where id = current_setting('t.del')::uuid), false);
+select t.as('reception');
+select t.err($$select delete_order(current_setting('t.del')::uuid, 'test order')$$, 'delete: only an admin', 'only an admin');
+select t.as('admin');
+select t.err($$select delete_order(current_setting('t.del')::uuid, ' ')$$, 'delete: a reason is required', 'reason is required');
+select t.eq($$select string_agg(p, ',') from delete_order(current_setting('t.del')::uuid, 'created by mistake') p$$, current_setting('t.delcode') || '/graded/g.zip-v1', 'delete: returns the stored files to remove');
+reset role;
+select t.eq($$select (select count(*) from orders where id = current_setting('t.del')::uuid) + (select count(*) from tasks where order_id = current_setting('t.del')::uuid)
+  + (select count(*) from order_files where order_id = current_setting('t.del')::uuid) + (select count(*) from proofs where order_id = current_setting('t.del')::uuid)
+  + (select count(*) from production_events where order_id = current_setting('t.del')::uuid)$$, '0', 'delete: the order and everything under it is gone');
+select t.eq($$select reason from audit_log where entity = 'orders' and entity_id = current_setting('t.del') and action = 'delete'$$, 'Order deleted: created by mistake', 'delete: the audit log keeps the snapshot and the reason');
+select t.as('system');
+-- an order with a payment is refused
+select set_config('t.del2', t.neworder('files_received')::text, false);
+insert into payments(order_id, amount, mode, reference) values (current_setting('t.del2')::uuid, 100, 'upi', 'UTRDEL');
+select t.as('admin');
+select t.err($$select delete_order(current_setting('t.del2')::uuid, 'test')$$, 'delete: refused when payments are recorded', 'recorded payments');
+select t.as('system');
+select t.eq($$select count(*)::text from orders where id = current_setting('t.del2')::uuid$$, '1', 'delete: the paid order is still there');
+-- the guards still protect records outside delete_order
+select t.eq($$select deleting_order()::text$$, 'false', 'delete: the bypass flag is off afterwards');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

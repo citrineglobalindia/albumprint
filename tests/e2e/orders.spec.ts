@@ -178,4 +178,21 @@ test("assign an order to a colour grader from the order page; auto-assign rule p
   if (graders.length) expect(graders).toContain(who);                                       // someone from Colour Grading (the least busy)
   await page.goto("/colour-grading");
   await expect(page.locator("tbody tr", { hasText: fr! })).toContainText(who);             // and the grading job is theirs
+
+});
+
+test("admin deletes an order from the list (type the order ID to confirm); it is gone after a reload", async ({ page }) => {
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Delete me" }] }))!;
+  await page.goto("/orders");
+  const row = page.getByRole("row").filter({ hasText: code });
+  await row.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Delete Order" }).click();
+  await page.getByTestId("reason-input").fill("Test order");
+  await page.getByTestId("confirm-text").fill(code);
+  await page.getByTestId("reason-confirm").click();
+  await expect(page.getByText(`${code} deleted`).first()).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: code })).toHaveCount(0);
+  await page.waitForTimeout(1500); await page.reload();
+  await expect(page.getByRole("row").filter({ hasText: code })).toHaveCount(0);
 });

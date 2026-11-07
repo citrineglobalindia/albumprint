@@ -132,6 +132,12 @@ async function storage(req, res, url) {
     const rows = await asUser(u.id, async (c) => (await c.query("select name, id, owner from storage.objects where bucket_id = $1 and name like $2 order by name limit $3", [bucket, prefix.replace(/[%_]/g, "\\$&") + "%", b.limit ?? 100])).rows);
     return send(res, 200, rows.map((r) => ({ name: r.name.slice(prefix.length), id: r.id, metadata: {} })));
   }
+  if (seg[0] === "object" && seg.length === 2 && req.method === "DELETE") {                  // remove objects: DELETE /object/<bucket> { prefixes } — the delete policy decides
+    const bucket = seg[1]; const b = JSON.parse((await readBody(req)).toString() || "{}");
+    const rows = await asUser(u.id, async (c) => (await c.query("delete from storage.objects where bucket_id = $1 and name = any($2) returning name, id", [bucket, b.prefixes ?? []])).rows);
+    for (const r of rows) { const fp = diskPath(bucket, r.name); if (fp) await fs.rm(fp, { force: true }); }
+    return send(res, 200, rows.map((r) => ({ name: r.name, id: r.id, bucket_id: bucket })));
+  }
   if (seg[0] === "object" && seg.length >= 3) {
     const authIdx = seg[1] === "authenticated" ? 2 : 1; const bucket = seg[authIdx], name = seg.slice(authIdx + 1).join("/");
     if (!bucket || !name) return sErr(res, 400, "InvalidKey", "Invalid object key");

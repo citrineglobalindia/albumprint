@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
@@ -18,6 +18,7 @@ import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
 import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
 import { setHold as holdOrder, cancelOrder, type Result } from "../lib/workflow";
 import { editOrder } from "../lib/orderEdit";
+import { deleteOrder } from "../lib/orderDelete";
 import { useAuth } from "../lib/auth";
 import { savedKeys } from "../lib/persist";
 
@@ -53,6 +54,8 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [toast, show, fail] = useNotice();
+  const loc = useLocation();
+  useEffect(() => { const f = (loc.state as { flash?: string } | null)?.flash; if (f) { show(f); window.history.replaceState({}, ""); } }, [loc.state]);   // e.g. "IDP00012 deleted" from the order page
   const [reasonDlg, askReason] = useReason();
   const { role } = useAuth();
   const isAdmin = role === "admin";
@@ -139,6 +142,9 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const bulkCancel = () => askReason({ title: `Cancel ${sel.size} order${sel.size > 1 ? "s" : ""}`, message: "Cancelled orders keep their history but leave the pipeline.", confirmLabel: "Cancel orders", danger: true }, (reason) => runBulk("Cancelled", (o) => cancelOrder(o.id, reason)));
   const bulkResume = () => runBulk("Resumed", resumeOne);
   const holdOne = (o: Order) => askReason({ title: `Put ${o.id} on hold`, confirmLabel: "Put on hold" }, (reason) => { const r = holdOrder(o.id, true, reason); r.ok ? show(`${o.id} put on hold`) : fail(r.error); });
+  const deleteOne = (o: Order) => askReason({ title: `Delete ${o.id} permanently`, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
+    message: "The order and everything under it (albums, items, jobs, proofs, files, invoices) is removed for good. To stop a real order, cancel it instead. Orders with recorded payments can't be deleted." },
+    (reason) => void deleteOrder(o.id, reason).then((r) => (r.ok ? show(`${o.id} deleted`) : fail(r.error))));
   const cancelOne = (o: Order) => askReason({ title: `Cancel ${o.id}`, message: "This cannot be undone from the pipeline; history is preserved.", confirmLabel: "Cancel order", danger: true }, (reason) => { const r = cancelOrder(o.id, reason); r.ok ? show(`${o.id} cancelled`) : fail(r.error); });
   const resumeOneToast = (o: Order) => { const r = resumeOne(o); r.ok ? show(`${o.id} resumed`) : fail(r.error); };
   const bulkEdit = (patch: Partial<Order>, action: string, msg: string) => { const n = sel.size; [...sel].forEach((id) => editOrder(id, patch, action)); setSel(new Set()); show(`${msg} (${n} orders)`); };
@@ -262,6 +268,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
                         { label: "Resume", hidden: o.hold !== "On Hold", onClick: () => resumeOneToast(o) },
                         { label: "Put On Hold", hidden: !!o.hold, onClick: () => holdOne(o) },
                         { label: "Cancel Order", danger: true, hidden: !isAdmin || o.hold === "Cancelled", onClick: () => cancelOne(o) },
+                        { label: "Delete Order", danger: true, hidden: !isAdmin, onClick: () => deleteOne(o) },
                       ]} /></span>
                   </Td>
                 </tr>

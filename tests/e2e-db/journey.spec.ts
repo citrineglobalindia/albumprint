@@ -95,6 +95,13 @@ test("the full process: every department does its step, hand-offs are automatic 
   await colour.getByPlaceholder(/Search by order ID/).fill(code);
   await colour.getByTestId(`job-${code}`).getByRole("button", { name: "Start" }).click();
   await expect.poll(() => db(`select status from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress");
+  // start time recorded and the timer is running (it ticks every second)
+  if (!(await colour.getByTestId("job-timer").isVisible())) await colour.getByTestId(`job-${code}`).click();
+  await expect(colour.getByTestId("job-timer").getByTestId("timer-start")).toContainText("Today");
+  await expect(colour.getByTestId("job-timer").getByTestId("timer-end")).toContainText("Running");
+  const t1 = await colour.getByTestId("job-timer").getByTestId("elapsed").innerText();
+  await expect(colour.getByTestId("job-timer").getByTestId("elapsed")).not.toHaveText(t1, { timeout: 4000 });
+  await expect(colour.getByTestId(`job-${code}`).getByTestId("elapsed")).toHaveAttribute("data-running", "true");
   await colour.getByTestId("file-input").setInputFiles({ name: "graded.zip", mimeType: "application/zip", buffer: randomBytes(1500) });
   await expect(colour.getByTestId("file-list")).toContainText("graded.zip");
   await colour.getByRole("button", { name: /Submit to Admin/ }).click();
@@ -148,7 +155,10 @@ test("the full process: every department does its step, hand-offs are automatic 
   await printing.goto("/printing");
   await printing.getByPlaceholder(/Search order, customer/).fill(code);
   await printing.getByTestId(`pjob-${code}`).click();
-  for (const l of ["File Prep", "Printing", "Finishing", "Assembly", "Packaging", "Completed", "Send to QC"]) { await expect(printing.getByTestId("advance")).toContainText(l); await printing.getByTestId("advance").click(); }
+  for (const l of ["File Prep", "Printing", "Finishing", "Assembly", "Packaging", "Completed"]) { await expect(printing.getByTestId("advance")).toContainText(l); await printing.getByTestId("advance").click(); }
+  await expect(printing.getByTestId("job-timer").getByTestId("timer-end")).toContainText("Today");           // printing finished: end time + time taken
+  await expect(printing.getByTestId("job-timer")).toContainText("Printing time taken");
+  await expect(printing.getByTestId("advance")).toContainText("Send to QC"); await printing.getByTestId("advance").click();
   await expect.poll(stage).toBe("qc");
   await expect.poll(assignee).toBe(ids.qc);
   expect(Number(db(`select count(*) from print_stage_log where order_id = $O`))).toBeGreaterThanOrEqual(7);
@@ -158,6 +168,7 @@ test("the full process: every department does its step, hand-offs are automatic 
   await qc.goto("/qc");
   await qc.getByTestId(`qc-${code}`).click();
   await qc.getByRole("button", { name: /Start inspection/ }).click();
+  await expect(qc.getByTestId("job-timer").getByTestId("timer-end")).toContainText("Running");               // inspection timer running
   for (const c of CHECKS) await qc.getByRole("button", { name: `${c} pass`, exact: true }).click();
   await qc.getByLabel("Inspector notes").fill("All 30 sheets checked, colours match the proof, binding firm.");
   await qc.getByRole("button", { name: /Pass → Ready for Delivery/ }).click();

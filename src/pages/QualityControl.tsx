@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock, Search, CheckCircle2, XCircle, Wrench, Truck, ShieldCheck, Check, X, Minus, Lock, UploadCloud } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, TodayChip, MoreButton, SlideOver, Pagination, Td, tableCls, trCls, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { Elapsed, JobTimer } from "../components/JobTimer";
 import { ColumnsMenu, DateRangePicker, FilterChips, MultiSelect, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, desRange, inRangeOpt, rangeLabel, serRange, useSlashSearch, type SavedRange } from "../components/pageKit";
 import { RowMenu } from "../components/RowMenu";
@@ -16,7 +17,7 @@ import { INSPECTIONS, RTASKS, CHECKS, DEFECTS, type Inspection, openInspection, 
 
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
 const DEPTS: ReturnDept[] = ["Printing", "Designing", "Colour Grading"];
-const RCOLS = [{ key: "order", label: "Order" }, { key: "round", label: "Round" }, { key: "status", label: "Status" }, { key: "inspector", label: "Inspector" }, { key: "returned", label: "Returned to" }, { key: "defects", label: "Defects" }, { key: "evidence", label: "Evidence" }, { key: "decided", label: "Decided" }];
+const RCOLS = [{ key: "order", label: "Order" }, { key: "round", label: "Round" }, { key: "status", label: "Status" }, { key: "inspector", label: "Inspector" }, { key: "returned", label: "Returned to" }, { key: "defects", label: "Defects" }, { key: "evidence", label: "Evidence" }, { key: "decided", label: "Decided" }, { key: "time", label: "Time" }];
 interface QView { q: string; state: string[]; range: SavedRange }
 interface RView { q: string; status: string[]; insp: string[]; ret: string[]; range: SavedRange; hidden: string[]; sort: SortState }
 
@@ -157,6 +158,7 @@ export default function QualityControl() {
                 {canAct && <button onClick={() => run(startInspection(cur.id))} className="mt-3 h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Start inspection (round {history.length + 1})</button>}
               </div>
             ) : (<>
+              <div className="mb-3"><JobTimer start={insp.startedAt} end={insp.decidedAt} label="Inspection time" /></div>
               <h4 className="text-sm font-extrabold">Checklist</h4>
               <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
                 {CHECKS.map((c) => (
@@ -239,6 +241,7 @@ export default function QualityControl() {
               {rvis("defects") && <SortTh k="defects" sort={rSort} onSort={setRSort}>Defects</SortTh>}
               {rvis("evidence") && <SortTh k="evidence" sort={rSort} onSort={setRSort}>Evidence</SortTh>}
               {rvis("decided") && <SortTh k="decided" sort={rSort} onSort={setRSort}>Decided</SortTh>}
+              {rvis("time") && <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Time</th>}
               <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Actions</th>
             </tr></thead>
             <tbody>
@@ -253,6 +256,7 @@ export default function QualityControl() {
                   {rvis("defects") && <Td>{i.defects.join(", ") || "—"}</Td>}
                   {rvis("evidence") && <Td>{i.evidence.length}</Td>}
                   {rvis("decided") && <Td>{fmtDT(i.decidedAt)}</Td>}
+                  {rvis("time") && <Td><Elapsed start={i.startedAt} end={i.decidedAt} /></Td>}
                   <Td><div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => setViewId(i.id)} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button>
                     <RowMenu label={`Actions for ${i.orderId} round ${i.round}`} items={[

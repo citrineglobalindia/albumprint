@@ -14,6 +14,7 @@ import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
 import { FILES, MAX_TEXT, fmtSize, uploadsRequired } from "../lib/files";
 import { backendOn } from "../lib/supabase";
+import { Elapsed, JobTimer } from "../components/JobTimer";
 import { slaState } from "../lib/sla";
 import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
 
@@ -21,7 +22,9 @@ type Tab = "queue" | "progress" | "submitted" | "approved" | "rework";
 const STATUS_TONE: Record<GStatus, Tone> = { New: "blue", "In Progress": "blue", Rework: "red", Submitted: "violet", Approved: "green" };
 const inTab = (j: GJob, t: Tab) => t === "queue" ? ["New", "In Progress", "Rework"].includes(j.status) : t === "progress" ? j.status === "In Progress" : t === "submitted" ? j.status === "Submitted" : t === "approved" ? j.status === "Approved" : j.status === "Rework";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
-const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "status", label: "Status" }];
+const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "time", label: "Time" }, { key: "status", label: "Status" }];
+/** When the grading finished (the latest submission), or nothing while it is still being worked on. */
+const gradEnd = (j: GJob) => (j.status === "Submitted" || j.status === "Approved" ? j.submittedAt : undefined);
 interface ViewState { tab: Tab; col: string[]; prio: string[]; status: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
 const PRIO_RANK: Record<string, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
 
@@ -80,7 +83,7 @@ export default function ColourGrading() {
   const cnt = (s: GStatus) => GJOBS.filter((j) => j.status === s).length;
   const overdue = GJOBS.filter((j) => j.status !== "Approved" && j.status !== "Submitted" && ordOf(j.orderId) && new Date(j.due) < TODAY).length;
 
-  const exportRows = (items: GJob[]) => { downloadCsv("grading-jobs.csv", [["Order", "Customer", "Event", "Colorist", "Priority", "Due", "Status", "Rounds"], ...items.map((j) => [j.orderId, ordOf(j.orderId).customer, ordOf(j.orderId).event, j.colorist, j.priority, j.due, j.status, j.rounds])]); show(`Exported ${items.length} jobs`); };
+  const exportRows = (items: GJob[]) => { downloadCsv("grading-jobs.csv", [["Order", "Customer", "Event", "Colorist", "Priority", "Due", "Status", "Rounds", "Started", "Ended", "Minutes"], ...items.map((j) => [j.orderId, ordOf(j.orderId).customer, ordOf(j.orderId).event, j.colorist, j.priority, j.due, j.status, j.rounds, j.startedAt ?? "", gradEnd(j) ?? "", j.startedAt ? Math.round(((gradEnd(j) ? new Date(gradEnd(j)!).getTime() : Date.now()) - new Date(j.startedAt).getTime()) / 60000) : ""])]); show(`Exported ${items.length} jobs`); };
   const chips = [
     ...col.map((x) => ({ label: `Colorist: ${x}`, onRemove: () => setCol(col.filter((y) => y !== x)) })),
     ...prio.map((x) => ({ label: `Priority: ${x}`, onRemove: () => setPrio(prio.filter((y) => y !== x)) })),
@@ -180,6 +183,7 @@ export default function ColourGrading() {
               {vis("colorist") && <SortTh k="colorist" sort={sort} onSort={setSort}>Colorist</SortTh>}
               {vis("priority") && <SortTh k="priority" sort={sort} onSort={setSort}>Priority</SortTh>}
               {vis("due") && <SortTh k="due" sort={sort} onSort={setSort}>SLA due</SortTh>}
+              {vis("time") && <Th>Time</Th>}
               {vis("status") && <SortTh k="status" sort={sort} onSort={setSort}>Status</SortTh>}
               <Th className="text-right">Actions</Th>
             </tr></thead>
@@ -196,6 +200,7 @@ export default function ColourGrading() {
                     {vis("colorist") && <Td><span className="inline-flex items-center gap-2"><Avatar name={j.colorist} size={24} />{j.colorist}</span></Td>}
                     {vis("priority") && <Td><PriorityPill p={j.priority as Priority} /></Td>}
                     {vis("due") && <Td className={s.status === "breached" ? "text-rose-600" : ""}>{fmtDate(j.due)}</Td>}
+                    {vis("time") && <Td><Elapsed start={j.startedAt} end={gradEnd(j)} /></Td>}
                     {vis("status") && <Td><Pill tone={STATUS_TONE[j.status]} className="min-w-[84px] justify-center">{j.status}</Pill></Td>}
                     <Td className="text-right"><span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       {isAdmin && j.status === "Submitted" ? (<>
@@ -236,6 +241,7 @@ export default function ColourGrading() {
               <div><dt className="text-xs text-sub">SLA due</dt><dd data-testid="sla-due" className={cx("font-semibold", sla?.status === "breached" && "text-rose-600")}>{sla?.dueAt ? fmtDate(sla.dueAt) : fmtDate(cur.due)}<span className="block text-[11px] font-normal text-sub">{sla ? sla.status.replace("_", " ") : ""}</span></dd></div>
               <div><dt className="text-xs text-sub">Rounds</dt><dd className="font-semibold">{cur.rounds}</dd></div>
             </dl>
+            <JobTimer start={cur.startedAt} end={gradEnd(cur)} label="Grading time" paused={o.hold ? "On hold" : undefined} />
             <div className="mt-3 rounded-xl bg-slate-50 p-3 text-[13px]"><div className="mb-1 text-xs font-bold uppercase text-sub">Grading instructions</div><p data-testid="instructions">{cur.instructions}</p></div>
             {cur.status === "Rework" && cur.revision && <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700"><b>Revision requested:</b> {cur.revision}</div>}
 

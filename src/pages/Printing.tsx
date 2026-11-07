@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Printer, PlayCircle, Layers, Package, ShieldCheck, Flag, ArrowRight, CheckCircle2, Circle, AlertTriangle, Truck, Lock, Hourglass } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, Thumb, SearchInput, Pagination, Td, trCls, tableCls, PrimaryButton, TodayChip, MoreButton, SlideOver, Field, inputCls, cx, type Kpi } from "../components/ui";
+import { Elapsed, JobTimer } from "../components/JobTimer";
 import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, Banner, DateField, Err, FieldBox, desRange, inRangeOpt, orderOpt, rangeLabel, serRange, strOpts, TODAY_ISO, useSlashSearch, type SavedRange } from "../components/pageKit";
 import { RowMenu } from "../components/RowMenu";
@@ -12,11 +13,14 @@ import { useAuth } from "../lib/auth";
 import { ORDERS, stageLabel } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
 import { downloadCsv } from "../lib/csv";
-import { PJOBS, PSTAGES, EXC_KINDS, PAPERS, OPERATORS, ensureProduction, releaseToPrinting, advanceProduction, setOperator, raiseException, resolveException, saveVendor, setSpecs, can, fmtDT, openExc, type PStage, type ExcKind, type Out, type Vendor } from "../lib/production";
+import { PJOBS, PSTAGES, EXC_KINDS, PAPERS, OPERATORS, ensureProduction, releaseToPrinting, advanceProduction, setOperator, raiseException, resolveException, saveVendor, setSpecs, can, fmtDT, openExc, type PStage, type PJob, type ExcKind, type Out, type Vendor } from "../lib/production";
 
 const STAGE_ICON: Record<PStage, typeof Printer> = { Waiting: Hourglass, "File Prep": Layers, Printing: PlayCircle, Finishing: Layers, Assembly: Package, Packaging: Package, Completed: Flag, "Sent to QC": ShieldCheck };
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
-const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "album", label: "Album" }, { key: "paper", label: "Paper" }, { key: "sheets", label: "Sheets × Copies" }, { key: "stage", label: "Stage" }, { key: "operator", label: "Operator" }, { key: "flags", label: "Flags" }, { key: "due", label: "Due" }];
+const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "album", label: "Album" }, { key: "paper", label: "Paper" }, { key: "sheets", label: "Sheets × Copies" }, { key: "stage", label: "Stage" }, { key: "operator", label: "Operator" }, { key: "flags", label: "Flags" }, { key: "due", label: "Due" }, { key: "time", label: "Time" }];
+/** The print job runs from File Prep to Completed. */
+const pStart = (j: PJob) => j.history["File Prep"]?.at ?? PSTAGES.slice(1).map((s) => j.history[s]?.at).find(Boolean);
+const pEnd = (j: PJob) => j.history["Completed"]?.at ?? j.history["Sent to QC"]?.at;
 const FLAGS = ["Open exception", "Vendor job", "Reprint", "On hold"];
 interface ViewState { stage: string[]; op: string[]; paper: string[]; flags: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
 const blankVendor = (): Vendor => ({ name: "", sentDate: TODAY_ISO, expectedBack: "", tracking: "", cost: 0, status: "Planned" });
@@ -170,6 +174,7 @@ export default function Printing() {
                 {vis("operator") && <SortTh k="operator" sort={sort} onSort={setSort}>Operator</SortTh>}
                 {vis("flags") && <SortTh k="flags" sort={sort} onSort={setSort}>Flags</SortTh>}
                 {vis("due") && <SortTh k="due" sort={sort} onSort={setSort}>Due</SortTh>}
+                {vis("time") && <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Time</th>}
                 <th className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-sub">Actions</th>
               </tr></thead>
               <tbody>
@@ -187,6 +192,7 @@ export default function Printing() {
                       {vis("operator") && <Td>{j.operator}</Td>}
                       {vis("flags") && <Td><span className="flex gap-1">{openExc(j).length > 0 && <Pill tone="red">{openExc(j).length} exc</Pill>}{j.vendor && j.vendor.status !== "Received" && <Pill tone="amber">Vendor</Pill>}{j.reprints > 0 && <Pill tone="orange">R{j.reprints}</Pill>}{o.hold && <Pill tone="slate">{o.hold}</Pill>}</span></Td>}
                       {vis("due") && <Td className="font-semibold text-rose-600">{fmtDate(j.due)}</Td>}
+                      {vis("time") && <Td><Elapsed start={pStart(j)} end={pEnd(j)} /></Td>}
                       <Td><div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setSelId(j.orderId)} className="h-8 rounded-lg border border-line bg-white px-4 text-xs font-bold hover:bg-brand-soft">View</button>
                         <RowMenu label={`Actions for ${j.orderId}`} items={[
@@ -227,6 +233,7 @@ export default function Printing() {
                 <div className="mt-1 text-xs text-sub">Due {fmtDate(sel.due)} · {inr(so.total)} · {so.pay}</div>
               </div>
             </div>
+            <JobTimer start={pStart(sel)} end={pEnd(sel)} label="Printing time" paused={so.hold ? so.hold : undefined} />
             {closed && <div className="mt-3"><Banner tone="amber">Order is closed — read-only.</Banner></div>}
             {!work && <div className="mt-3"><Banner tone="amber">View only — your role cannot change production.</Banner></div>}
             {sel.stage === "Sent to QC" && <div className="mt-3"><Banner tone="green">Handed to QC — order is now at {stageLabel(so.stage)}.</Banner></div>}
