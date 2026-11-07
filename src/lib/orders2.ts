@@ -266,3 +266,13 @@ export async function cancelReopen(o: Order): Promise<string | null> {
   notify(); return null;
 }
 export const paymentsOf = (o: Order) => o.paid;
+
+/** Most moving items: the catalog items used on the most finalized orders (album and order lines), for quick picks while billing. */
+export function topItems(limit = 8, accept: (itemId: string) => boolean = () => true): { itemId: string; orders: number }[] {
+  const count = new Map<string, number>();
+  for (const p of PRICING) {
+    const ids = new Set([...p.snapshot.albums.flatMap((a) => a.lines.filter((l) => l.kind === "item").map((l) => l.itemId)), ...p.snapshot.orderLines.map((l) => l.itemId)]);
+    ids.forEach((id) => { if (id) count.set(id, (count.get(id) ?? 0) + 1); });
+  }
+  return [...count.entries()].filter(([id]) => ITEMS.some((i) => i.id === id && i.active !== false) && accept(id)).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([itemId, orders]) => ({ itemId, orders }));
+}

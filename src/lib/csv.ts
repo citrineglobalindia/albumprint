@@ -1,4 +1,12 @@
+let asXlsx = false;
+/** Run an export that writes CSV, but save an Excel workbook (.xlsx) instead — same columns, numbers stay numbers. */
+export function asExcel(run: () => void) { asXlsx = true; try { run(); } finally { asXlsx = false; } }
 export function downloadCsv(filename: string, rows: (string | number)[][]) {
+  if (asXlsx) {
+    const name = filename.replace(/\.csv$/i, "") + ".xlsx";
+    void import("./exporters").then(async (m) => { const blob = await m.toXlsx(rows, name.replace(/\.xlsx$/, "").slice(0, 31)); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); });
+    return;
+  }
   const esc = (v: string | number) => {
     const s = String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

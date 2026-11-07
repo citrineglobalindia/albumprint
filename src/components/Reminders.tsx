@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, MessageCircle } from "lucide-react";
 import { Panel, Pill, Avatar, cx } from "./ui";
+import { ExportBtn } from "./listKit";
+import { downloadCsv } from "../lib/csv";
 import { useStore } from "../lib/store";
 import { inr, fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
@@ -34,7 +36,7 @@ export function PendingDuesPanel({ onDone }: { onDone: (msg: string, ok: boolean
   const total = rows.reduce((a, d) => a + d.total, 0), overdue = rows.reduce((a, d) => a + d.overdue, 0);
   return (
     <Panel className="mb-5" title={`Pending payments · ${rows.length} customer${rows.length === 1 ? "" : "s"}`} subtitle={`${inr(total)} outstanding · ${inr(overdue)} overdue — send a WhatsApp reminder in one tap`}
-      action={<div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs font-bold">{(["all", "overdue"] as const).map((k) => <button key={k} type="button" onClick={() => setOnly(k)} className={cx("rounded-md px-3 py-1", only === k ? "bg-brand text-white" : "text-sub")}>{k === "all" ? "All dues" : "Overdue only"}</button>)}</div>}
+      action={<div className="flex flex-wrap items-center gap-2"><ExportBtn aria="Export pending payments" onClick={() => downloadCsv("pending-payments.csv", [["Customer", "Mobile", "Order", "Event", "Order total", "Paid", "Balance", "Due", "Overdue"], ...rows.flatMap((d) => d.dues.map((x) => [d.customer.studio, d.customer.mobile, x.order.id, x.order.event, x.order.total, x.order.paid, x.balance, x.order.due, x.overdue ? "yes" : ""]))])} /><div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs font-bold">{(["all", "overdue"] as const).map((k) => <button key={k} type="button" onClick={() => setOnly(k)} className={cx("rounded-md px-3 py-1", only === k ? "bg-brand text-white" : "text-sub")}>{k === "all" ? "All dues" : "Overdue only"}</button>)}</div></div>}
       bodyClassName="p-0">
       <div data-testid="pending-dues" className="divide-y divide-line">
         {rows.map((d) => {

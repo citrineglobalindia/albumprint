@@ -9,6 +9,8 @@ import {
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
 } from "../components/ui";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
+import { ExportBtn } from "../components/listKit";
+import { downloadCsv } from "../lib/csv";
 import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { openDrafts } from "../lib/orders2";
@@ -204,6 +206,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
           <button aria-pressed={late} onClick={() => { setLate(!late); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", late ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}><AlarmClock className="size-4" />Overdue</button>
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
           <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
+          <ExportBtn aria="Export orders" onClick={() => downloadCsv("orders.csv", [["Order", "Customer", "Mobile", "Event", "Type", "Stage", "Priority", "Order date", "Due", "Total", "Paid", "Balance", "Assigned"], ...filtered.map((o) => [o.id, o.customer, o.mobile, o.event, o.workflow, stageLabel(o.stage), o.priority, o.pendingAt, o.due, o.total, o.paid, o.total - o.paid, o.assignee])])} />
           <button onClick={reset} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
           </div>
         </div>

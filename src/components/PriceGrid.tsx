@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { asExcel, downloadCsv, parseCsv } from "../lib/csv";
 import { Download, FileUp, Save, Trash2, Undo2, Wand2 } from "lucide-react";
 import { useConfirm } from "./ConfirmDialog";
 import "../lib/orders2";                                   // registers which items are on finalized orders (delete protection in demo mode)
@@ -72,6 +73,7 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
     <Panel title="Prices" subtitle={`${priced} of ${ITEMS.length} items priced · items without a rate show “Price not configured” in orders (unless a rate rule applies)`} bodyClassName="p-0"
       action={<div className="flex flex-wrap gap-2">
         <button onClick={() => downloadBlob(new Blob(["﻿" + pricesCsv()], { type: "text/csv" }), "albumpro-prices.csv")} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><Download className="size-3.5" />Export CSV</button>
+        <button onClick={() => asExcel(() => downloadCsv("albumpro-prices.csv", parseCsv(pricesCsv().replace(/^\uFEFF/, "")).map((r) => r.map((v) => (v !== "" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v)))))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><Download className="size-3.5" />Export Excel</button>
         <button disabled={busy} onClick={() => file.current?.click()} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs font-bold hover:bg-brand-soft"><FileUp className="size-3.5" />Import CSV</button>
         <input ref={file} type="file" accept=".csv,text/csv" aria-label="Prices CSV file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void importCsv(f); }} />
       </div>}>

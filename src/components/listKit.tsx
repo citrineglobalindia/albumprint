@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { Download, X } from "lucide-react";
+import { Download, FileSpreadsheet, X } from "lucide-react";
+import { asExcel } from "../lib/csv";
 import { cx } from "./ui";
 import type { Out } from "../lib/production";
 
@@ -56,8 +57,16 @@ export function runBulk(ids: string[], fn: (id: string) => Out, show: (m: string
   return n;
 }
 
-export function ExportBtn({ onClick, label = "Export", aria }: { onClick: () => void; label?: string; aria?: string }) {
-  return <button aria-label={aria ?? label} onClick={onClick} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold hover:bg-brand-soft"><Download className="size-4 text-sub" />{label}</button>;
+/** Export button (CSV), with an "Excel" button next to it that saves the same rows as .xlsx (`excel={false}` to hide it). */
+export function ExportBtn({ onClick, label = "Export", aria, excel = true }: { onClick: () => void; label?: string; aria?: string; excel?: boolean }) {
+  const btn = "inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold hover:bg-brand-soft";
+  const csvLike = label === "Export" || label === "CSV";
+  return (
+    <span className="inline-flex gap-1.5">
+      <button aria-label={aria ?? label} onClick={onClick} className={btn}><Download className="size-4 text-sub" />{label}</button>
+      {excel && csvLike && <button aria-label={`${aria ?? label} to Excel`} onClick={() => asExcel(onClick)} className={btn}><FileSpreadsheet className="size-4 text-emerald-600" />Excel</button>}
+    </span>
+  );
 }
 
 /** Toolbar wrapper: left = filters, right = views/columns. */

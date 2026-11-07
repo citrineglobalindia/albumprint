@@ -10,6 +10,8 @@ import {
 import { BalanceReminderButton } from "../components/Reminders";
 import { duesByCustomer } from "../lib/reminders";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
+import { ExportBtn } from "../components/listKit";
+import { downloadCsv } from "../lib/csv";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { backendOn } from "../lib/supabase";
 import { dbCreateCustomer, dbUpdateCustomer } from "../lib/db/orders";
@@ -228,6 +230,7 @@ export default function Customers() {
             <button aria-pressed={duesOnly} onClick={() => { setDuesOnly(!duesOnly); setPage(1); }} className={cx("inline-flex h-10 items-center rounded-lg border px-3 text-[13px] font-semibold", duesOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}>Has dues</button>
             <SavedViews<ViewState> storageKey="customers" current={view} onApply={applyView} />
             <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
+            <ExportBtn aria="Export customers" onClick={() => downloadCsv("customers.csv", [["Code", "Name", "Studio", "Mobile", "Email", "City", "State", "GSTIN", "Type", "Status", "Active orders", "Lifetime value", "Dues"], ...list.map((c) => [c.id, c.name, c.studio, c.mobile, c.email, c.city, c.state, c.gstin ?? "", c.type, c.status, c.activeOrders, c.lifetime, c.dues])])} />
             <button onClick={reset} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
           </div>
           <div className="mt-3"><FilterChips chips={chips} onClearAll={reset} /></div>

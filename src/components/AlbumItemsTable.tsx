@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Columns3, MoreVertical, Plus, Search, X } from "lucide-react";
+import { Columns3, MoreVertical, Plus, Search, TrendingUp, X } from "lucide-react";
 import { cx } from "./ui";
 import { ITEMS, itemById, pathLabel, pathOf, usableItem, type CItem } from "../lib/catalog2";
 
 /** On screen an item shows every level: "Paper - NT - 125 GSM - Glossy". */
 export const fullName = (i: CItem) => [...pathOf(i.categoryId).map((c) => c.name), i.name].join(" - ");
 import { money, type DraftAlbum, type DraftItem, type PricedOrder } from "../lib/orderPricing";
+import { topItems } from "../lib/orders2";
 
 type Line = PricedOrder["albums"][number]["lines"][number];
 type Col = "desc" | "withTax" | "discount";
@@ -134,6 +135,14 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
               </tr>);
           })}
             {adding && <NewLine no={lines.length + 1} accept={accept} onCancel={() => setAdding(false)} onPick={(id) => { const e = onAdd(id); if (!e) setAdding(false); return e; }} />}
+            {(() => {
+              const have = new Set(a.items.map((x) => x.itemId));
+              const top = topItems(8, (id) => { const it = itemById(id); return !!it && accept(it) && !have.has(id); });
+              return top.length > 0 ? <tr className="border-t border-line"><td colSpan={20} className="px-3 pt-3" data-testid="top-items">
+                <span className="mr-2 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-sub"><TrendingUp className="size-3.5" />Most used</span>
+                {top.map((t) => { const it = itemById(t.itemId)!; return <button key={t.itemId} type="button" title={`${pathLabel(it.categoryId)} · ${it.name} · on ${t.orders} order(s)`} onClick={() => add(t.itemId)} className="mb-1 mr-1.5 inline-flex h-7 items-center gap-1 rounded-full border border-brand/40 bg-brand-soft/50 px-2.5 text-xs font-semibold text-brand hover:bg-brand-soft"><Plus className="size-3" />{it.name}<span className="text-[10px] text-sub">×{t.orders}</span></button>; })}
+              </td></tr> : null;
+            })()}
             <tr className="border-t border-line"><td colSpan={20} className="p-3">
               <button type="button" onClick={() => setAdding(true)} disabled={adding} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line text-sm font-bold text-brand hover:bg-brand-soft disabled:opacity-50"><Plus className="size-4" />Add item</button>
             </td></tr>

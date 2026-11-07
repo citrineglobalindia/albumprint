@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Factory, PackageCheck, Plus, Send, Truck } from "lucide-react";
 import { PageHeader, KpiRow, Panel, Pill, LineTabs, SearchInput, Field, inputCls, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
+import { ExportBtn } from "../components/listKit";
+import { downloadCsv } from "../lib/csv";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { ORDERS } from "../lib/data";
@@ -37,7 +39,8 @@ export default function Labs() {
     <>
       <PageHeader title="Labs" subtitle="Printing labs we use, and each album's work there: send it, then mark it received back." />
       <KpiRow items={kpis} cols={4} />
-      <Panel className="mt-5" title="Lab work" subtitle="Assign the lab on the order page (Printing lab); albums then show up here" bodyClassName="p-0">
+      <Panel className="mt-5" title="Lab work" subtitle="Assign the lab on the order page (Printing lab); albums then show up here" bodyClassName="p-0"
+        action={<ExportBtn aria="Export lab work" onClick={() => downloadCsv("lab-work.csv", [["Order", "Album", "Customer", "Lab", "Status", "Sent", "Sent by", "Received", "Received by", ...(cost ? ["Purchase"] : [])], ...list.map(({ a, o }) => [o.id, title(o.id, a.position), o.customer, labName(a.labId), LAB_STATUS_LABEL[a.status], a.sentAt?.slice(0, 10) ?? "", a.sentBy ?? "", a.receivedAt?.slice(0, 10) ?? "", a.receivedBy ?? "", ...(cost ? [purchaseOf(o.id, a.position) ?? ""] : [])])])} />}>
         <div className="flex flex-wrap items-center gap-3 px-5 pt-3">
           <LineTabs<Tab> className="!border-0" value={tab} onChange={setTab} tabs={[{ key: "not_sent", label: "Waiting to send", count: cnt("not_sent") }, { key: "sent", label: "At the lab", count: cnt("sent") }, { key: "received", label: "Received", count: cnt("received") }, { key: "all", label: "All", count: rows.length }]} />
           <select aria-label="Filter by lab" className={cx(inputCls, "ml-auto h-9 w-48 text-sm")} value={lab} onChange={(e) => setLab(e.target.value)}><option value="">All labs</option>{LABS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
@@ -71,7 +74,7 @@ export default function Labs() {
         const withP = ORDERS.filter((o) => o.hold !== "Cancelled" && profitOf(o).entered);
         const sell = withP.reduce((s, o) => s + o.total, 0), pur = withP.reduce((s, o) => s + profitOf(o).purchase, 0);
         return (
-          <Panel className="mt-5" title="Profit" subtitle={`${withP.length} order(s) with purchase amounts · selling ${inr(sell)} · purchase ${inr(pur)} · profit ${inr(sell - pur)}${sell ? ` (${(((sell - pur) / sell) * 100).toFixed(1)}%)` : ""}`} bodyClassName="p-0">
+          <Panel className="mt-5" title="Profit" action={<ExportBtn aria="Export profit" onClick={() => downloadCsv("profit.csv", [["Order", "Customer", "Event", "Order date", "Selling", "Purchase", "Profit", "Margin %", "Complete"], ...withP.map((o) => { const p = profitOf(o); return [o.id, o.customer, o.event, o.pendingAt, p.selling, p.purchase, p.profit, Number(p.margin.toFixed(1)), p.complete ? "yes" : "partial"]; })])} />} subtitle={`${withP.length} order(s) with purchase amounts · selling ${inr(sell)} · purchase ${inr(pur)} · profit ${inr(sell - pur)}${sell ? ` (${(((sell - pur) / sell) * 100).toFixed(1)}%)` : ""}`} bodyClassName="p-0">
             <div className="overflow-x-auto"><table className={tableCls} data-testid="profit-table">
               <thead><tr><Th>Order</Th><Th>Customer</Th><Th className="text-right">Selling</Th><Th className="text-right">Purchase</Th><Th className="text-right">Profit</Th><Th className="text-right">Margin</Th></tr></thead>
               <tbody>{withP.map((o) => { const p = profitOf(o); return (
