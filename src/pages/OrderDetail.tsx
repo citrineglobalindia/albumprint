@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck, Trash2 } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls, cx } from "../components/ui";
 import { OrderReminderButton } from "../components/Reminders";
+import { LabsPanel } from "../components/LabsPanel";
 import ProofPanel from "../components/ProofPanel";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
@@ -177,6 +178,7 @@ export default function OrderDetail() {
               ))}
             </dl>
           </Panel>
+          <LabsPanel o={o} onDone={(m, ok) => (ok ? show(m) : fail(m))} />
           <Panel title="Customer">
             <div className="flex items-center gap-3"><Avatar name={o.customer} size={44} /><div><div className="font-bold">{o.customer}</div><div className="flex items-center gap-1.5 text-xs text-sub"><Phone className="size-3" aria-hidden />{o.mobile}</div></div></div>
             <div className="mt-3 flex gap-4 text-xs text-sub"><span className="flex items-center gap-1"><User className="size-3.5" aria-hidden />Studio client</span><span className="flex items-center gap-1"><CalendarDays className="size-3.5" aria-hidden />Since Jan 2024</span></div>

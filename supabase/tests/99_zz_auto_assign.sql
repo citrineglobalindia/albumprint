@@ -148,5 +148,29 @@ select t.eq($$select coalesce(internal_note, '') from design_task(current_settin
 select t.eq($$select string_agg(text, ' > ' order by created_at) from production_events where order_id = current_setting('t.dj')::uuid and area = 'design'$$, 'Design started > Proof sent to the client (round 1)', 'design job: history');
 select t.as('system');
 select t.eq($$select count(*)::text from tasks where order_id = current_setting('t.dj')::uuid and kind = 'design'$$, '1', 'design job: one per order');
+
+-- labs (0055)
+select t.as('admin');
+select t.ok($$insert into labs(name) values ('T Lab')$$, 'labs: the admin adds a lab');
+select t.as('reception');
+select t.err($$insert into labs(name) values ('Rogue Lab')$$, 'labs: only the admin manages the list', 'row-level security');
+select t.as('system');
+select set_config('t.lab_o', t.neworder('printing')::text, false);
+select t.as('printing');
+select t.ok($$insert into album_labs(order_id, position, lab_id, status) values (current_setting('t.lab_o')::uuid, 1, (select id from labs where name = 'T Lab'), 'sent')$$, 'labs: printing sends the album to the lab');
+select t.eq($$select (sent_at is not null and sent_by = auth.uid())::text from album_labs where order_id = current_setting('t.lab_o')::uuid$$, 'true', 'labs: who and when are stamped');
+select t.ok($$update album_labs set status = 'received' where order_id = current_setting('t.lab_o')::uuid$$, 'labs: printing marks it received');
+select t.eq($$select (received_at is not null)::text from album_labs where order_id = current_setting('t.lab_o')::uuid$$, 'true', 'labs: received time stamped');
+select t.as('designer');
+update album_labs set status = 'not_sent' where order_id = current_setting('t.lab_o')::uuid;
+select t.as('system');
+select t.eq($$select status from album_labs where order_id = current_setting('t.lab_o')::uuid$$, 'received', 'labs: a designer cannot change lab work');
+select t.as('accounts');
+select t.ok($$insert into album_purchases(order_id, position, amount) values (current_setting('t.lab_o')::uuid, 1, 750)$$, 'labs: accounts enters the purchase amount');
+select t.as('reception');
+select t.eq($$select count(*)::text from album_purchases$$, '0', 'labs: reception cannot see purchase amounts');
+select t.as('admin');
+select t.eq($$select amount::text from album_purchases where order_id = current_setting('t.lab_o')::uuid$$, '750.00', 'labs: the admin sees the purchase amount');
+select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

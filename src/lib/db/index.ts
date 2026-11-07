@@ -6,3 +6,6 @@ import "./proofs"; import "./audit";
 import "./admin";
 import "./production"; import "./files"; import "./catalog"; import "./costing"; import "./schedules"; import "./attendance"; import "./orders2";
 export { startLive, stopLive, liveState, onLiveState, queueReload, type LiveState } from "./live";
+import { registerHydrator as regLabs, backendOn as onLabs } from "./core";
+import { hydrateLabs } from "../labs";
+if (onLabs) regLabs("labs", hydrateLabs);

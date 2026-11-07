@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
-  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X,
+  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X, Factory,
   AlarmClockCheck, Library, Paintbrush, PrinterCheck,
 } from "lucide-react";
 import { cx } from "./ui";
@@ -29,6 +29,7 @@ export const NAV = [
   { to: "/colour-grading", label: "Colour Grading", icon: Palette },
   { to: "/designing", label: "Album Designing", icon: LayoutTemplate },
   { to: "/printing", label: "Printing", icon: Printer },
+  { to: "/labs", label: "Labs", icon: Factory },
   { to: "/qc", label: "Quality Control", icon: ShieldCheck },
   { to: "/delivery", label: "Delivery", icon: Truck },
   { to: "/payments", label: "Payments", icon: CreditCard },
