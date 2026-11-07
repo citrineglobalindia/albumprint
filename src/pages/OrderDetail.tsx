@@ -195,7 +195,7 @@ export default function OrderDetail() {
               <div key={i} className={i > 0 ? "border-t border-line pt-4" : ""}>
                 {o.albums!.length > 1 && <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-brand">{a.title || `Album ${i + 1}`} · {a.albumType}</div>}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  {[...(o.albums!.length === 1 && a.title ? [["Album Name", a.title]] : []), ["Album Size", a.size], ["Pages / Sheets", `${a.sheets} pages`], ["Orientation", a.orientation], ["Copies", String(a.copies)], ["Paper", `${a.paper}${a.gsm ? ` ${a.gsm} GSM` : ""}`], ["Cover", a.cover], ["Lamination", a.lamination], ["Binding", a.binding], ["Box", a.box], ["Finishing", a.finishes.join(", ") || "None"], ...(a.nameText ? [["Name printing", a.nameText]] : [])].map(([k, v]) => (
+                  {[...(o.albums!.length === 1 && a.title ? [["Album Name", a.title]] : []), ...(a.eventDate ? [["Event Date", fmtDate(a.eventDate)]] : []), ["Album Size", a.size], ["Pages / Sheets", `${a.sheets} pages`], ["Orientation", a.orientation], ["Copies", String(a.copies)], ["Paper", `${a.paper}${a.gsm ? ` ${a.gsm} GSM` : ""}`], ["Cover", a.cover], ["Lamination", a.lamination], ["Binding", a.binding], ["Box", a.box], ["Finishing", a.finishes.join(", ") || "None"], ...(a.nameText ? [["Name printing", a.nameText]] : [])].map(([k, v]) => (
                     <div key={k}><dt className="text-xs text-sub">{k}</dt><dd className="font-semibold">{v}</dd></div>
                   ))}
                 </dl>

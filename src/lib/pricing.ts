@@ -65,7 +65,7 @@ export function price(s: Spec) {
 }
 
 /** One album on an order: every album carries its own specification. */
-export interface AlbumSpec { title: string; albumType: string; size: string; orientation: string; sheets: number; copies: number; binding: string; paper: string; gsm: string; cover: string; lamination: string; box: string; finishes: string[]; nameText: string }
+export interface AlbumSpec { title: string; albumType: string; size: string; orientation: string; sheets: number; copies: number; binding: string; paper: string; gsm: string; cover: string; lamination: string; box: string; finishes: string[]; nameText: string; eventDate?: string }
 export const blankAlbum = (): AlbumSpec => ({ title: "", albumType: "Premium Album", size: SIZES.includes("12x36") ? "12x36" : SIZES[0] ?? "", orientation: "Landscape", sheets: 30, copies: 1, binding: BINDING.includes("Lay-flat") ? "Lay-flat" : BINDING[0] ?? "", paper: "Matte", gsm: "300", cover: "Leatherette", lamination: "Matte", box: "None", finishes: [], nameText: "" });
 /** Total for all albums on an order: per-album print cost, plus the order-level design/grading charges, discount and GST. */
 export function priceAlbums(albums: AlbumSpec[], o: { designed: boolean; images: number; discountPct: number; items?: number }) {

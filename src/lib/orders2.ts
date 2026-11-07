@@ -42,6 +42,8 @@ export const blankDraft = (): OrderDraft => ({
   orderType: "", customerId: "", newCustomer: null, event: { type: "", name: "", date: "", delivery: "", notes: "", workGroup: "", priority: "Normal" },
   albums: [newAlbum(1)], orderCharges: [], discount: { type: "none", value: "" }, applyTax: true,
 });
+/** The day the order was taken: the picked order date, or today. */
+export const orderDateOf = (d: OrderDraft) => (d.event.orderDate && /^\d{4}-\d{2}-\d{2}$/.test(d.event.orderDate) ? d.event.orderDate : todayIso());
 export function customerName(d: OrderDraft): string {
   if (d.newCustomer) return d.newCustomer.name.trim();
   const c = CUSTOMERS.find((x) => (x.uid ?? x.id) === d.customerId);
@@ -60,8 +62,12 @@ export function draftProblems(d: OrderDraft): { step: number; message: string }[
     const m = mobileError(d.newCustomer.phone); if (m) out.push({ step: 1, message: m });
     if (d.newCustomer.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.newCustomer.email.trim())) out.push({ step: 1, message: "Enter a valid email address (or leave it empty)" });
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "Enter the event date" });
-  if (d.event.delivery && d.event.delivery < todayIso()) out.push({ step: 2, message: "The delivery date cannot be in the past" });
+  const od = orderDateOf(d);                                              // the day the order was taken: today unless picked (may be earlier)
+  if (d.event.orderDate && !/^\d{4}-\d{2}-\d{2}$/.test(d.event.orderDate)) out.push({ step: 2, message: "The order date is not valid" });
+  else if (od > todayIso()) out.push({ step: 2, message: "The order date cannot be in the future" });
+  if (d.event.date && !/^\d{4}-\d{2}-\d{2}$/.test(d.event.date)) out.push({ step: 2, message: "The event date is not valid" });
+  d.albums.forEach((a, i) => { if (a.eventDate && !/^\d{4}-\d{2}-\d{2}$/.test(a.eventDate)) out.push({ step: 3, message: `Album ${i + 1}: the event date is not valid` }); });
+  if (d.event.delivery && d.event.delivery < od) out.push({ step: 2, message: "The delivery date cannot be before the order date" });
   const p = price(d);
   for (const e of p.errors) out.push({ step: e.path === "discount" ? 4 : e.path === "orderType" ? 0 : 3, message: e.message });
   return out;
@@ -137,7 +143,7 @@ export async function previewSnapshot(payload: OrderDraft, priced?: PricedOrder)
   const customer = payload.newCustomer ? { name: payload.newCustomer.name.trim(), phone: payload.newCustomer.phone, email: payload.newCustomer.email || undefined, address: payload.newCustomer.address || undefined }
     : { id: c?.uid, code: c?.id, name: c?.studio ?? "", phone: c?.mobile, email: c?.email || undefined, address: [c?.address, c?.city, c?.state].filter(Boolean).join(", ") || undefined };
   const shown = businessNameShown(payload, currentActor().role);
-  return { ...(priced ?? price(payload)), business: brand(await businessProfile(), shown), showBusinessName: shown, customer, event: payload.event, orderDate: todayIso(), dueDate: payload.event.delivery || addDays(todayIso(), pricingSettings().defaultDeliveryDays) };
+  return { ...(priced ?? price(payload)), business: brand(await businessProfile(), shown), showBusinessName: shown, customer, event: payload.event, orderDate: orderDateOf(payload), dueDate: payload.event.delivery || addDays(orderDateOf(payload), pricingSettings().defaultDeliveryDays) };
 }
 
 /** Everything charged below catalog prices (line discounts, lowered prices, the order discount) as a % of the order at catalog prices — the approval limit applies to this. */
@@ -156,7 +162,7 @@ export function invoiceLines(p: PricedOrder): Line[] {
 
 const toSpec = (a: PricedOrder["albums"][number], d: DraftAlbum): AlbumSpec => {
   const pick = (k: string) => a.lines.find((l) => l.optionKind === k)?.name;
-  return { ...blankAlbum(), title: a.name, albumType: "Album", size: a.size ?? "—", orientation: d.orientation || "Landscape", sheets: a.sheets, copies: a.copies, paper: a.paper ?? "—", gsm: "", cover: pick("cover") ?? "—", lamination: a.finish ?? "", binding: pick("binding") ?? "—", box: pick("box") ?? "None", finishes: [], nameText: "" };
+  return { ...blankAlbum(), title: a.name, albumType: "Album", size: a.size ?? "—", orientation: d.orientation || "Landscape", sheets: a.sheets, copies: a.copies, paper: a.paper ?? "—", gsm: "", cover: pick("cover") ?? "—", lamination: a.finish ?? "", binding: pick("binding") ?? "—", box: pick("box") ?? "None", finishes: [], nameText: "", eventDate: d.eventDate || undefined };
 };
 
 /** Finalize: save the draft, then create the order, its albums, priced lines and the numbered invoice. Repeating the call returns the same result. */
@@ -182,7 +188,7 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
   const pct = discountPct(p);
   if (pct > DISCOUNT_APPROVAL_PCT && currentActor().role !== "admin") return { error: `A discount above ${DISCOUNT_APPROVAL_PCT}% needs an admin to finalize` };
   const designed = payload.orderType === "design_printing";
-  const today = todayIso(), due = payload.event.delivery || addDays(today, pricingSettings().defaultDeliveryDays);
+  const today = orderDateOf(payload), due = payload.event.delivery || addDays(today, pricingSettings().defaultDeliveryDays);
   let cust = CUSTOMERS.find((c) => (c.uid ?? c.id) === payload.customerId);
   if (!cust) {
     const n = payload.newCustomer; if (!n) return { error: "Choose a customer" };
@@ -210,7 +216,7 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
   const invoiceNo = `INV-${year}-${String(seq).padStart(4, "0")}`;
   const snapshot: InvoiceSnapshot = {
     ...p, business: {}, customer: { code: cust.id, name: cust.studio, phone: cust.mobile, email: cust.email || undefined, address: cust.address }, event: payload.event,
-    orderCode: order.id, orderDate: today, dueDate: due, invoiceNumber: invoiceNo, invoiceDate: today, revision,
+    orderCode: order.id, orderDate: orderDateOf(payload), dueDate: due, invoiceNumber: invoiceNo, invoiceDate: today, revision,
   };
   snapshot.showBusinessName = businessNameShown(payload, currentActor().role);
   snapshot.business = brand(localBusiness(), snapshot.showBusinessName);
