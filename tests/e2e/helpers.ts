@@ -40,8 +40,6 @@ export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegE
     await box.getByLabel("Sheets").fill(String(a.sheets ?? 30));
     await box.getByLabel("Copies").fill(String(a.copies ?? 1));
     await box.getByLabel("Size").selectOption(a.size ?? "12x36");
-    if (a.paper) await box.getByLabel("Paper type").selectOption(a.paper);
-    if (a.finish) await box.getByLabel("Finish").selectOption(a.finish);
     if (a.cover) await box.getByLabel("Cover").selectOption({ label: a.cover });
     if (a.box) await box.getByLabel("Box").selectOption({ label: a.box });
   }

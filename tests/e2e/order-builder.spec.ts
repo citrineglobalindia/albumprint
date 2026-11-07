@@ -18,11 +18,11 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
   await page.getByLabel("Event name").fill("Asha & Ravi"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
 
-  // album 1: 30 sheets × 2 copies, 12x36 Metallic, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
+  // album 1: 30 sheets × 2 copies, 12x36, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Sheets").fill("30");
   await a1.getByLabel("Album name").fill("Wedding album"); await a1.getByLabel("Copies").fill("2");
-  await a1.getByLabel("Size").selectOption("12x36"); await a1.getByLabel("Paper type").selectOption("Metallic");
+  await a1.getByLabel("Size").selectOption("12x36");
   await a1.getByLabel("Cover").selectOption({ label: "Leatherette cover (sample)" }); await a1.getByLabel("Box").selectOption({ label: "Premium box (sample)" });
   const p1 = page.getByTestId("picker-1");
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Sample — Extras" });
@@ -31,14 +31,14 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await p1.getByLabel("Category", { exact: true }).selectOption({ label: "Sample — Extras" });
   await expect(p1.getByLabel("Subcategory")).toHaveValue("");                     // changing a parent cleared the child selection
   await p1.getByLabel("Item").selectOption({ label: "Name foiling (sample)" }); await p1.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("per-copy-1")).toHaveText("₹7,650");             // 30×150 + 30×40 + 600 + 900 + 30×15
-  await expect(page.getByTestId("album-total-1")).toHaveText("₹16,100");          // 7,650 × 2 + 800 once
+  await expect(page.getByTestId("per-copy-1")).toHaveText("₹6,750");             // 30×120 (12x36 rule; no paper type on the album) + 30×40 + 600 + 900 + 30×15
+  await expect(page.getByTestId("album-total-1")).toHaveText("₹14,300");          // 6,750 × 2 + 800 once
 
   // album 2: a level-3 item, the size rule beats the paper rule
   await page.getByRole("button", { name: "Add another album" }).click();
   const a2 = page.getByTestId("album-2");
   await a2.getByLabel("Album name").fill("Engagement album"); await a2.getByLabel("Sheets").fill("20");
-  await a2.getByLabel("Size").selectOption("12x30"); await a2.getByLabel("Paper type").selectOption("Silk");
+  await a2.getByLabel("Size").selectOption("12x30");
   const p2 = page.getByTestId("picker-2");
   await p2.getByLabel("Category", { exact: true }).selectOption({ label: "Sample — Extras" }); await p2.getByLabel("Subcategory").selectOption({ label: "Premium" });
   await p2.getByLabel("Level 3").selectOption({ label: "Keepsakes" }); await p2.getByLabel("Item").selectOption({ label: "Mini book (sample)" });
@@ -63,14 +63,14 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   // a one-time order charge
   const oc = page.getByTestId("order-charge-picker");
   await oc.getByLabel("Category", { exact: true }).selectOption({ label: "Sample — Order charges" }); await oc.getByLabel("Item").selectOption({ label: "Courier packing (sample)" }); await oc.getByRole("button", { name: "Add" }).click();
-  await expect(page.getByTestId("sum-subtotal")).toHaveText("₹20,250");           // 16,100 + 3,900 + 250
+  await expect(page.getByTestId("sum-subtotal")).toHaveText("₹18,450");           // 14,300 + 3,900 + 250
   await next(page);
 
   // invoice step: fixed discount, validation, preview
   await page.getByLabel("Discount type").selectOption("fixed"); await page.getByLabel("Discount value").fill("99999");
   await expect(page.getByText("The discount cannot be more than the order subtotal").first()).toBeVisible();
   await page.getByLabel("Discount value").fill("250");
-  await expect(page.getByTestId("final-amount")).toHaveText("₹20,000");
+  await expect(page.getByTestId("final-amount")).toHaveText("₹18,200");
   await expect(page.getByRole("region", { name: "Invoice section Wedding album" })).toContainText("Per album");
   await expect(page.getByRole("region", { name: "Invoice section Engagement album" })).toBeVisible();
   await next(page);
@@ -92,7 +92,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   // the order keeps its pricing; a catalog change later does not alter it
   await page.getByRole("link", { name: "Open the order" }).click();
   const panel = page.getByTestId("order-pricing");
-  await expect(panel.getByTestId("final-amount")).toHaveText("₹20,000");
+  await expect(panel.getByTestId("final-amount")).toHaveText("₹18,200");
   await expect(panel.getByTestId("invoice-number")).toHaveText(inv1);
   await page.goto("/catalog");
   await page.getByTestId("cat-Sample — Printing").click();
@@ -101,8 +101,8 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await rules.getByRole("row", { name: /12x36 Metallic/ }).getByRole("button", { name: "Remove rule" }).click();
   await expect(rules.getByRole("row", { name: /12x36 Metallic/ })).toHaveCount(0);
   await page.goto(`/orders/${code}`);
-  await expect(page.getByTestId("order-pricing").getByTestId("final-amount")).toHaveText("₹20,000");
-  await expect(page.getByTestId("order-pricing")).toContainText("size 12x36 · paper Metallic");
+  await expect(page.getByTestId("order-pricing").getByTestId("final-amount")).toHaveText("₹18,200");
+  await expect(page.getByTestId("order-pricing")).toContainText("size 12x36");
 
   // authorized edit: admin reopens with a reason → new revision, new invoice number, old invoice void
   await page.getByRole("button", { name: "Edit (reopen)" }).click();
@@ -115,7 +115,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await page.getByRole("button", { name: /Albums & items/ }).click();
   await page.getByRole("tab", { name: /^Engagement album/ }).click();
   await page.getByTestId("album-2").getByLabel("Copies").fill("2");
-  await expect(page.getByTestId("sum-total")).toHaveText("₹22,100");            // album 1 now prices at the 12x36 rule (₹120): 14,300 + 7,800 + 250 − 250
+  await expect(page.getByTestId("sum-total")).toHaveText("₹22,100");            // 14,300 + 7,800 (2 engagement copies) + 250 − 250
   await page.getByRole("button", { name: /Finalize/ }).first().click();
   await page.getByRole("button", { name: /Finalize changes/ }).click();
   await expect(page.getByTestId("finalized")).toContainText("revision 2");
@@ -324,9 +324,11 @@ test("the event step has no event type; an order finalizes without one", async (
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
   await expect(page.getByLabel("Event type")).toHaveCount(0);
   await expect(page.getByLabel("Event name")).toBeVisible();
+  await expect(page.getByLabel("Order date")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);       // today by default
+  await page.getByLabel("Event date").fill("");                                     // the event date is optional
   await next(page);
-  await expect(page.getByRole("alert")).toContainText("event date");                // the date is still required
-  await expect(page.getByRole("alert")).not.toContainText("event type");
+  await expect(page.getByTestId("album-1")).toBeVisible();                           // went on to Albums without asking for it
+  await page.getByRole("button", { name: "Back" }).click();
   const code = await buildOrder(page, { eventName: "No type", albums: [{ name: "Album", sheets: 10 }], finalize: true });
   expect(code).toMatch(/^IDP/);
 });

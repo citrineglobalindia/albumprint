@@ -12,7 +12,7 @@ import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { backendOn } from "../lib/supabase";
 import { CUSTOMERS, ORDERS } from "../lib/data";
-import { LAMINATION, PAPER, SIZES, WORK_GROUPS } from "../lib/pricing";
+import { SIZES, WORK_GROUPS } from "../lib/pricing";
 import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
@@ -342,8 +342,6 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
         <Field label="Copies" required><input aria-label="Copies" type="number" min={1} step={1} className={inputCls} value={a.copies} onChange={(e) => set({ copies: num(e.target.value) })} /></Field>
         <Field label="Orientation"><select aria-label="Orientation" className={inputCls} value={a.orientation} onChange={(e) => set({ orientation: e.target.value })}>{ORIENT.map((o) => <option key={o}>{o}</option>)}</select></Field>
         <Field label="Size"><select aria-label="Size" className={inputCls} value={a.size} onChange={(e) => set({ size: e.target.value })}><option value="">Select…</option>{SIZES.map((s) => <option key={s}>{s}</option>)}</select></Field>
-        <Field label="Paper type"><select aria-label="Paper type" className={inputCls} value={a.paper} onChange={(e) => set({ paper: e.target.value })}><option value="">Select…</option>{Object.keys(PAPER).map((s) => <option key={s}>{s}</option>)}</select></Field>
-        <Field label="Finish"><select aria-label="Finish" className={inputCls} value={a.finish} onChange={(e) => set({ finish: e.target.value })}><option value="">Select…</option>{Object.keys(LAMINATION).map((s) => <option key={s}>{s}</option>)}</select></Field>
         {SLOTS.map((k) => { const opts = optionItems(k); if (!opts.length) return null; const cur = slotItem(k); return (
           <Field key={k} label={SLOT_LABEL[k]!}><select aria-label={SLOT_LABEL[k]} className={inputCls} value={cur?.itemId ?? ""} onChange={(e) => setSlot(k, e.target.value)}><option value="">None</option>{opts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>); })}
       </div>
