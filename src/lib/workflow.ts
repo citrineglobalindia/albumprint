@@ -2,6 +2,7 @@ import { notifyStage } from "./events";
 import { ORDERS, STAGES, stageLabel, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
 import { hasPrintReadyFile, uploadsRequired } from "./files";
+import { dutyBlock } from "./duty";
 import { proofApproved } from "./proofs";
 import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
@@ -47,6 +48,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   const o = ORDERS.find((x) => x.id === orderId);
   if (!o) return fail("Order not found");
   const { role } = currentActor();
+  const duty = dutyBlock(); if (duty) return fail(duty);                  // attendance first: check in before working
   const reason = (opts.reason ?? "").trim();
   const admin = role === "admin" || role === "system";
   if (o.closed) return fail(`${o.id} is closed and read-only — reopen it first`);                       // ALB-FR-0497

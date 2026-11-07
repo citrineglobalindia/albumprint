@@ -43,7 +43,7 @@ function DemoLogin() {
     return () => window.clearTimeout(t);
   }, [cooldown]);
   const resend = () => { setResent(true); setCooldown(30); setOtp(""); };
-  if (role) return <Navigate to={from} replace />;
+  if (role) return <Navigate to={from === "/" && role !== "admin" ? "/attendance" : from} replace />;   // staff start the day on Attendance
 
   const choose = (r: RoleKey) => { setPick(r); setEmail(ROLES[r].email); setErr(""); };
   const submit = () => {
@@ -60,7 +60,7 @@ function DemoLogin() {
     if (!isUserActive(email.trim())) { setErr("This account has been deactivated. Contact your administrator."); return; }   // ALB-FR-0013: validate status before access
     setErr(""); remember ? finish() : setStep("otp");
   };
-  const finish = () => { login(pick); nav(from, { replace: true }); };
+  const finish = () => { login(pick); nav(from === "/" && pick !== "admin" ? "/attendance" : from, { replace: true }); };   // staff start the day on Attendance
 
   return (
     <div className="grid min-h-full lg:grid-cols-[1.05fr_1fr]">

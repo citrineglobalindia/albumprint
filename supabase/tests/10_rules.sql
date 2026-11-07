@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 \set QUIET on
 -- the upload rules are tested with "Require file uploads" on (0050); 99_zz_auto_assign checks they are optional when it is off
-insert into settings(key, value) values ('workflow', '{"wf_require_uploads": true}') on conflict (key) do update set value = settings.value || '{"wf_require_uploads": true}';
+insert into settings(key, value) values ('workflow', '{"wf_require_uploads": true, "wf_require_checkin": false}') on conflict (key) do update set value = settings.value || '{"wf_require_uploads": true, "wf_require_checkin": false}';
 -- ───── harness ─────
 create schema t; grant usage on schema t to authenticated;
 create table t.users(role app_role primary key, id uuid);

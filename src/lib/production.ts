@@ -3,6 +3,7 @@ import { persistArray } from "./persist";
 import { ORDERS, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
 import { FILES, addFile, uploadsRequired } from "./files";
+import { dutyBlock } from "./duty";
 import { moveStage, setHold, closeOrder, reopenOrder, nextStages } from "./workflow";
 import { notify } from "./store";
 import type { RoleKey } from "./auth";
@@ -47,6 +48,7 @@ function gate(orderId: string, area: Area): { o: Order } | Out {
   if (!o) return no("Order not found");
   if (!can(role === "system" ? null : (role as RoleKey), area)) return denied(role as RoleKey, area);
   if (o.closed) return no(`${o.id} is closed and read-only — reopen it first`);
+  const duty = dutyBlock(); if (duty) return no(duty);                    // attendance first: check in before working
   return { o };
 }
 const isOut = (x: { o: Order } | Out): x is Out => "msg" in x;

@@ -21,7 +21,7 @@ export default function BackendLogin() {
   const [info, setInfo] = useState("");
   const [noAccess, setNoAccess] = useState(false);
 
-  if (role) return <Navigate to={from} replace />;
+  if (role) return <Navigate to={from === "/" && role !== "admin" ? "/attendance" : from} replace />;   // staff start the day on Attendance
   if (mfaPending) return <MfaChallenge />;           // password accepted; the authenticator code is the second step
 
   const go = async () => {

@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
 import { useStore } from "../lib/store";
 import { downloadRows } from "../lib/exporters";
+import { jobMinutes, jobSpans } from "../lib/jobTime";
 import {
   CODE, DAY_NAMES, EVENTS, HIDDEN, addDays, sinceOf, LEAVES, LEAVE_KINDS, addMonths, adjustDay, buildLedger, cancelLeave, daysOf, decideLeave, dow, employees, ensureMonth, getSettings, hm, istClock, istDate, istTime, lastKindToday,
   meId, monthLabel, monthOf, punch, requestLeave, saveSettings, seedDemo, signedHm, summarize, type AttSettings, type Employee, type LeaveKind, type PunchKind, type Row, type Status,
@@ -148,12 +149,40 @@ function MyAttendance({ me, ym, setYm, show }: { me: string; ym: string; setYm: 
         </Panel>
       </div>
 
+      <WorkToday me={me} date={today} checkedInMin={todayRow.workedMin} now={now} />
       <KpiRow items={kpis} cols={3} />
       <Panel title="Attendance ledger" subtitle={`${monthLabel(ym)} · each day debits the hours expected and credits the hours worked`}
         action={<div className="flex flex-wrap items-center gap-2"><MonthNav ym={ym} setYm={setYm} /><ExportBtn label="Excel" aria="Export ledger to Excel" onClick={() => exportRows("Excel")} /><ExportBtn label="PDF" aria="Export ledger to PDF" onClick={() => exportRows("PDF")} /></div>} bodyClassName="p-0">
         <Ledger rows={rows} sum={sum} />
       </Panel>
     </>
+  );
+}
+
+/** Today's job time set against the time checked in: what was worked on, for how long, and the idle remainder. */
+function WorkToday({ me, date, checkedInMin, now }: { me: string; date: string; checkedInMin: number; now: Date }) {
+  const name = employees().find((e) => e.id === me)?.name ?? "";
+  const spans = jobSpans(name, date, now.getTime()), onJobs = jobMinutes(spans);
+  const idle = Math.max(0, checkedInMin - onJobs), pct = checkedInMin ? Math.min(100, Math.round((onJobs / checkedInMin) * 100)) : 0;
+  return (
+    <Panel title="Today's work" subtitle="Time on jobs (grading, printing, QC) against the time you were checked in" className="mb-5">
+      <div className="grid grid-cols-3 gap-3 text-center" data-testid="work-today">
+        <div className="rounded-xl border border-line py-2.5"><div className="text-[11px] text-sub">Checked in</div><div className="text-lg font-extrabold tabular-nums" data-testid="wt-in">{hm(checkedInMin)}</div></div>
+        <div className="rounded-xl border border-line py-2.5"><div className="text-[11px] text-sub">On jobs</div><div className="text-lg font-extrabold tabular-nums text-brand" data-testid="wt-jobs">{hm(onJobs)}</div><div className="text-[11px] text-sub">{pct}% of the day</div></div>
+        <div className="rounded-xl border border-line py-2.5"><div className="text-[11px] text-sub">Not on a job</div><div className="text-lg font-extrabold tabular-nums">{hm(idle)}</div></div>
+      </div>
+      {spans.length > 0 ? (
+        <ul className="mt-3 divide-y divide-line text-[13px]" data-testid="wt-list">
+          {spans.map((x, i) => (
+            <li key={i} className="flex items-center gap-3 py-1.5">
+              <b className="w-24">{x.orderId}</b><Pill tone={x.dept === "QC" ? "green" : x.dept === "Printing" ? "teal" : "violet"}>{x.dept}</Pill>
+              <span className="flex-1 tabular-nums text-sub">{istTime(new Date(x.start).toISOString())} – {x.running ? "now" : istTime(new Date(x.end).toISOString())}</span>
+              <span className={cx("font-bold tabular-nums", x.running && "text-brand")}>{hm(Math.round((x.end - x.start) / 60000))}{x.running ? " ●" : ""}</span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="mt-3 text-center text-xs text-sub">No job time yet today — start a job from your queue.</p>}
+    </Panel>
   );
 }
 
@@ -259,7 +288,8 @@ function TeamView({ ym, setYm, show }: { ym: string; setYm: (v: string) => void;
             <button key={emp.id} onClick={() => setPick({ emp, date: today })} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left hover:bg-brand-soft/50">
               <Avatar name={emp.name} size={38} />
               <div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{emp.name}</div><div className="truncate text-xs text-sub">{emp.role}</div></div>
-              <div className="text-right"><Pill tone={TONE[row.status]}>{row.status}</Pill><div className="mt-1 text-[11px] tabular-nums text-sub">{row.firstIn ? `${timeOf(row.firstIn)}${row.lastOut && !row.open ? ` – ${timeOf(row.lastOut)}` : ""}` : "—"}</div></div>
+              <div className="text-right"><Pill tone={TONE[row.status]}>{row.status}</Pill><div className="mt-1 text-[11px] tabular-nums text-sub">{row.firstIn ? `${timeOf(row.firstIn)}${row.lastOut && !row.open ? ` – ${timeOf(row.lastOut)}` : ""}` : "—"}</div>
+                {(() => { const m = jobMinutes(jobSpans(emp.name, today, now.getTime())); return row.firstIn || m ? <div className="text-[11px] tabular-nums text-sub" data-testid="team-jobs">in {hm(row.workedMin)} · jobs <b className="text-ink">{hm(m)}</b></div> : null; })()}</div>
             </button>
           ))}
         </div>

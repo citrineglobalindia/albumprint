@@ -109,5 +109,31 @@ select t.as('system');
 select t.eq($$select count(*)::text from orders where id = current_setting('t.del2')::uuid$$, '1', 'delete: the paid order is still there');
 -- the guards still protect records outside delete_order
 select t.eq($$select deleting_order()::text$$, 'false', 'delete: the bypass flag is off afterwards');
+
+-- check in before working (0052)
+select t.as('system');
+update settings set value = value || '{"wf_require_checkin": true}' where key = 'workflow';
+select set_config('t.duty', t.neworder('colour_grading')::text, false);
+insert into tasks(order_id, kind, assignee) values (current_setting('t.duty')::uuid, 'grading', (select v from t.aa where k = 'colour')) on conflict do nothing;
+update tasks set assignee = (select v from t.aa where k = 'colour') where order_id = current_setting('t.duty')::uuid and kind = 'grading';
+delete from attendance_events where user_id = (select v from t.aa where k = 'colour');
+select t.as('colour');
+select t.eq($$select on_duty()::text$$, 'false', 'duty: not checked in yet');
+select t.err($$update tasks set status = 'in_progress' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: a grader who has not checked in cannot start a job', 'check in first');
+select t.ok($$select attendance_punch('check_in')$$, 'duty: the grader checks in');
+select t.ok($$update tasks set status = 'in_progress' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: checked in, the job starts');
+select t.ok($$select attendance_punch('break_start')$$, 'duty: break');
+select t.err($$update tasks set internal_note = 'x' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: on a break, work is paused', 'on a break');
+select t.ok($$select attendance_punch('break_end')$$, 'duty: back from the break');
+select t.ok($$update tasks set internal_note = 'y' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: working again');
+select t.ok($$select attendance_punch('check_out')$$, 'duty: checks out');
+select t.err($$update tasks set internal_note = 'z' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: checked out, no more work', 'checked out for today');
+select t.as('admin');
+select t.eq($$select on_duty()::text$$, 'true', 'duty: admins are never blocked');
+select t.as('system');
+update settings set value = value || '{"wf_require_checkin": false}' where key = 'workflow';
+select t.as('colour');
+select t.ok($$update tasks set internal_note = 'off' where kind = 'grading' and order_id = current_setting('t.duty')::uuid$$, 'duty: with the rule off, anyone can work');
+select t.as('system');
 select t.eq($$select 'ok'$$, 'ok', 'auto-assign done');
 \echo AUTO ASSIGN TESTS PASSED

@@ -2,6 +2,7 @@ import { persistArray } from "./persist";
 import { logAudit, currentActor } from "./audit";
 import { backendOn } from "./supabase";
 import { loadSettings } from "./localState";
+import { dutyBlock } from "./duty";
 import { notify } from "./store";
 import { reportDbError, writeThrough } from "./db/core";
 import { dbArchiveFile, dbLockFile, signedUrl, storagePathFor, uploadAndRegister } from "./db/files";
@@ -28,6 +29,7 @@ export type FileResult = { ok: true; file: FileRec; done?: Promise<{ ok: boolean
 export function addFile(orderId: string, category: FileCategory, name: string, size: number, file?: File): FileResult {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (!ALLOWED_EXT.includes(ext)) return { ok: false, error: `.${ext} is not an allowed file type` };
+  const duty = dutyBlock(); if (duty) return { ok: false, error: duty };   // attendance first: check in before working
   if (size > MAX_BYTES) return { ok: false, error: `${name} is ${fmtSize(size)} — the limit is ${MAX_TEXT} per file` };
   const version = Math.max(0, ...FILES.filter((f) => f.orderId === orderId && f.category === category && f.name === name).map((f) => f.version)) + 1;   // never overwrite silently
   const id = backendOn && typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `F${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;

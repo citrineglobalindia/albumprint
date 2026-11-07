@@ -18,10 +18,12 @@ test.describe("login and roles", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Orders");
   });
 
-  test("signing in directly as Reception lands on the Reception home", async ({ page }) => {
+  test("signing in directly as Reception starts the day on Attendance; Home is the Reception desk", async ({ page }) => {
     await page.goto("/login");
     await signIn(page, "Reception");
-    await expect(page).toHaveURL(/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/\/attendance$/);                                            // attendance first
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Attendance");
+    await page.getByRole("link", { name: "Dashboard" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Reception Desk");    // role-specific home, not the admin dashboard
     await expect(page.getByRole("link", { name: "Payments" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);

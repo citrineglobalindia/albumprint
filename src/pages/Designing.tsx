@@ -1,4 +1,5 @@
 import { loadSettings } from "../lib/localState";
+import { dutyBlock } from "../lib/duty";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Upload, Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
@@ -320,6 +321,7 @@ function DesignWorkspace({ order }: { order: Order }) {
     if (!Number.isInteger(d) || d < 1 || d > 60) return setSendErr("Expiry must be 1-60 days");
     if (channel === "Email" && !recipient) return setSendErr("No email on file for this customer - use WhatsApp or Link");
     const m = validate(); if (m) return setSendErr(m);
+    const duty = dutyBlock(); if (duty) return setSendErr(duty);
     const p = createProof(order.id, order.pages, channel, d);
     const r = moveStage(order.id, "client_review");
     if (!r.ok) { revokeProof(p); notify(); setSendErr(r.error); return; }

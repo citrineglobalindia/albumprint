@@ -15,3 +15,6 @@ insert into profiles(id, full_name, email, role, department, must_change_passwor
  ('00000000-0000-0000-0000-0000000000a5','Manjunath P','printing@albumpro.local','printing','Printing',false),
  ('00000000-0000-0000-0000-0000000000a6','Divya S','qc@albumpro.local','qc','Quality Control',false),
  ('00000000-0000-0000-0000-0000000000a7','Suresh B','accounts@albumpro.local','accounts','Accounts',false);
+
+-- local test stand-in: the existing suites act as staff without checking in; the check-in rule (0052) is switched on by its own tests
+update settings set value = value || '{"wf_require_checkin": false}' where key = 'workflow';

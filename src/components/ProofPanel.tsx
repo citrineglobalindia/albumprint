@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { dutyBlock } from "../lib/duty";
 import { Copy, ExternalLink, Eye, RefreshCw, Ban } from "lucide-react";
 import { Panel, Pill, cx } from "./ui";
 import { useToast } from "./Toast";
@@ -33,6 +34,7 @@ export function ProofPanel({ orderId, className }: { orderId: string; className?
   const copy = async (p: Proof) => { try { await navigator.clipboard.writeText(proofUrl(p)); } catch { /* clipboard may be unavailable */ } show("Proof link copied"); };
   const resend = () => {
     if (!order) return;
+    const duty = dutyBlock(); if (duty) { show(duty); return; }
     const days = proof ? Math.max(1, Math.round((new Date(proof.expiresAt).getTime() - new Date(proof.createdAt).getTime()) / 864e5)) : 7;
     const p = createProof(orderId, order.pages, proof?.sentVia ?? "Link", days); notify(); flushAll(); copy(p); if (backendOn) setFresh(proofUrl(p));
   };

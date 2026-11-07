@@ -13,12 +13,14 @@ import { notifStore, onNotifArrive, useNotifs } from "../lib/notifStore";
 import { useNewOrder } from "./NewOrderWizard";
 import A11yLayer from "./A11yLayer";
 import { LiveBadge } from "./LiveBadge";
+import { DutyBar } from "./DutyBar";
 import { useToast } from "./Toast";
 import { onDbError } from "../lib/db/core";
 
 type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; sub?: boolean };   // sub: shown indented under the item above
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/attendance", label: "Attendance", icon: AlarmClockCheck },
   { to: "/orders", label: "Orders", icon: ClipboardList },
   { to: "/design-orders", label: "Design + Printing Orders", icon: Paintbrush, sub: true },
   { to: "/printing-orders", label: "Printing Orders", icon: PrinterCheck, sub: true },
@@ -36,7 +38,6 @@ export const NAV = [
   { to: "/masters", label: "Masters", icon: Boxes },
   { to: "/users", label: "Users & Roles", icon: UserCog },
   { to: "/control", label: "Control Center", icon: Gauge },
-  { to: "/attendance", label: "Attendance", icon: AlarmClockCheck },
   { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/notifications", label: "Notifications", icon: MessagesSquare },
   { to: "/audit", label: "Audit Log", icon: ScrollText },
@@ -336,7 +337,7 @@ export default function Shell() {
       <Sidebar open={drawer} desktop={desktop} onClose={() => setDrawer(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar openPalette={() => setPalette(true)} onMenu={() => setDrawer(true)} menuOpen={drawer} />
-        <main id="main" tabIndex={-1} className="app-main scroll-thin relative min-w-0 flex-1 overflow-y-auto px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><Outlet /></main>
+        <main id="main" tabIndex={-1} className="app-main scroll-thin relative min-w-0 flex-1 overflow-y-auto px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><DutyBar /><Outlet /></main>
       </div>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <A11yLayer />

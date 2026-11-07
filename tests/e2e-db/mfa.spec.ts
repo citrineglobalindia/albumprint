@@ -29,7 +29,7 @@ test("a user turns on two-step login; password alone is refused everywhere; an a
   await expect(p.getByRole("alert")).toContainText("not valid");
   await p.getByLabel("6-digit code").fill(totp(secret));
   await p.getByRole("button", { name: "Verify & continue" }).click();
-  await expect(p.getByRole("heading", { name: "Reception Desk" })).toBeVisible({ timeout: 15_000 });
+  await expect(p.getByRole("heading", { name: "Attendance", level: 1 })).toBeVisible({ timeout: 15_000 });   // staff land on Attendance
   await ctx.close();
 
   // the API itself refuses a password-only session: row-level security sees no role until the code is entered

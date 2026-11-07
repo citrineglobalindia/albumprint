@@ -1,5 +1,5 @@
 import { ME, istDate, mergeRange, registerAttendanceBackend, replaceAll, type AttEvent, type AttSettings, type Employee, type Leave, type LeaveKind, type PunchKind } from "../attendance";
-import { sb } from "./core";
+import { backendOn, registerHydrator, sb } from "./core";
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -18,7 +18,7 @@ async function allEvents(from: string, to: string): Promise<{ rows: Row[]; error
   return { rows, error: null };
 }
 
-registerAttendanceBackend({
+const backend: Parameters<typeof registerAttendanceBackend>[0] = {
   async punch(kind, note) {
     const { data, error } = await sb().rpc("attendance_punch", { p_kind: kind, p_note: note ?? null });
     return error || !data ? { error: error?.message ?? "Could not record the punch" } : eventFrom(data as Row);
@@ -55,4 +55,7 @@ registerAttendanceBackend({
       return null;
     } catch (e) { return e instanceof Error ? e.message : String(e); }
   },
-});
+};
+registerAttendanceBackend(backend);
+// today's punches load with everything else, so job screens know at once whether the person is checked in (check in before working, 0052)
+if (backendOn) registerHydrator("attendance today", async () => { const t = istDate(new Date()); const e = await backend.load(t, t); if (e) throw new Error(e); });
