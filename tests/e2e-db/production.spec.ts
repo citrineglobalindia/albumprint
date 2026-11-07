@@ -216,8 +216,8 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await colour.getByTestId(`job-${code}`).getByRole("button", { name: "Start" }).click();
   await expect.poll(() => db(code, `select status from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress");
   const bytes = randomBytes(2500);
-  await colour.getByTestId("file-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes });
-  await expect(colour.getByTestId("file-list")).toContainText("graded batch.zip");
+  await colour.getByTestId("work-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes });
+  await expect(colour.getByTestId("outputs-Graded")).toContainText("graded batch.zip");
   await expect.poll(() => db(code, `select count(*) from order_files where order_id = $O and category = 'graded'`)).toBe("1");
   expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v1")).equals(bytes)).toBe(true);
   await colour.getByRole("button", { name: /Submit to Admin/ }).click();
@@ -242,7 +242,7 @@ test("grading: grader uploads real bytes and submits, only an admin approves; gr
   await colour.getByRole("button", { name: "Acknowledge Revision" }).click();
   await expect.poll(() => db(code, `select status || ':' || revision_ack from tasks where order_id = $O and kind = 'grading'`)).toBe("in_progress:true");
   const bytes2 = randomBytes(1200);
-  await colour.getByTestId("file-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes2 });
+  await colour.getByTestId("work-input").setInputFiles({ name: "graded batch.zip", mimeType: "application/zip", buffer: bytes2 });
   await expect.poll(() => db(code, `select string_agg(version::text, ',' order by version) from order_files where order_id = $O and category = 'graded'`)).toBe("1,2");
   expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v1")).equals(bytes)).toBe(true);
   expect(readFileSync(path.join(STORE, code, "graded", "graded_batch.zip-v2")).equals(bytes2)).toBe(true);

@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image as ImageIcon, UploadCloud, Send, Save, Check, X, AlertCircle, Lock } from "lucide-react";
+import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image as ImageIcon, Send, Save, Check, X, AlertCircle, Lock } from "lucide-react";
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, TodayChip, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
+import { WorkFiles } from "../components/WorkFiles";
 import { ORDERS, PRIORITIES, type Priority, type Tone } from "../lib/data";
 import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
 import { ALL_TIME, desRange, inRangeOpt, rangeLabel, serRange, type SavedRange } from "../components/pageKit";
@@ -12,8 +13,7 @@ import { useStore, useSlashFocus } from "../lib/store";
 import { fmtDate, TODAY } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
-import { FILES, MAX_TEXT, fmtSize, uploadsRequired } from "../lib/files";
-import { backendOn } from "../lib/supabase";
+import { FILES, uploadsRequired } from "../lib/files";
 import { Elapsed, JobTimer } from "../components/JobTimer";
 import { slaState } from "../lib/sla";
 import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
@@ -49,9 +49,7 @@ export default function ColourGrading() {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [rejected, setRejected] = useState<string[]>([]);
-  const [dragOver, setDragOver] = useState(false);
   const [draft, setDraft] = useState<Record<string, { d: string; n: string }>>({});
-  const fileInput = useRef<HTMLInputElement>(null);
   const searchWrap = useRef<HTMLDivElement>(null);
   useSlashFocus(searchWrap);
   const [toast, show] = useToast();
@@ -104,17 +102,6 @@ export default function ColourGrading() {
     { label: "Overdue", value: overdue, icon: Clock, tone: "red", invert: true },
   ];
 
-  const addFiles = (fl: FileList | File[]) => {
-    if (!cur || !guard("grading")) return;
-    const bad: string[] = []; let n = 0;
-    Array.from(fl).forEach((file) => {
-      const r = uploadGraded(cur.orderId, file.name, file.size, file);
-      if (r.ok) n++; else bad.push(r.msg);
-    });
-    setRejected(bad);
-    if (n) show(backendOn ? `Uploading ${n} file${n > 1 ? "s" : ""} to ${cur.orderId}…` : `${n} graded file${n > 1 ? "s" : ""} added to ${cur.orderId}`);
-    else if (bad[0]) show(bad[0]);
-  };
   const saveJob = () => {
     const e: Record<string, string> = {};
     if (!f.order) e.order = "Pick an order";
@@ -249,34 +236,13 @@ export default function ColourGrading() {
               <textarea rows={2} disabled={!canEdit} className={cx(inputCls, "h-auto py-2")} value={dr.n} onChange={(e) => setDraft({ ...draft, [cur.orderId]: { ...dr, n: e.target.value } })} placeholder="Notes for the team…" />
             </Field>
 
-            <div className="mb-1 text-sm font-extrabold">Graded files ({files.length})</div>
-            <ul data-testid="file-list" className="space-y-1.5">
-              {files.map((x) => (
-                <li key={x.id} className="flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs">
-                  <ImageIcon className="size-4 text-sub" /><span className="min-w-0 flex-1 truncate font-semibold">{x.name}</span>
-                  <span className="text-sub">v{x.version} · {fmtSize(x.size)}</span><Pill tone={x.state === "Approved" ? "green" : x.state === "Rejected" ? "red" : x.state === "Submitted" ? "violet" : "slate"}>{x.state}</Pill>
-                </li>
-              ))}
-              {uploading.map((x) => (
-                <li key={x.id} data-testid="uploading" className="rounded-lg border border-brand/40 bg-brand-soft/30 px-3 py-1.5 text-xs">
-                  <div className="flex items-center gap-2"><UploadCloud className="size-4 text-brand" /><span className="min-w-0 flex-1 truncate font-semibold">{x.name}</span><span className="text-sub">{fmtSize(x.size)} · uploading{x.progress != null ? ` ${x.progress}%` : "…"}</span></div>
-                  <div className="mt-1 h-1 overflow-hidden rounded bg-line"><div className="h-full bg-brand transition-all" style={{ width: `${x.progress ?? 5}%` }} /></div>
-                </li>
-              ))}
-              {files.length === 0 && uploading.length === 0 && <li className="text-xs text-sub" data-testid="no-files">No graded files yet.{!uploadsRequired() && " Uploading is optional: you can submit without files (e.g. put the drive link in the internal note)."}</li>}
-            </ul>
-
-            {canEdit && cur.status === "In Progress" && (<>
-              <div data-testid="dropzone" role="button" tabIndex={0} aria-label="Upload graded files"
-                onClick={() => fileInput.current?.click()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && fileInput.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
-                className={cx("mt-3 flex w-full cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-4 text-center transition", dragOver ? "border-brand bg-brand-soft ring-2 ring-brand/40" : "border-brand/50 bg-brand-soft/40")}>
-                <span className="inline-flex items-center gap-2 font-extrabold"><UploadCloud className="size-5 text-brand" />{dragOver ? "Drop to upload" : cur.rounds > 0 ? "Upload revised version" : "Upload Graded Files"}</span>
-                <span className="text-xs text-sub">Drag & drop or click · JPG, TIFF, ZIP · max {MAX_TEXT} per file · new uploads become new versions</span>
-              </div>
-              <input ref={fileInput} data-testid="file-input" type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,.zip" className="hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
-            </>)}
+            <WorkFiles orderId={cur.orderId}
+              inputs={[{ category: "Source Photos", label: "Photos to grade (from the customer)" }]}
+              output={{ category: "Graded", label: cur.rounds > 0 ? "Graded photos (upload the revised version)" : "Graded photos" }}
+              upload={canEdit && cur.status === "In Progress" ? (file) => { if (!guard("grading")) return { ok: false, msg: "You can't upload to this job" }; const r = uploadGraded(cur.orderId, file.name, file.size, file); return { ok: r.ok, msg: r.msg }; } : undefined}
+              accept=".jpg,.jpeg,.png,.tif,.tiff,.pdf,.zip" hint="Images (JPG, PNG, TIFF) or PDF · ZIP for many files"
+              onMessage={(m, ok) => { setRejected(ok ? [] : m.split(" · ")); if (ok) show(m); }} />
+            {files.length === 0 && uploading.length === 0 && <p className="mt-1 text-xs text-sub" data-testid="no-files">No graded files yet.{!uploadsRequired() && " Uploading is optional: you can submit without files (e.g. put the drive link in the internal note)."}</p>}
             {rejected.length > 0 && (
               <ul data-testid="rejected" className="mt-2 space-y-1 rounded-lg bg-rose-50 p-2.5 text-xs font-semibold text-rose-600">
                 {rejected.map((r) => <li key={r} className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3.5 shrink-0" />{r}</li>)}

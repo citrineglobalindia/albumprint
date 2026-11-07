@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Upload, Undo2, Redo2, Maximize, Minus, Plus, ChevronLeft, ChevronRight, Type, ImageIcon, LayoutGrid, Brush, Save, ChevronDown, CheckCircle2, Download, Link2, CalendarDays, MoreVertical, StickyNote, Ruler, FileText, BookOpen, Palette, User, Clock, History, Trash2, Send, GripVertical, Lock, ShieldCheck } from "lucide-react";
 import { PageHeader, Panel, Pill, Avatar, Thumb, LineTabs, ProgressBar, OutlineButton, LinkAction, MoreButton, SlideOver, cx } from "../components/ui";
+import { WorkFiles } from "../components/WorkFiles";
 import { StageTimer } from "../components/JobTimer";
 import { Combobox } from "../components/controls";
 import { Err, FieldBox, Kbd, Segmented, Banner, strOpts } from "../components/pageKit";
@@ -700,6 +701,20 @@ function DesignWorkspace({ order }: { order: Order }) {
           </Panel>
         </div>
       </div>
+      <Panel className="mt-4" title="Design files" subtitle="The graded photos to design with, and the album pages you make: upload each spread as an image or the whole album as a PDF.">
+        <WorkFiles orderId={order.id}
+          inputs={[{ category: "Graded", label: "Graded photos (from Colour Grading)" }, { category: "Source Photos", label: "Original photos (from the customer)" }]}
+          output={{ category: "Design Draft", label: "Album design pages" }}
+          upload={(role === "admin" || role === "designer") && ["designing", "client_review", "design_review"].includes(stage) && !order.closed ? (file) => {
+            if (!/\.(jpe?g|png|tiff?|pdf|psd)$/i.test(file.name)) return { ok: false, msg: `${file.name} — upload images (JPG, PNG, TIFF), PDF or PSD` };
+            const r = addFile(order.id, "Design Draft", file.name, file.size, file);
+            if (r.ok) { log(`Design page uploaded: ${file.name}`); return { ok: true, msg: `${file.name} uploading` }; }
+            return { ok: false, msg: `${file.name}: ${r.error}` };
+          } : undefined}
+          canRemove={role === "admin" || role === "designer"}
+          accept=".jpg,.jpeg,.png,.tif,.tiff,.pdf,.psd" hint="Images (JPG, PNG, TIFF) or PDF"
+          onMessage={(m, ok) => flash(ok ? m : <span className="text-rose-300">{m}</span>)} />
+      </Panel>
       <SlideOver open={sendOpen} onClose={() => setSendOpen(false)} title="Send for client review" footer={<><button onClick={() => setSendOpen(false)} className="h-10 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button><button onClick={confirmSend} className="h-10 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark">Send proof</button></>}>
         <div className="space-y-5 text-[13px]">
           <div className="rounded-xl bg-slate-50 p-3"><b>{order.id}</b> - {order.customer} - {order.event}<div className="text-xs text-sub">{order.pages} pages{proof ? ` - this will be version ${proof.version + 1}` : ""}</div></div>

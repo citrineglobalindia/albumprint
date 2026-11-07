@@ -102,8 +102,8 @@ test("the full process: every department does its step, hand-offs are automatic 
   const t1 = await colour.getByTestId("job-timer").getByTestId("elapsed").innerText();
   await expect(colour.getByTestId("job-timer").getByTestId("elapsed")).not.toHaveText(t1, { timeout: 4000 });
   await expect(colour.getByTestId(`job-${code}`).getByTestId("elapsed")).toHaveAttribute("data-running", "true");
-  await colour.getByTestId("file-input").setInputFiles({ name: "graded.zip", mimeType: "application/zip", buffer: randomBytes(1500) });
-  await expect(colour.getByTestId("file-list")).toContainText("graded.zip");
+  await colour.getByTestId("work-input").setInputFiles({ name: "graded.zip", mimeType: "application/zip", buffer: randomBytes(1500) });
+  await expect(colour.getByTestId("outputs-Graded")).toContainText("graded.zip");
   await colour.getByRole("button", { name: /Submit to Admin/ }).click();
   await expect.poll(stage).toBe("admin_approval");
 

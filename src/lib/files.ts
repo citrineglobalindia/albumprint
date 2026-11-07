@@ -33,6 +33,7 @@ export function addFile(orderId: string, category: FileCategory, name: string, s
   const id = backendOn && typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `F${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const rec: FileRec = { id, orderId, category, name, ext, size, version, state: "Draft", by: currentActor().name, at: new Date().toISOString() };
   FILES.unshift(rec);
+  if (file && /^(jpe?g|png|webp|gif|pdf)$/.test(ext) && typeof URL !== "undefined" && URL.createObjectURL) { try { LOCAL_URLS.set(id, URL.createObjectURL(file)); } catch { /* ignore */ } }
   logAudit({ entity: "file", entityId: orderId, action: "upload", detail: `${category}: ${name} v${version}` });
   if (!backendOn) return { ok: true, file: rec };
   rec.path = storagePathFor(orderId, category, name, version); rec.pending = true;
@@ -71,5 +72,10 @@ export async function downloadFile(f: FileRec): Promise<{ ok: boolean; msg: stri
   } catch (e) { return { ok: false, msg: `Download failed: ${String((e as { message?: string })?.message ?? e)}` }; }
 }
 /** URL for an in-browser preview (images/PDF) of a stored file; null in demo mode. */
-export async function previewUrl(f: FileRec): Promise<string | null> { if (!backendOn || !f.path || f.pending) return null; try { return await signedUrl(f.path); } catch { return null; } }
+export async function previewUrl(f: FileRec): Promise<string | null> {
+  const local = LOCAL_URLS.get(f.id); if (local) return local;            // just uploaded in this browser (and the only preview demo mode has)
+  if (!backendOn || !f.path || f.pending) return null; try { return await signedUrl(f.path); } catch { return null; }
+}
+/** Object URLs of files picked in this browser session, so their previews show at once (and in demo mode, which stores no bytes). */
+export const LOCAL_URLS = new Map<string, string>();
 export const fmtSize = (n: number) => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
