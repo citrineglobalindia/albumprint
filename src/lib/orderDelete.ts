@@ -15,10 +15,10 @@ export type DeleteResult = { ok: true } | { ok: false; error: string };
 
 const dropFor = <T extends { orderId: string }>(arr: T[], id: string) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i]!.orderId === id) arr.splice(i, 1); };
 
-export async function deleteOrder(orderId: string, reason: string): Promise<DeleteResult> {
+export async function deleteOrder(orderId: string, reasonIn: string): Promise<DeleteResult> {
+  const reason = reasonIn.trim() || "No reason given";                   // the reason is optional; the audit log still records the delete
   const o = ORDERS.find((x) => x.id === orderId); if (!o) return { ok: false, error: "Order not found" };
   if (currentActor().role !== "admin") return { ok: false, error: "Only an admin can delete an order" };
-  if (!reason.trim()) return { ok: false, error: "A reason is required to delete an order" };
   if (!backendOn && PAYMENTS.some((p) => p.orderId === orderId)) return { ok: false, error: `${orderId} has recorded payments and cannot be deleted: record a refund and cancel the order instead` };
 
   if (backendOn) {

@@ -8,6 +8,8 @@ interface Opts {
   placeholder?: string;
   /** For irreversible actions: the user must type this text (e.g. the order ID) before confirming. */
   confirmText?: string;
+  /** The reason may be left empty. */
+  optional?: boolean;
 }
 type Done = (reason: string, choice: string) => void;
 
@@ -24,7 +26,7 @@ function ReasonBody({ o, onCancel, onOk }: { o: Opts; onCancel: () => void; onOk
   const [err, setErr] = useState("");
   const [typed, setTyped] = useState("");
   const typedOk = !o.confirmText || typed.trim().toUpperCase() === o.confirmText.toUpperCase();
-  const submit = () => { if (reason.trim().length < 3) { setErr("A reason is required (at least 3 characters)."); return; } if (!typedOk) { setErr(`Type ${o.confirmText} to confirm.`); return; } onOk(reason.trim(), choice); };
+  const submit = () => { if (!o.optional && reason.trim().length < 3) { setErr("A reason is required (at least 3 characters)."); return; } if (!typedOk) { setErr(`Type ${o.confirmText} to confirm.`); return; } onOk(reason.trim(), choice); };
   return (
     <div className="fixed inset-0 z-[75] grid place-items-center bg-ink/40 p-4" onMouseDown={onCancel}>
       <div role="dialog" aria-label={o.title} aria-modal="true" data-testid="reason-dialog" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
@@ -37,7 +39,7 @@ function ReasonBody({ o, onCancel, onOk }: { o: Opts; onCancel: () => void; onOk
           </label>
         )}
         <label className="mt-4 block">
-          <span className="mb-1.5 block text-[13px] font-semibold">Reason <span className="text-rose-600">*</span></span>
+          <span className="mb-1.5 block text-[13px] font-semibold">Reason {o.optional ? <span className="font-normal text-sub">(optional)</span> : <span className="text-rose-600">*</span>}</span>
           <textarea autoFocus data-testid="reason-input" value={reason} onChange={(e) => { setReason(e.target.value); setErr(""); }} aria-invalid={!!err} aria-describedby={err ? "reason-err" : undefined}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
             placeholder={o.placeholder ?? "Why is this needed? Recorded in the audit trail."} className={cx(inputCls, "h-24 resize-none py-2", err && "border-rose-400")} />

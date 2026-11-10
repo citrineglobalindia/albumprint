@@ -203,8 +203,7 @@ test("admin deletes several selected orders at once (type DELETE to confirm)", a
   const b = (await buildOrder(page, { albums: [{ name: "Bulk B" }] }))!;
   await page.goto("/orders");
   for (const c of [a, b]) await page.getByRole("row").filter({ hasText: c }).getByRole("checkbox").check();
-  await page.getByTestId("bulk-bar").getByRole("button", { name: "Delete" }).click();
-  await page.getByTestId("reason-input").fill("Test orders");
+  await page.getByTestId("bulk-bar").getByRole("button", { name: "Delete" }).click();     // no reason needed (optional)
   await expect(page.getByTestId("reason-confirm")).toBeDisabled();
   await page.getByTestId("confirm-text").fill("delete");
   await page.getByTestId("reason-confirm").click();

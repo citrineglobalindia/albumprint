@@ -67,7 +67,7 @@ export default function OrderDetail() {
   };
   const doHold = () => askReason({ title: `Put ${o.id} on hold`, message: "Work stops and the SLA clock is flagged until the order is resumed.", confirmLabel: "Put on hold" }, (r) => report(setHold(o.id, true, r), `${o.id} put on hold`));
   const doResume = () => report(setHold(o.id, false), `${o.id} resumed`);
-  const doDelete = () => askReason({ title: `Delete ${o.id} permanently`, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
+  const doDelete = () => askReason({ title: `Delete ${o.id} permanently`, optional: true, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
     message: <>The order and everything under it (albums, items, jobs, proofs, files, invoices) is removed for good. Use this for test or mistaken orders; to stop a real order, <b>cancel</b> it instead (that keeps its history). Orders with recorded payments can't be deleted.</> },
     (r) => void deleteOrder(o.id, r).then((res) => { if (res.ok) nav(o.workflow === "Printing" ? "/printing-orders" : "/orders", { state: { flash: `${o.id} deleted` } }); else fail(res.error); }));
   const doCancel = () => askReason({ title: `Cancel ${o.id}`, message: "History is preserved; the order leaves the pipeline.", confirmLabel: "Cancel order", danger: true }, (r) => report(cancelOrder(o.id, r), `${o.id} cancelled`));

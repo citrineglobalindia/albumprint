@@ -144,7 +144,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const bulkCancel = () => askReason({ title: `Cancel ${sel.size} order${sel.size > 1 ? "s" : ""}`, message: "Cancelled orders keep their history but leave the pipeline.", confirmLabel: "Cancel orders", danger: true }, (reason) => runBulk("Cancelled", (o) => cancelOrder(o.id, reason)));
   const bulkResume = () => runBulk("Resumed", resumeOne);
   /** Delete the selected orders permanently (admin): one reason, type DELETE to confirm; orders with payments are refused and listed. */
-  const bulkDelete = () => askReason({ title: `Delete ${sel.size} order${sel.size > 1 ? "s" : ""} permanently`, confirmText: "DELETE", confirmLabel: "Delete orders", danger: true, placeholder: "Why delete them? e.g. test orders",
+  const bulkDelete = () => askReason({ title: `Delete ${sel.size} order${sel.size > 1 ? "s" : ""} permanently`, optional: true, confirmText: "DELETE", confirmLabel: "Delete orders", danger: true, placeholder: "Why delete them? e.g. test orders",
     message: `${[...sel].join(", ")} and everything under them (albums, items, jobs, proofs, files, invoices) are removed for good. Orders with recorded payments are skipped — cancel those instead.` },
     (reason) => void (async () => {
       const ids = [...sel]; let done = 0; const errs: string[] = [];
@@ -154,7 +154,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
       if (errs.length) fail(`${msg}. ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} more not deleted)` : ""}`); else show(msg);
     })());
   const holdOne = (o: Order) => askReason({ title: `Put ${o.id} on hold`, confirmLabel: "Put on hold" }, (reason) => { const r = holdOrder(o.id, true, reason); r.ok ? show(`${o.id} put on hold`) : fail(r.error); });
-  const deleteOne = (o: Order) => askReason({ title: `Delete ${o.id} permanently`, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
+  const deleteOne = (o: Order) => askReason({ title: `Delete ${o.id} permanently`, optional: true, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
     message: "The order and everything under it (albums, items, jobs, proofs, files, invoices) is removed for good. To stop a real order, cancel it instead. Orders with recorded payments can't be deleted." },
     (reason) => void deleteOrder(o.id, reason).then((r) => (r.ok ? show(`${o.id} deleted`) : fail(r.error))));
   const cancelOne = (o: Order) => askReason({ title: `Cancel ${o.id}`, message: "This cannot be undone from the pipeline; history is preserved.", confirmLabel: "Cancel order", danger: true }, (reason) => { const r = cancelOrder(o.id, reason); r.ok ? show(`${o.id} cancelled`) : fail(r.error); });
