@@ -196,3 +196,18 @@ test("admin deletes an order from the list (type the order ID to confirm); it is
   await page.waitForTimeout(1500); await page.reload();
   await expect(page.getByRole("row").filter({ hasText: code })).toHaveCount(0);
 });
+
+test("admin deletes several selected orders at once (type DELETE to confirm)", async ({ page }) => {
+  await seedRole(page, "admin");
+  const a = (await buildOrder(page, { albums: [{ name: "Bulk A" }] }))!;
+  const b = (await buildOrder(page, { albums: [{ name: "Bulk B" }] }))!;
+  await page.goto("/orders");
+  for (const c of [a, b]) await page.getByRole("row").filter({ hasText: c }).getByRole("checkbox").check();
+  await page.getByTestId("bulk-bar").getByRole("button", { name: "Delete" }).click();
+  await page.getByTestId("reason-input").fill("Test orders");
+  await expect(page.getByTestId("reason-confirm")).toBeDisabled();
+  await page.getByTestId("confirm-text").fill("delete");
+  await page.getByTestId("reason-confirm").click();
+  await expect(page.getByText("Deleted 2 of 2 orders").first()).toBeVisible();
+  for (const c of [a, b]) await expect(page.getByRole("row").filter({ hasText: c })).toHaveCount(0);
+});

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
+import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
 import {
   PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, CountTabs,
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
@@ -143,6 +143,16 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const bulkHold = () => askReason({ title: `Put ${sel.size} order${sel.size > 1 ? "s" : ""} on hold`, message: "The reason is recorded in each order's audit trail.", confirmLabel: "Put on hold" }, (reason) => runBulk("Put on hold", (o) => holdOrder(o.id, true, reason)));
   const bulkCancel = () => askReason({ title: `Cancel ${sel.size} order${sel.size > 1 ? "s" : ""}`, message: "Cancelled orders keep their history but leave the pipeline.", confirmLabel: "Cancel orders", danger: true }, (reason) => runBulk("Cancelled", (o) => cancelOrder(o.id, reason)));
   const bulkResume = () => runBulk("Resumed", resumeOne);
+  /** Delete the selected orders permanently (admin): one reason, type DELETE to confirm; orders with payments are refused and listed. */
+  const bulkDelete = () => askReason({ title: `Delete ${sel.size} order${sel.size > 1 ? "s" : ""} permanently`, confirmText: "DELETE", confirmLabel: "Delete orders", danger: true, placeholder: "Why delete them? e.g. test orders",
+    message: `${[...sel].join(", ")} and everything under them (albums, items, jobs, proofs, files, invoices) are removed for good. Orders with recorded payments are skipped — cancel those instead.` },
+    (reason) => void (async () => {
+      const ids = [...sel]; let done = 0; const errs: string[] = [];
+      for (const id of ids) { const r = await deleteOrder(id, reason); if (r.ok) done++; else errs.push(`${id}: ${r.error}`); }
+      setSel(new Set());
+      const msg = `Deleted ${done} of ${ids.length} order${ids.length > 1 ? "s" : ""}`;
+      if (errs.length) fail(`${msg}. ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} more not deleted)` : ""}`); else show(msg);
+    })());
   const holdOne = (o: Order) => askReason({ title: `Put ${o.id} on hold`, confirmLabel: "Put on hold" }, (reason) => { const r = holdOrder(o.id, true, reason); r.ok ? show(`${o.id} put on hold`) : fail(r.error); });
   const deleteOne = (o: Order) => askReason({ title: `Delete ${o.id} permanently`, confirmText: o.id, confirmLabel: "Delete order", danger: true, placeholder: "Why delete it? e.g. test order, created by mistake",
     message: "The order and everything under it (albums, items, jobs, proofs, files, invoices) is removed for good. To stop a real order, cancel it instead. Orders with recorded payments can't be deleted." },
@@ -218,6 +228,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
             <OutlineButton onClick={bulkHold}>Put On Hold</OutlineButton>
             <OutlineButton onClick={bulkResume}>Resume</OutlineButton>
             {isAdmin && <OutlineButton onClick={bulkCancel}>Cancel</OutlineButton>}
+            {isAdmin && <OutlineButton icon={Trash2} className="!text-rose-700" onClick={bulkDelete}>Delete</OutlineButton>}
             <OutlineButton onClick={() => bulkEdit({ priority: "High" }, "priority", "Priority set to High")}>Set High priority</OutlineButton>
             <div className="w-44"><Combobox options={assignees().map((a) => ({ value: a, label: a }))} value="" placeholder="Assign to…" onChange={(v) => bulkEdit({ assignee: v }, "reassign", `Assigned to ${v}`)} /></div>
             <button onClick={() => setSel(new Set())} className="ml-auto text-xs font-bold text-brand">Clear</button>
