@@ -19,7 +19,7 @@ export interface OrderDraft {
   orderType: OrderType | "";
   customerId: string;                       // database id (uuid) in database mode, customer code in demo mode
   newCustomer: NewCustomerDraft | null;
-  event: { type: string; name: string; date: string; orderDate?: string; photosGiven?: string; delivery: string; notes: string; workGroup?: string; priority?: string };
+  event: { type: string; name: string; couple?: string; date: string; orderDate?: string; photosGiven?: string; delivery: string; notes: string; workGroup?: string; priority?: string };
   albums: DraftAlbum[];
   orderCharges: { itemId: string }[];
   discount: { type: "none" | "fixed" | "percent"; value: number | string };

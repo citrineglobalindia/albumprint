@@ -23,7 +23,7 @@ export function InvoiceView({ s, paid = 0, preview = false }: { s: InvoiceSnapsh
       <div className="grid gap-4 border-b border-line py-4 sm:grid-cols-2">
         <div><div className="text-[11px] font-bold uppercase text-sub">Bill to</div><div className="font-bold">{c?.name || "—"}</div><div className="text-xs text-sub">{[c?.phone, c?.email, c?.address].filter(Boolean).join(" · ")}</div></div>
         <div><div className="text-[11px] font-bold uppercase text-sub">Order & event</div><div className="font-bold">{s.orderCode ?? "New order"} · {ORDER_TYPE[s.orderType] ?? "—"}</div>
-          <div className="text-xs text-sub">{[ev?.type, ev?.name].filter(Boolean).join(" — ") || "—"}{s.orderDate ? ` · ordered ${date(s.orderDate)}` : ""}{ev?.date ? ` · event ${date(ev.date)}` : ""} · delivery {date(s.dueDate || ev?.delivery)}</div></div>
+          <div className="text-xs text-sub">{[ev?.type, ev?.name, ev?.couple].filter(Boolean).join(" — ") || "—"}{s.orderDate ? ` · ordered ${date(s.orderDate)}` : ""}{ev?.date ? ` · event ${date(ev.date)}` : ""} · delivery {date(s.dueDate || ev?.delivery)}</div></div>
       </div>
       {s.albums.map((a) => (
         <section key={a.index} className="border-b border-line py-4" aria-label={`Invoice section ${a.name}`}>

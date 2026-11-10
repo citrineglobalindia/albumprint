@@ -13,7 +13,7 @@ export const SIZE_PRICE: Record<string, number> = Object.fromEntries(SIZES.map((
 export const BINDING_PRICE: Record<string, number> = Object.fromEntries(BINDING.map((k) => [k, 0]));
 export const BOXES: Record<string, number> = { None: 0, Standard: 400, Premium: 900, Wooden: 1800, Acrylic: 1500, Custom: 1500 };
 export const WORK_GROUPS = ["Photo Book", "Amateur", "Professional", "Rework", "Company Mistakes"];
-export const EVENT_TYPES = ["Wedding", "Pre Wedding", "Reception", "Engagement", "Baby", "Corporate", "Birthday", "Other"];
+export const EVENT_TYPES = ["Engagement", "Haldi", "Mehandi", "Sangeet", "Wedding", "Muhurtham", "Reception", "Pre Wedding", "Baby", "Corporate", "Birthday", "Other"];
 export const FINISHES: Record<string, number> = { "UV Printing": 600, Foiling: 800, Embossing: 700 };
 export let DESIGN_CHARGE = 4000;       // applies when order type includes design (ALB-FR-0033)
 export let GRADING_PER_IMAGE = 4;      // colour grading, per image (ALB-FR-0034)

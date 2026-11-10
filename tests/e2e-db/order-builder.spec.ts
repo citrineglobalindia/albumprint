@@ -28,7 +28,7 @@ test("reception builds a two-album order; the server prices, numbers and stores 
   await page.getByRole("button", { name: "New customer" }).click();
   await page.getByLabel("Customer name").fill(`Builder ${TAG}`); await page.getByLabel("Phone number").fill(`9${String(Date.now()).slice(-9)}`);
   await page.getByLabel("Address").fill("12 MG Road"); await next(page);
-  await page.getByLabel("Event name").fill(`Couple ${TAG}`); await page.getByLabel("Event date").fill("2026-12-20");
+  await page.getByLabel("Other event").fill(`Couple ${TAG}`); await page.getByLabel("Other event").press("Enter"); await page.getByLabel("Event date").fill("2026-12-20");
   await page.getByLabel("Work Group").selectOption("Photo Book"); await next(page);
 
   const a1 = page.getByTestId("album-1");

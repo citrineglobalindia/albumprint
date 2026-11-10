@@ -61,7 +61,7 @@ test("the full process: every department does its step, hand-offs are automatic 
   // order taken yesterday (an earlier day can be picked); no event date (optional)
   const yesterday = new Date(Date.now() - 86400000 + 5.5 * 3600000).toISOString().slice(0, 10);
   await expect(reception.getByLabel("Order date")).toHaveValue(new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10));   // today by default
-  await reception.getByLabel("Event name").fill("Journey wedding"); await reception.getByLabel("Order date").fill(yesterday); await next(reception);
+  await reception.getByLabel("Event Wedding").check(); await reception.getByLabel("Event Reception").check(); await reception.getByLabel("Couple name").fill("Asha & Ravi"); await reception.getByLabel("Order date").fill(yesterday); await next(reception);
   const a1 = reception.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Main album"); await a1.getByLabel("Album event date").fill("2026-12-20"); await a1.getByLabel("Sheets", { exact: true }).fill("30");
   await a1.getByLabel("Design charge type").selectOption("fixed"); await a1.getByLabel("Design charge", { exact: true }).fill("3000");

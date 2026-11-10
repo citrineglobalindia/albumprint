@@ -33,7 +33,7 @@ export async function invoicePdf(s: InvoiceSnapshot, opts: { preview?: boolean; 
   const c = s.customer ?? { name: "" };
   doc.text([c.name || "—", c.phone ? `Phone ${c.phone}` : "", c.email ?? "", c.address ?? ""].filter(Boolean), L, y + 18, { maxWidth: W / 2 - 60 });
   const ev = s.event ?? { type: "", name: "", date: "", delivery: "", notes: "" };
-  doc.text([s.orderCode ? `Order ${s.orderCode}` : "Order (not yet created)", `Type: ${ORDER_TYPE[s.orderType] ?? s.orderType}`, `Event: ${[ev.type, ev.name].filter(Boolean).join(" — ") || "—"}`,
+  doc.text([s.orderCode ? `Order ${s.orderCode}` : "Order (not yet created)", `Type: ${ORDER_TYPE[s.orderType] ?? s.orderType}`, `Event: ${[ev.type, ev.name, ev.couple].filter(Boolean).join(" — ") || "—"}`,
     s.orderDate ? `Order date: ${fmtDate(s.orderDate)}` : "", ev.date ? `Event date: ${fmtDate(ev.date)}` : "", `Delivery: ${fmtDate(s.dueDate || ev.delivery)}`].filter(Boolean), W / 2 + 10, y + 18, { maxWidth: W / 2 - 50 });
   y += 92;
 

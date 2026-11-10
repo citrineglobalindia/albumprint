@@ -14,7 +14,7 @@ import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { backendOn } from "../lib/supabase";
 import { CUSTOMERS, ORDERS } from "../lib/data";
-import { SIZES, WORK_GROUPS } from "../lib/pricing";
+import { EVENT_TYPES, SIZES, WORK_GROUPS } from "../lib/pricing";
 import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
@@ -297,11 +297,41 @@ function CustomerStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>)
   );
 }
 
+/** Events of the order: tick all that apply (the admin's list in Masters › Event types), or add any other event by name. */
+function EventPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [other, setOther] = useState("");
+  const picked = value.split(",").map((x) => x.trim()).filter(Boolean);
+  const base = EVENT_TYPES.filter((t) => t.toLowerCase() !== "other");
+  const extra = picked.filter((p) => !base.some((b) => b.toLowerCase() === p.toLowerCase()));
+  const has = (n: string) => picked.some((p) => p.toLowerCase() === n.toLowerCase());
+  const setList = (l: string[]) => onChange(l.join(", "));
+  const toggle = (n: string) => setList(has(n) ? picked.filter((p) => p.toLowerCase() !== n.toLowerCase()) : [...picked, n]);
+  const add = () => { const n = other.trim().replace(/,/g, " "); if (!n) return; if (!has(n)) setList([...picked, n]); setOther(""); };
+  return (
+    <div className="mb-4 md:col-span-2" data-testid="event-picker">
+      <div className="mb-1.5 text-[13px] font-semibold">Events <span className="font-normal text-sub">(tick all that apply)</span></div>
+      <div className="flex flex-wrap gap-2">
+        {[...base, ...extra].map((n) => (
+          <label key={n} className={cx("inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm", has(n) ? "border-brand bg-brand-soft font-semibold text-brand" : "border-line hover:bg-slate-50")}>
+            <input type="checkbox" aria-label={`Event ${n}`} checked={has(n)} onChange={() => toggle(n)} className="accent-[var(--color-brand,#4f46e5)]" />{n}
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex max-w-md gap-2">
+        <input aria-label="Other event" className={cx(inputCls, "h-9 text-sm")} placeholder="Other event, e.g. Kunkuma Shastra" value={other} maxLength={60} onChange={(x) => setOther(x.target.value)} onKeyDown={(x) => { if (x.key === "Enter") { x.preventDefault(); add(); } }} />
+        <button type="button" onClick={add} disabled={!other.trim()} className="h-9 shrink-0 rounded-lg border border-line px-3 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-40">+ Add event</button>
+      </div>
+      {picked.length > 0 && <div className="mt-1.5 text-xs text-sub" data-testid="event-summary">Order events: <b className="text-ink">{picked.join(", ")}</b></div>}
+    </div>
+  );
+}
+
 function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) => void }) {
   const ev = d.event; const e = (k: keyof OrderDraft["event"], v: string) => set({ event: { ...ev, [k]: v } });
   return (
     <section className="grid gap-x-4 rounded-2xl border border-line bg-white p-5 md:grid-cols-2" aria-label="Event details">
-      <Field label="Event name" hint="e.g. Asha & Ravi wedding"><input aria-label="Event name" className={inputCls} value={ev.name} maxLength={150} onChange={(x) => e("name", x.target.value)} /></Field>
+      <EventPicker value={ev.name} onChange={(v) => e("name", v)} />
+      <Field label="Couple name (optional)" hint="e.g. Asha & Ravi"><input aria-label="Couple name" className={inputCls} value={ev.couple ?? ""} maxLength={150} onChange={(x) => e("couple", x.target.value)} /></Field>
       <Field label="Order date" hint="The day the order was taken: today unless you pick an earlier date"><input aria-label="Order date" type="date" max={orderToday()} className={inputCls} value={ev.orderDate || orderToday()} onChange={(x) => e("orderDate", x.target.value)} /></Field>
       <Field label="Photos given (optional)" hint="How many photos the customer gave for this order"><input aria-label="Photos given" type="number" min={0} step={1} className={inputCls} value={ev.photosGiven ?? ""} onChange={(x) => e("photosGiven", x.target.value)} /></Field>
       <Field label="Event date (optional)"><input aria-label="Event date" type="date" className={inputCls} value={ev.date} onChange={(x) => e("date", x.target.value)} /></Field>

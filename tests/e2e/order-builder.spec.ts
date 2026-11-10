@@ -16,7 +16,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event name").fill("Asha & Ravi"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Other event").fill("Asha & Ravi"); await page.getByLabel("Other event").press("Enter"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
 
   // album 1: 30 sheets × 2 copies, 12x36, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
   const a1 = page.getByTestId("album-1");
@@ -323,7 +323,7 @@ test("the event step has no event type; an order finalizes without one", async (
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
   await expect(page.getByLabel("Event type")).toHaveCount(0);
-  await expect(page.getByLabel("Event name")).toBeVisible();
+  await expect(page.getByTestId("event-picker")).toBeVisible();
   await expect(page.getByLabel("Order date")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);       // today by default
   await page.getByLabel("Event date").fill("");                                     // the event date is optional
   await next(page);
@@ -376,7 +376,7 @@ test("a half-entered order is saved as a draft automatically and can be resumed"
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event name").fill("Half entry"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Other event").fill("Half entry"); await page.getByLabel("Other event").press("Enter"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Main album"); await a1.getByLabel("Sheets", { exact: true }).fill("24");
   await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");
@@ -550,4 +550,21 @@ test("share the issued invoice: image download, WhatsApp chat with the customer,
   await fin.getByRole("link", { name: "Open the order" }).click();
   await expect(page.getByRole("button", { name: "Share invoice" })).toBeVisible();
   await expect(page.getByRole("button", { name: "WhatsApp" })).toBeVisible();
+});
+
+test("events: tick several events, add another by name, couple name; saved on the order", async ({ page }) => {
+  await seedRole(page, "admin");
+  await buildOrder(page, { albums: [{ name: "Main", sheets: 10 }], finalize: false });
+  await page.getByRole("button", { name: /Event & dates/ }).click();
+  await page.getByLabel("Event Engagement").check(); await page.getByLabel("Event Wedding").check();
+  await page.getByLabel("Other event").fill("Kunkuma Shastra"); await page.getByRole("button", { name: "+ Add event" }).click();
+  await expect(page.getByLabel("Event Kunkuma Shastra")).toBeChecked();
+  await page.getByLabel("Event Engagement").uncheck();
+  await expect(page.getByTestId("event-summary")).toHaveText("Order events: Wedding, Kunkuma Shastra");
+  await page.getByLabel("Couple name").fill("Asha & Ravi");
+  await page.getByRole("button", { name: /Finalize/ }).first().click(); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  const code = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByText("Wedding, Kunkuma Shastra").first()).toBeVisible();
+  await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
 });

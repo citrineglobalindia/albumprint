@@ -203,12 +203,12 @@ function finalizeLocal(draftId: string, payload: OrderDraft): { result: Finalize
   const specs = p.albums.map((a, i) => toSpec(a, payload.albums[i]!));
   let order: Order;
   if (reopen) {
-    Object.assign(reopen, { priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, customer: cust.studio, mobile: cust.mobile, event: payload.event.name.trim() || payload.event.type || "—", workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets, due, total: p.total, albums: specs, couple: payload.event.name || undefined });
+    Object.assign(reopen, { priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, customer: cust.studio, mobile: cust.mobile, event: payload.event.name.trim() || payload.event.type || "—", workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets, due, total: p.total, albums: specs, couple: payload.event.couple?.trim() || undefined });
     order = reopen;
   } else {
     const n = Math.max(0, ...ORDERS.map((o) => Number(o.id.replace("IDP", "")) || 0)) + 1;
     order = { id: `IDP${String(n).padStart(5, "0")}`, customer: cust.studio, mobile: cust.mobile, event: payload.event.name.trim() || payload.event.type || "—", workflow: designed ? "Design + Printing" : "Printing", size: specs[0]!.size, pages: specs[0]!.sheets,
-      stage: "new_order", priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, pendingAt: today, assignee: "Priya", due, pay: "Unpaid", total: p.total, paid: 0, progress: 0, couple: payload.event.name || undefined, albums: specs } as Order;
+      stage: "new_order", priority: (payload.event.priority || "Normal") as Order["priority"], workGroup: payload.event.workGroup || undefined, pendingAt: today, assignee: "Priya", due, pay: "Unpaid", total: p.total, paid: 0, progress: 0, couple: payload.event.couple?.trim() || undefined, albums: specs } as Order;
     ORDERS.unshift(order);
   }
   if (prev?.invoiceNo) { const old = INVOICES.find((i) => i.no === prev.invoiceNo); if (old) old.status = "Void"; }
