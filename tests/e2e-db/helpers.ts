@@ -31,3 +31,6 @@ export function totp(secret: string, at = Date.now()): string {
   const o = h[h.length - 1]! & 15;
   return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
+
+/** Design + Printing orders default to "Create order now, invoice later"; tests that issue the invoice at once switch it off. */
+export async function invoiceNow(page: Page) { const c = page.getByLabel("Create order now, invoice later"); if (await c.count()) await c.uncheck(); }

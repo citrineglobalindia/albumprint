@@ -48,8 +48,12 @@ export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegE
   if (o.discountPct) { await page.getByLabel("Discount type").selectOption("percent"); await page.getByLabel("Discount value").fill(o.discountPct); }
   await page.getByRole("button", { name: "Next" }).click();                 // → Finalize
   if (o.finalize === false) return undefined;
+  await invoiceNow(page);
   await page.getByRole("button", { name: /^Finalize/ }).click();
   await expect(page.getByTestId("finalized")).toBeVisible();
   const href = await page.getByRole("link", { name: "Open the order" }).getAttribute("href");
   return href?.split("/").pop();
 }
+
+/** Design + Printing orders default to "Create order now, invoice later"; tests that issue the invoice at once switch it off. */
+export async function invoiceNow(page: Page) { const c = page.getByLabel("Create order now, invoice later"); if (await c.count()) await c.uncheck(); }

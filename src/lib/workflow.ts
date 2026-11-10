@@ -9,6 +9,7 @@ import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
 import { dbAdvance, dbSetHold, dbSetSla } from "./db/workflowDb";
 import { autoAssignLocal } from "./autoAssign";
+import { invoicePending } from "./pendingInvoice";
 
 // Client-side mirror of the database's advance_order() (supabase/migrations/0002_rules.sql).
 // When the backend is connected, moveStage() becomes a thin call to that function; callers don't change.
@@ -64,6 +65,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
     if (role !== "system" && !t.roles.some((r) => actsAs(role, r))) return fail(`Your role (${role}) may not move ${stageLabel(o.stage)} → ${stageLabel(to)}`);
     if (t.reason && !reason) return fail("A reason is required for this move");
   }
+  if (to === "printing" && flowOf(o) === "Design + Printing" && invoicePending(o.id) && !(opts.override && admin && reason)) return fail("Prepare the invoice before printing: open the order and use Prepare invoice");
   if (!opts.override) {                                                                                   // gates
     if (o.stage === "final_approval" && to === "printing" && flowOf(o) === "Design + Printing" && !proofApproved(o.id)) return fail("Final client approval is required before release to printing");   // ALB-FR-0495
     if (o.stage === "files_received" && to === "printing" && flowOf(o) === "Printing" && uploadsRequired() && !hasPrintReadyFile(o.id)) return fail("Upload a print-ready file (category Final Print) before printing");               // ALB-FR-0077

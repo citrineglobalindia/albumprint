@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedRole, buildOrder } from "./helpers";
+import { seedRole, buildOrder, invoiceNow } from "./helpers";
 
 // Printing labs: the admin keeps the lab list; each album gets a lab and a purchase amount (profit = selling − purchase);
 // staff send the album to the lab and mark it received back, from the order page or the Labs page.
@@ -16,7 +16,7 @@ test("labs: add a lab, choose it for an album with a purchase amount, see profit
   await page.getByTestId("album-1").getByLabel("Album lab").selectOption({ label: "Sharp Print Lab" });
   await page.getByTestId("album-1").getByLabel("Album purchase amount").fill("500");
   await page.getByRole("button", { name: /Finalize/ }).first().click();
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByTestId("finalized")).toBeVisible();
   const id = code || (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
 

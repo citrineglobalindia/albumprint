@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { loginAs, sql, type Role } from "./helpers";
+import { loginAs, sql, type Role, invoiceNow } from "./helpers";
 
 // The whole production process for one Design + Printing order, every step done by the role that owns it, each logged in separately:
 //   reception creates the order → files received → colour grading (auto-assigned; the grader starts, uploads, submits)
@@ -70,7 +70,7 @@ test("the full process: every department does its step, hand-offs are automatic 
   await t.getByLabel("New line product").fill(`journey ${TAG} glossy`); await t.getByLabel("New line product").press("Enter");
   await expect(reception.getByTestId("album-total-1")).toHaveText("₹5,250");                                 // 30 × 75 + 3,000 design
   await next(reception); await next(reception);
-  await reception.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(reception); await reception.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(reception.getByTestId("finalized")).toBeVisible();
   code = (await reception.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
   expect(stage()).toBe("new_order");

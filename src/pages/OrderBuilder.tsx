@@ -19,7 +19,7 @@ import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
-import { DRAFTS, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
+import { DRAFTS, invoiceLaterOn, isInvoicePending, sheetsDesigned, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 
 const STEPS = ["Order type", "Customer", "Event & dates", "Albums & items", "Invoice", "Finalize"];
@@ -67,6 +67,8 @@ export default function OrderBuilder() {
   const reopenOf = d.reopenOrder ? ORDERS.find((o) => o.id === d.reopenOrder || o.uid === d.reopenOrder) : undefined;
   const paid = reopenOf?.paid ?? 0;
   const designed = d.orderType === "design_printing";
+  const later = invoiceLaterOn(d);                                                        // create the order now, invoice after the design
+  const preparing = !!reopenOf && isInvoicePending(reopenOf.id);                          // issuing the invoice of an invoice-later order
   const set = (patch: Partial<OrderDraft>) => { setD((x) => ({ ...x, ...patch })); setServer(null); };
   const album = d.albums[Math.min(cur, d.albums.length - 1)]!;
   const setAlbum = (patch: Partial<DraftAlbum>) => set({ albums: d.albums.map((a, i) => (i === cur ? { ...a, ...patch } : a)) });
@@ -119,7 +121,7 @@ export default function OrderBuilder() {
       const r = await finalizeDraft(draftId, d);
       if ("error" in r) { setErrs([r.error]); return; }
       setDraftId(r.draftId); setDone(r.result); setStep(5); setVisited(5);
-      show(`Order ${r.result.code} finalized · invoice ${r.result.invoiceNumber}`);
+      show(r.result.invoicePending ? `Order ${r.result.code} created · prepare the invoice after the design` : `Order ${r.result.code} finalized · invoice ${r.result.invoiceNumber}`);
       const pg = d.event.photosGiven?.trim(); void applyPhotosGiven(r.result.code, pg ? Math.max(0, Math.floor(Number(pg))) : undefined);
       void applyAlbumLabs(r.result.code, d.albums.map((a) => ({ labId: a.labId, purchase: a.purchase }))).then((e) => { if (e) setErrs([`Order saved, but the lab details were not: ${e}`]); });
     } finally { busyRef.current = false; setBusy(false); }
@@ -154,7 +156,7 @@ export default function OrderBuilder() {
   return (
     <div className="min-w-0">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="text-2xl font-extrabold tracking-tight">{reopenOf ? `Edit order ${reopenOf.id}` : "New order"}</h1>
+        <div><h1 className="text-2xl font-extrabold tracking-tight">{preparing ? `Invoice for order ${reopenOf!.id}` : reopenOf ? `Edit order ${reopenOf.id}` : "New order"}</h1>
           <p className="text-sm text-sub">Order type → customer → event → albums & items → invoice → finalize. Nothing is lost when you move between steps.</p>
           <span className={cx("mt-1 block text-[11px] font-semibold", saveState.s === "error" ? "text-rose-600" : "text-sub")} data-testid="autosave" aria-live="polite">
             {saveState.s === "saving" ? "Saving draft…" : saveState.s === "saved" ? `Draft saved automatically · ${saveState.at!.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : saveState.s === "error" ? `Not saved: ${saveState.msg}` : started(d) ? "" : "Auto-saves as a draft once you start"}
@@ -169,7 +171,8 @@ export default function OrderBuilder() {
           <span className="min-w-0 flex-1">You have {openDrafts().length} unfinished order{openDrafts().length === 1 ? "" : "s"}. Latest: <b>{last.title}</b> <span className="text-xs">({new Date(last.updatedAt).toLocaleString("en-IN")})</span></span>
           <button onClick={() => { nav(`/orders/new?draft=${last.id}`); window.location.reload(); }} className="h-9 rounded-lg bg-sky-700 px-4 text-xs font-bold text-white hover:bg-sky-800">Resume</button>
         </div>); })()}
-      {reopenOf && !done && <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Authorized edit of a finalized order. Its previous invoice was voided and is kept on record; finalizing issues a new invoice revision. Payments already received ({money(paid)}) stay with the order.</div>}
+      {preparing && !done && <div className="mb-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" data-testid="preparing-invoice"><FileText className="mt-0.5 size-4 shrink-0" /><span>Preparing the invoice for order <b>{reopenOf!.id}</b>. Check the sheets and items, then finalize to issue the numbered invoice.{sheetsDesigned(reopenOf!.id) ? <> The designer reported <b>{sheetsDesigned(reopenOf!.id)} sheets designed</b>.</> : null}{paid > 0 ? <> Advance received ({money(paid)}) is deducted from the balance.</> : null}</span></div>}
+      {reopenOf && !preparing && !done && <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Authorized edit of a finalized order. Its previous invoice was voided and is kept on record; finalizing issues a new invoice revision. Payments already received ({money(paid)}) stay with the order.</div>}
 
       <ol className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-line bg-white p-2 scroll-thin" aria-label="Progress">
         {STEPS.map((s, i) => (
@@ -193,6 +196,7 @@ export default function OrderBuilder() {
             {step === 2 && <EventStep d={d} set={set} />}
             {step === 3 && (
               <div className="space-y-5">
+                {later && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-semibold text-sky-900">Invoice later: enter the album names now; sheets and items can be left empty until the design is done.</p>}
                 <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Albums">
                   {d.albums.map((a, i) => (
                     <button key={a.id} role="tab" aria-selected={i === cur} onClick={() => setCur(i)} className={cx("rounded-xl border px-3 py-2 text-left text-sm font-bold", i === cur ? "border-brand bg-brand text-white" : "border-line bg-white hover:bg-brand-soft")}>
@@ -214,6 +218,7 @@ export default function OrderBuilder() {
             )}
             {step === 4 && (
               <div className="space-y-4">
+                {later && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" data-testid="invoice-later-note"><b>Invoice later is on</b> (see Finalize): the order is created without an invoice. You prepare the invoice from the order once the design is done; this is only a preview.</p>}
                 <DiscountTax d={d} set={set} p={p} />
                 {backendOn && server && <p className={cx("flex items-center gap-2 text-xs font-semibold", server.error ? "text-rose-600" : server.checking ? "text-sub" : server.total === p.total ? "text-emerald-700" : "text-amber-700")} data-testid="server-check">
                   <ShieldCheck className="size-4" />{server.checking ? "Checking the prices with the server…" : server.error ? `Server check failed: ${server.error}` : server.total === p.total ? `Verified by the server: ${money(server.total!)}` : `The server calculates ${money(server.total ?? 0)} — the catalog changed; the server's figure will be used`}</p>}
@@ -223,19 +228,26 @@ export default function OrderBuilder() {
             )}
             {step === 5 && (done ? <Done r={done} onPdf={pdf} paid={paid} snapshot={issuedSnapshot} onNew={() => { nav("/orders/new"); window.location.reload(); }} /> : (
               <section className="rounded-2xl border border-line bg-white p-5" aria-label="Finalize">
-                <h2 className="text-lg font-extrabold">Finalize order</h2>
-                <p className="mb-4 text-sm text-sub">The server checks every price again, creates the order and its albums, and issues the invoice with its final number. Prices, item names and tax are saved with the order, so later catalog changes never alter it.</p>
+                <h2 className="text-lg font-extrabold">{preparing ? "Issue the invoice" : "Finalize order"}</h2>
+                {designed && !d.reopenOrder && (
+                  <label className={cx("mb-4 flex cursor-pointer items-start gap-3 rounded-xl border p-4", later ? "border-sky-300 bg-sky-50" : "border-line")} data-testid="invoice-later">
+                    <input type="checkbox" className="mt-1 size-4" checked={later} onChange={(e) => set({ invoiceLater: e.target.checked })} />
+                    <span><b className="text-sm">Create order now, invoice later</b>
+                      <span className="block text-xs text-sub">The design comes first. The order is created with the customer, events, dates and albums; sheets and items can be left for later. No invoice is issued yet, but an advance can be received. Prepare the invoice from the order once the design is done; the order cannot go to Printing before that.</span></span>
+                  </label>
+                )}
+                <p className="mb-4 text-sm text-sub">{later ? "The order and its albums are created now. Prices are worked out when you prepare the invoice." : "The server checks every price again, creates the order and its albums, and issues the invoice with its final number. Prices, item names and tax are saved with the order, so later catalog changes never alter it."}</p>
                 {problems.length ? (
                   <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-testid="blocking"><b>Not ready yet:</b>
                     <ul className="ml-4 mt-1 list-disc">{problems.map((x) => <li key={x.message}><button className="text-left underline" onClick={() => void go(x.step)}>{x.message}</button></li>)}</ul></div>
-                ) : <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 className="size-4" />Everything is priced and complete.</p>}
+                ) : <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 className="size-4" />{later ? "Ready to create the order." : "Everything is priced and complete."}</p>}
                 <dl className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
                   <div><dt className="text-xs text-sub">Customer</dt><dd className="font-bold">{customerLabel(d) || "—"}</dd></div>
                   <div><dt className="text-xs text-sub">Order type</dt><dd className="font-bold">{designed ? "Design + Printing" : d.orderType ? "Album Printing Only" : "—"}</dd></div>
                   <div><dt className="text-xs text-sub">Albums</dt><dd className="font-bold">{d.albums.length}</dd></div>
-                  <div><dt className="text-xs text-sub">Final amount</dt><dd className="text-lg font-extrabold text-brand">{money(p.total)}</dd></div>
+                  <div><dt className="text-xs text-sub">Final amount</dt><dd className="text-lg font-extrabold text-brand">{later ? "After the design" : money(p.total)}</dd></div>
                 </dl>
-                <button disabled={busy || problems.length > 0} onClick={() => void finalize()} className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-6 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 className="size-4" />{busy ? "Finalizing…" : reopenOf ? "Finalize changes & issue new invoice" : "Finalize order & issue invoice"}</button>
+                <button disabled={busy || problems.length > 0} onClick={() => void finalize()} className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-6 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 className="size-4" />{busy ? "Finalizing…" : later ? "Create order (invoice later)" : preparing ? "Finalize & issue invoice" : reopenOf ? "Finalize changes & issue new invoice" : "Finalize order & issue invoice"}</button>
               </section>
             ))}
 
@@ -481,6 +493,16 @@ function Summary({ p, paid, onPick }: { p: PricedOrder; paid: number; onPick: (i
 }
 
 function Done({ r, onPdf, onNew, snapshot, paid = 0 }: { r: FinalizeResult; onPdf: (k: "open" | "download") => void; onNew: () => void; snapshot: () => Promise<InvoiceSnapshot>; paid?: number }) {
+  if (r.invoicePending) return (
+    <section className="rounded-2xl border border-sky-200 bg-sky-50 p-6" aria-label="Order created" data-testid="created-invoice-later">
+      <div className="flex items-center gap-3"><CheckCircle2 className="size-8 text-sky-600" /><div><h2 className="text-lg font-extrabold">Order {r.code} is created</h2>
+        <p className="text-sm text-sky-900">Invoice pending: prepare it from the order once the design is done. An advance can be received now.</p></div></div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link to={`/orders/${r.code}`} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark">Open the order</Link>
+        <button onClick={onNew} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold hover:bg-brand-soft"><Plus className="size-4" />Create another order</button>
+      </div>
+    </section>
+  );
   return (
     <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6" aria-label="Order finalized" data-testid="finalized">
       <div className="flex items-center gap-3"><CheckCircle2 className="size-8 text-emerald-600" /><div><h2 className="text-lg font-extrabold">Order {r.code} is finalized</h2>

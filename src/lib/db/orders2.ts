@@ -101,6 +101,14 @@ registerOrders2Backend({
     const { data, error } = await sb().rpc("finalize_order_v2", { p_draft: id });
     return error || !data ? { error: error?.message ?? "Could not finalize the order" } : (data as FinalizeResult);
   },
+  async finalizeLater(id) {
+    const { data, error } = await sb().rpc("create_order_invoice_later", { p_draft: id });
+    return error || !data ? { error: error?.message ?? "Could not create the order" } : (data as FinalizeResult);
+  },
+  async prepareInvoice(orderUid) {
+    const { data, error } = await sb().rpc("prepare_order_invoice", { p_order: orderUid });
+    return error || !data ? { error: error?.message ?? "Could not prepare the invoice" } : { draftId: data as string };
+  },
   async reopen(orderUid, reason) {
     const { data, error } = await sb().rpc("reopen_order_pricing", { p_order: orderUid, p_reason: reason });
     return error || !data ? { error: error?.message ?? "Could not reopen the order" } : { draftId: data as string };

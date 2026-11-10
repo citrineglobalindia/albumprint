@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { isInvoicePending } from "../lib/orders2";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
+import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle, Trash2, FileText } from "lucide-react";
 import {
   PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, CountTabs,
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
@@ -72,6 +73,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const [evt, setEvt] = useState<string[]>([]);
   const [stages, setStages] = useState<string[]>(() => csv(init.get("stage")).map((k) => STAGES.find((s) => s.key === k)?.label).filter(Boolean) as string[]);
   const [late, setLate] = useState(() => init.get("overdue") === "1");
+  const [ipend, setIpend] = useState(() => init.get("invoice") === "pending");     // Design + Printing orders whose invoice is still to be prepared
   const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
   const [hidden, setHidden] = useState<string[]>([]);
   const [sort, setSort] = useState<SortState>(null);
@@ -96,7 +98,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   }, []);
 
   const show_ = (c: string) => !hidden.includes(c);
-  const reset = () => { setQ(""); setWf([]); setSize([]); setPrio([]); setPay([]); setAsg([]); setEvt([]); setStages([]); setLate(false); setRange(presetRange("All Time")); setPage(1); };
+  const reset = () => { setQ(""); setWf([]); setSize([]); setPrio([]); setPay([]); setAsg([]); setEvt([]); setStages([]); setLate(false); setIpend(false); setRange(presetRange("All Time")); setPage(1); };
 
   const base = scope.filter((o) => {
     const s = q.trim().toLowerCase();
@@ -109,6 +111,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
     if (evt.length && !evt.includes(o.event)) return false;
     if (stages.length && !stages.includes(stageLabel(o.stage))) return false;
     if (late && !isLate(o)) return false;
+    if (ipend && !isInvoicePending(o.id)) return false;
     if (!inRange(o.pendingAt, range)) return false;
     return true;
   });
@@ -172,6 +175,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
     ...([["Stage", stages, setStages], ["Workflow", wf, setWf], ["Size", size, setSize], ["Priority", prio, setPrio], ["Payment", pay, setPay], ["Assignee", asg, setAsg], ["Event", evt, setEvt]] as [string, string[], (v: string[]) => void][])
       .filter(([, v]) => v.length).map(([l, v, set]) => ({ label: `${l}: ${v.join(", ")}`, onRemove: () => { set([]); setPage(1); } })),
     ...(late ? [{ label: "Overdue only", onRemove: () => setLate(false) }] : []),
+    ...(ipend ? [{ label: "Invoice pending", onRemove: () => setIpend(false) }] : []),
     ...(q.trim() ? [{ label: `Search: “${q.trim()}”`, onRemove: () => setQ("") }] : []),
   ];
   const view: ViewState = { q, wf, size, prio, pay, asg, evt, stages, late, range: packRange(range), hidden, sort };
@@ -214,6 +218,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
           <MultiSelect className="w-32" label="Assignee" options={assignees()} value={asg} onChange={f(setAsg)} />
           <MultiSelect className="w-28" label="Event" options={EVENTS} value={evt} onChange={f(setEvt)} />
           <button aria-pressed={late} onClick={() => { setLate(!late); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", late ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}><AlarmClock className="size-4" />Overdue</button>
+          <button aria-pressed={ipend} data-testid="filter-invoice-pending" onClick={() => { setIpend(!ipend); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", ipend ? "border-amber-400 bg-amber-50 text-amber-800" : "border-line bg-white")}><FileText className="size-4" />Invoice pending</button>
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
           <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
           <ExportBtn aria="Export orders" onClick={() => downloadCsv("orders.csv", [["Order", "Customer", "Mobile", "Event", "Type", "Stage", "Priority", "Order date", "Due", "Total", "Paid", "Balance", "Assigned"], ...filtered.map((o) => [o.id, o.customer, o.mobile, o.event, o.workflow, stageLabel(o.stage), o.priority, o.pendingAt, o.due, o.total, o.paid, o.total - o.paid, o.assignee])])} />
@@ -272,7 +277,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
                     </Td>
                   )}
                   {show_("due") && <Td className={cx("font-medium", isLate(o) && "text-rose-600")}>{fmtDate(o.due)}</Td>}
-                  {show_("pay") && <Td><PayPill s={o.pay} /></Td>}
+                  {show_("pay") && <Td>{isInvoicePending(o.id) ? <span data-testid="invoice-pending-badge"><Pill tone="amber" dot>Invoice pending</Pill></span> : <PayPill s={o.pay} />}</Td>}
                   <Td className="text-right">
                     <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}><RowViewButton to={`/orders/${o.id}`} />
                       <ActionMenu items={[

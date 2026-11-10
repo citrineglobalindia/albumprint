@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { loginAs, sql } from "./helpers";
+import { loginAs, sql, invoiceNow } from "./helpers";
 
 // The order builder against the real database: server-side pricing, drafts, idempotent finalize, invoice snapshot, payments, history, reopen.
 // Test catalog (created here, labelled with the run's tag): printing ₹5/sheet (12x36 = ₹10) · design ₹4/sheet · cover ₹300 · lamination ₹2/sheet · packing ₹100 per order.
@@ -53,7 +53,7 @@ test("reception builds a two-album order; the server prices, numbers and stores 
   await expect(page.getByTestId("final-amount")).toHaveText("₹1,656");            // 1,840 − 10%
   await expect(page.getByTestId("server-check")).toContainText("Verified by the server");
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).dblclick();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).dblclick();
   await expect(page.getByTestId("finalized")).toBeVisible({ timeout: 30_000 });
   const inv1 = (await page.getByTestId("done-invoice").textContent())!;
   const code = (await page.getByRole("link", { name: "Open the order" }).getAttribute("href"))!.split("/").pop()!;
@@ -133,7 +133,7 @@ test("missing price blocks finalizing, and the catalog admin writes the hierarch
   await expect(page.getByLabel(`Price of No price ${TAG}`)).toHaveAttribute("placeholder", "Not set");
   await next(page); await next(page);
   await expect(page.getByTestId("blocking")).toContainText("price not configured");
-  await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeDisabled();
+  await invoiceNow(page); await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeDisabled();
   // a price typed on the line and a line discount: the server agrees on the total
   await page.getByRole("button", { name: /Albums & items/ }).click();
   await page.getByLabel(`Price of No price ${TAG}`).fill("20");

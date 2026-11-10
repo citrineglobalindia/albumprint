@@ -25,6 +25,7 @@ export interface OrderDraft {
   discount: { type: "none" | "fixed" | "percent"; value: number | string };
   applyTax: boolean;
   reopenOrder?: string;
+  invoiceLater?: boolean;                   // Design + Printing: create the order now, prepare the invoice once the design is done (default on)
   showBusinessName?: boolean;               // this invoice shows the company name (only admins / allowed roles can change the default)
 }
 export interface PricedLine {

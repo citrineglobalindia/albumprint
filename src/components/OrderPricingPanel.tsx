@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Download, Lock, Pencil, Printer, RotateCcw } from "lucide-react";
+import { AlertTriangle, Download, FileText, Lock, Pencil, Printer, RotateCcw } from "lucide-react";
 import { Panel, Pill } from "./ui";
 import { InvoiceView } from "./InvoiceView";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import type { Order } from "../lib/data";
-import { DRAFTS, cancelReopen, pricingOf, reopenOrder } from "../lib/orders2";
+import { DRAFTS, cancelReopen, prepareInvoice, pricingOf, reopenOrder, sheetsDesigned } from "../lib/orders2";
+import { inr as money } from "../lib/format";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 import { ShareInvoice } from "./ShareInvoice";
 
@@ -20,6 +21,32 @@ export default function OrderPricingPanel({ o, show }: { o: Order; show: (m: str
   if (!pr) return null;
   const isAdmin = role === "admin";
   const editing = DRAFTS.find((d) => !d.result && (d.payload.reopenOrder === o.id || d.payload.reopenOrder === o.uid));
+  if (pr.status === "invoice_pending") {
+    const may = role === "admin" || role === "reception";
+    const designed = sheetsDesigned(o.id);
+    const prepare = async () => {
+      setBusy(true); setMsg("");
+      const r = await prepareInvoice(o);
+      setBusy(false);
+      if ("error" in r) { setMsg(r.error); return; }
+      nav(`/orders/new?draft=${r.draftId}`);
+    };
+    return (
+      <Panel title="Pricing & invoice" subtitle="Invoice pending · prepared once the design is done" className="mb-5"
+        action={<Pill tone="amber" icon={FileText}>Invoice pending</Pill>}>
+        <div data-testid="invoice-pending" className="space-y-3 text-sm">
+          <p>This Design + Printing order was created before its invoice. Prepare the invoice when the design is done: the sheets designed decide the bill. The order cannot go to Printing until the invoice is issued.</p>
+          <dl className="grid gap-2 sm:grid-cols-3">
+            <div><dt className="text-xs text-sub">Sheets designed</dt><dd className="font-bold">{designed ?? "Not reported yet"}</dd></div>
+            <div><dt className="text-xs text-sub">Albums</dt><dd className="font-bold">{pr.payload.albums.map((a, i) => a.name.trim() || `Album ${i + 1}`).join(", ")}</dd></div>
+            <div><dt className="text-xs text-sub">Advance received</dt><dd className="font-bold">{money(o.paid)}</dd></div>
+          </dl>
+          {msg && <p role="alert" className="text-xs font-semibold text-rose-600">{msg}</p>}
+          {may && <button disabled={busy} onClick={() => void prepare()} data-testid="prepare-invoice" className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"><FileText className="size-4" />{editing ? "Continue preparing the invoice" : "Prepare invoice"}</button>}
+        </div>
+      </Panel>
+    );
+  }
   const pdf = async (open: boolean) => { const b = await invoicePdf(pr.snapshot, { paid: o.paid }); if (open) openBlob(b); else downloadBlob(b, `${pr.invoiceNo ?? o.id}.pdf`); };
   const reopen = async () => {
     setBusy(true); setMsg("");

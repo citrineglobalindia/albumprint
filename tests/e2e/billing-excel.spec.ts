@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedRole, buildOrder } from "./helpers";
+import { seedRole, buildOrder, invoiceNow } from "./helpers";
 
 test("billing suggests the most used items; one tap adds the item", async ({ page }) => {
   await seedRole(page, "admin");
@@ -10,7 +10,7 @@ test("billing suggests the most used items; one tap adds the item", async ({ pag
   await t.getByRole("button", { name: "Add item" }).click();
   await t.getByLabel("New line product").fill("uv spot"); await t.getByLabel("New line product").press("Enter");
   await expect(t).toContainText(/UV spot/i);
-  await page.getByRole("button", { name: /Finalize/ }).first().click(); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await page.getByRole("button", { name: /Finalize/ }).first().click(); await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByTestId("finalized")).toBeVisible();
 
   await page.goto("/orders/new");

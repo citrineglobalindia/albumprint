@@ -5,6 +5,7 @@ import { currentActor, logAudit } from "./audit";
 import { notify } from "./store";
 import { TODAY } from "./format";
 import { GST_RATE } from "./pricing";
+import { invoicePending } from "./pendingInvoice";
 import { can, discountLimit, no, ok, denied, fmtDT, type Out } from "./production";
 import type { RoleKey } from "./auth";
 import { backendOn, writeThrough } from "./db/core";
@@ -124,7 +125,7 @@ export function recordPayment(orderId: string, d: { amount: number; mode: Mode; 
   if (!(d.amount > 0) || !Number.isFinite(d.amount)) return no("Enter an amount greater than zero");
   if (!Number.isInteger(d.amount)) return no("Enter a whole-rupee amount");
   const bal = o.total - o.paid;
-  if (d.amount > bal && !can(role, "finance")) return no(`Amount exceeds the balance of ₹${Math.max(0, bal).toLocaleString("en-IN")} — reception can only receive up to the balance`);
+  if (d.amount > bal && !can(role, "finance") && !invoicePending(o.id)) return no(`Amount exceeds the balance of ₹${Math.max(0, bal).toLocaleString("en-IN")} — reception can only receive up to the balance`);
   if (d.mode !== "Cash" && !d.ref.trim()) return no("A reference (UTR / cheque no.) is required for non-cash payments");
   const before = o.pay;
   if (backendOn) {   // receipt number and order totals come from the database

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { seedRole, buildOrder } from "./helpers";
+import { seedRole, buildOrder, invoiceNow } from "./helpers";
 
 // Order builder verification (demo mode, with the labelled SAMPLE catalog and its demonstration prices):
 //   printing 12x36 = ₹120/sheet, 12x36 + Metallic = ₹150, 12x30 = ₹110, Silk = ₹95, otherwise ₹90 · design ₹40/sheet
@@ -76,7 +76,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await next(page);
 
   // finalize (double click → still one order, one invoice)
-  await page.getByRole("button", { name: /^Finalize order/ }).dblclick();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).dblclick();
   await expect(page.getByTestId("finalized")).toBeVisible();
   const inv1 = (await page.getByTestId("done-invoice").textContent())!;
   expect(inv1).toMatch(/^INV-\d{4}-\d{4}$/);
@@ -133,13 +133,13 @@ test("Album Printing Only: no design charge; new customer; discount above the th
   await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
   await page.getByLabel("Discount type").selectOption("percent"); await page.getByLabel("Discount value").fill("20");
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByRole("alert")).toContainText("needs an admin");
   await page.getByRole("button", { name: /^(5\s*)?Invoice$/ }).click();
   await page.getByLabel("Discount value").fill("5");
   await expect(page.getByTestId("final-amount")).toHaveText("₹3,420");
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByTestId("finalized")).toContainText("₹3,420");
 });
 
@@ -158,6 +158,7 @@ test("a missing price shows “Price not configured” and blocks finalizing", a
   await expect(page.getByLabel("Price of Gold edges (unpriced)")).toHaveAttribute("placeholder", "Not set");
   await expect(page.getByTestId("summary")).toContainText("Price not configured");
   await page.getByRole("button", { name: /^6\s*Finalize/ }).click();
+  await invoiceNow(page);
   await expect(page.getByTestId("blocking")).toContainText("price not configured for “Gold edges (unpriced)”");
   await expect(page.getByRole("button", { name: /^Finalize order/ })).toBeDisabled();
   // typing a price on the line prices it for this order
@@ -236,7 +237,7 @@ test("album items table: search to add, edit description / qty / price / discoun
   await expect(page.getByTestId("invoice-preview").or(page.locator("body"))).toContainText("less 80% discount");
   await expect(page.locator("body")).toContainText("Sample — Extras Premium Keepsakes - Mini book (sample)");                  // the invoice name: categories, then the item
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByRole("alert")).toContainText("needs an admin");
 });
 
@@ -364,7 +365,7 @@ test("Design + Printing: design charge typed on the order (per sheet or fixed, o
   await next(page);
   await expect(page.getByTestId("sum-total")).toHaveText("₹10,400");
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByTestId("finalized")).toContainText("₹10,400");
 });
 
@@ -477,7 +478,7 @@ test("company name on the invoice: admin default + per-order choice for allowed 
   await expect(page.getByTestId("invoice-business-name")).toHaveCount(0);
   await expect(page.getByTestId("business-name-choice")).toContainText("Hidden");
   await next(page);
-  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   await expect(page.getByTestId("finalized")).toBeVisible();
   await expect(page.getByTestId("invoice-business-name")).toHaveCount(0);                      // the issued invoice has no company name
   // admin: default hidden, reception may not change it
@@ -562,9 +563,40 @@ test("events: tick several events, add another by name, couple name; saved on th
   await page.getByLabel("Event Engagement").uncheck();
   await expect(page.getByTestId("event-summary")).toHaveText("Order events: Wedding, Kunkuma Shastra");
   await page.getByLabel("Couple name").fill("Asha & Ravi");
-  await page.getByRole("button", { name: /Finalize/ }).first().click(); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await page.getByRole("button", { name: /Finalize/ }).first().click(); await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
   const code = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
   await page.goto(`/orders/${code}`);
   await expect(page.getByText("Wedding, Kunkuma Shastra").first()).toBeVisible();
   await expect(page.getByText("Asha & Ravi").first()).toBeVisible();
+});
+
+test("Design + Printing: create the order now, prepare the invoice after the design", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { albums: [{ name: "Wedding album", sheets: 30 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByTestId("album-1").getByLabel("Sheets").fill("");                 // the sheet count is not known before the design
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await expect(page.getByLabel("Create order now, invoice later")).toBeChecked();      // on by default for Design + Printing
+  await page.getByRole("button", { name: "Create order (invoice later)" }).click();
+  await expect(page.getByTestId("created-invoice-later")).toBeVisible();
+  const code = (await page.getByTestId("created-invoice-later").locator("h2").innerText()).match(/IDP\d+/)![0];
+
+  await page.goto("/orders");
+  await page.getByTestId("filter-invoice-pending").click();
+  await expect(page.locator(`[data-row="${code}"]`).getByTestId("invoice-pending-badge")).toBeVisible();
+
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByTestId("invoice-pending")).toBeVisible();
+  await page.getByTestId("prepare-invoice").click();
+  await expect(page.getByTestId("preparing-invoice")).toBeVisible();
+  await page.getByTestId("album-1").getByLabel("Sheets").fill("30");
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await expect(page.getByLabel("Create order now, invoice later")).toHaveCount(0);
+  await page.getByRole("button", { name: "Finalize & issue invoice" }).click();
+  await expect(page.getByTestId("finalized")).toContainText(code);
+  await expect(page.getByTestId("done-invoice")).toHaveText(/^INV-/);
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByTestId("order-pricing")).toBeVisible();
+  await expect(page.getByTestId("invoice-pending")).toHaveCount(0);
 });
