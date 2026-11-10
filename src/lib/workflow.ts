@@ -3,6 +3,7 @@ import { ORDERS, STAGES, stageLabel, type Order, type StageKey } from "./data";
 import { currentActor, logAudit } from "./audit";
 import { hasPrintReadyFile, uploadsRequired } from "./files";
 import { dutyBlock } from "./duty";
+import { actsAs } from "./access";
 import { proofApproved } from "./proofs";
 import { notify, progressFor } from "./store";
 import type { RoleKey } from "./auth";
@@ -40,7 +41,7 @@ const qcPassed = (o: Order) => o.qc === "passed" || idx(o.stage) > idx("qc");
 /** Valid next stages for the current user (used to build menus / disable drops). */
 export function nextStages(o: Order, role: RoleKey | "system" = currentActor().role): { to: StageKey; needsReason: boolean }[] {
   if (o.closed || o.hold === "Cancelled") return [];
-  return TRANSITIONS.filter((t) => (t.flow === "both" || t.flow === flowOf(o)) && t.from === o.stage && (role === "system" || t.roles.includes(role as RoleKey)))
+  return TRANSITIONS.filter((t) => (t.flow === "both" || t.flow === flowOf(o)) && t.from === o.stage && (role === "system" || t.roles.some((r) => actsAs(role as RoleKey, r))))
     .map((t) => ({ to: t.to, needsReason: !!t.reason }));
 }
 
@@ -60,7 +61,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
     if (!(opts.override && admin && reason)) return fail(`${stageLabel(o.stage)} → ${stageLabel(to)} is not allowed for ${flowOf(o)} orders${admin ? " (admin override needs a reason)" : ""}`);
     overridden = true;                                                                                    // ALB-FR-0494
   } else {
-    if (role !== "system" && !t.roles.includes(role)) return fail(`Your role (${role}) may not move ${stageLabel(o.stage)} → ${stageLabel(to)}`);
+    if (role !== "system" && !t.roles.some((r) => actsAs(role, r))) return fail(`Your role (${role}) may not move ${stageLabel(o.stage)} → ${stageLabel(to)}`);
     if (t.reason && !reason) return fail("A reason is required for this move");
   }
   if (!opts.override) {                                                                                   // gates

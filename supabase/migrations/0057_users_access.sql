@@ -48,13 +48,13 @@ begin
       invited_by = excluded.invited_by, used_at = null, revoked_at = null, created_at = now();
   execute 'insert into auth.users(id, email, encrypted_password) values ($1, $2, crypt($3, gen_salt(''bf'')))' using uid, em, p_password;
   -- what Supabase Auth needs to accept the login (only the columns this database has)
-  foreach c in array array['instance_id', 'aud', 'role', 'email_confirmed_at', 'raw_app_meta_data', 'raw_user_meta_data', 'updated_at',
+  foreach c in array array['instance_id', 'aud', 'role', 'email_confirmed_at', 'raw_app_meta_data', 'raw_user_meta_data', 'created_at', 'updated_at',
                            'confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change', 'email_change_token_current', 'phone_change', 'phone_change_token', 'reauthentication_token'] loop
     if exists (select 1 from information_schema.columns where table_schema = 'auth' and table_name = 'users' and column_name = c) then
       execute format('update auth.users set %I = %s where id = $1', c, case c
         when 'instance_id' then '''00000000-0000-0000-0000-000000000000''::uuid'
         when 'aud' then '''authenticated''' when 'role' then '''authenticated'''
-        when 'email_confirmed_at' then 'now()' when 'updated_at' then 'now()'
+        when 'email_confirmed_at' then 'now()' when 'updated_at' then 'now()' when 'created_at' then 'now()'
         when 'raw_app_meta_data' then '''{"provider":"email","providers":["email"]}''::jsonb'
         when 'raw_user_meta_data' then 'jsonb_build_object(''full_name'', ' || quote_literal(btrim(p_name)) || ')'
         else '''''' end) using uid;
