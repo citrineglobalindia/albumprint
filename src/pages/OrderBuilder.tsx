@@ -196,7 +196,7 @@ export default function OrderBuilder() {
             {step === 2 && <EventStep d={d} set={set} />}
             {step === 3 && (
               <div className="space-y-5">
-                {later && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-semibold text-sky-900">Invoice later: enter the album names now; sheets and items can be left empty until the design is done.</p>}
+                {later && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-semibold text-sky-900">Invoice later: only the album name is needed now. Sheets, copies, orientation, size and items can be added after the design.</p>}
                 <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Albums">
                   {d.albums.map((a, i) => (
                     <button key={a.id} role="tab" aria-selected={i === cur} onClick={() => setCur(i)} className={cx("rounded-xl border px-3 py-2 text-left text-sm font-bold", i === cur ? "border-brand bg-brand text-white" : "border-line bg-white hover:bg-brand-soft")}>
@@ -204,7 +204,7 @@ export default function OrderBuilder() {
                     </button>))}
                   <button onClick={() => { set({ albums: [...d.albums, newAlbum(d.albums.length + 1)] }); setCur(d.albums.length); }} className="inline-flex items-center gap-1 rounded-xl border border-dashed border-brand px-3 py-2 text-sm font-bold text-brand hover:bg-brand-soft"><Plus className="size-4" />Add another album</button>
                 </div>
-                <AlbumEditor key={album.id} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} designErr={p.errors.find((e) => e.path === `album.${cur + 1}.design`)?.message} taxRate={p.taxEnabled ? p.taxRate : 0} set={setAlbum}
+                <AlbumEditor key={album.id} later={later} a={album} n={cur + 1} total={d.albums.length} designed={designed} priced={pAlbum} designErr={p.errors.find((e) => e.path === `album.${cur + 1}.design`)?.message} taxRate={p.taxEnabled ? p.taxRate : 0} set={setAlbum}
                   onDuplicate={() => { set({ albums: [...d.albums.slice(0, cur + 1), newAlbum(0, album), ...d.albums.slice(cur + 1)] }); setCur(cur + 1); show("Album duplicated — edit the copy independently"); }}
                   onRemove={() => { if (d.albums.length === 1) return; if (!window.confirm(`Remove “${album.name || `Album ${cur + 1}`}” from this order?`)) return; set({ albums: d.albums.filter((_, i) => i !== cur) }); setCur(Math.max(0, cur - 1)); }} />
                 <section className="rounded-2xl border border-line bg-white p-4" aria-label="Order charges">
@@ -258,7 +258,7 @@ export default function OrderBuilder() {
               </div>
             )}
           </div>
-          {step >= 3 && !done && <Summary p={p} paid={paid} onPick={(i) => { setCur(i); setStep(3); }} />}
+          {step >= 3 && !done && <Summary later={later} p={p} paid={paid} onPick={(i) => { setCur(i); setStep(3); }} />}
         </div>
       )}
       {toast}
@@ -355,7 +355,7 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
   );
 }
 
-function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, onDuplicate, onRemove }: { a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; designErr?: string; taxRate: number; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
+function AlbumEditor({ later = false, a, n, total, designed, priced, designErr, taxRate, set, onDuplicate, onRemove }: { later?: boolean; a: DraftAlbum; n: number; total: number; designed: boolean; priced?: PricedOrder["albums"][number]; designErr?: string; taxRate: number; set: (p: Partial<DraftAlbum>) => void; onDuplicate: () => void; onRemove: () => void }) {
   const num = (v: string) => (v === "" ? ("" as unknown as number) : Number(v));
   const slotItem = (k: OptionKind) => a.items.find((i) => itemById(i.itemId)?.kind === k);
   const setSlot = (k: OptionKind, id: string) => {
@@ -387,8 +387,8 @@ function AlbumEditor({ a, n, total, designed, priced, designErr, taxRate, set, o
         <Field label="Event date (optional)" hint="The event this album covers"><input aria-label="Album event date" type="date" className={inputCls} value={a.eventDate ?? ""} onChange={(e) => set({ eventDate: e.target.value })} /></Field>
         <Field label="Printing lab (optional)" hint="The lab that prints this album"><select aria-label="Album lab" className={inputCls} value={a.labId ?? ""} onChange={(e) => set({ labId: e.target.value || undefined })}><option value="">No lab / in-house</option>{LABS.filter((l) => l.active).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
         {canSeeCost() && <Field label="Purchase amount (₹, optional)" hint="What the lab charges us — for profit"><input aria-label="Album purchase amount" type="number" min={0} step="0.01" className={inputCls} value={a.purchase ?? ""} onChange={(e) => set({ purchase: e.target.value === "" ? undefined : Number(e.target.value) })} /></Field>}
-        <Field label="Sheets" required><input aria-label="Sheets" type="number" min={1} step={1} className={inputCls} value={a.sheets} onChange={(e) => set({ sheets: num(e.target.value) })} /></Field>
-        <Field label="Copies" required><input aria-label="Copies" type="number" min={1} step={1} className={inputCls} value={a.copies} onChange={(e) => set({ copies: num(e.target.value) })} /></Field>
+        <Field label={later ? "Sheets (optional — after the design)" : "Sheets"} required={!later}><input aria-label="Sheets" type="number" min={1} step={1} className={inputCls} value={a.sheets} onChange={(e) => set({ sheets: num(e.target.value) })} /></Field>
+        <Field label={later ? "Copies (optional)" : "Copies"} required={!later}><input aria-label="Copies" type="number" min={1} step={1} className={inputCls} value={a.copies} onChange={(e) => set({ copies: num(e.target.value) })} /></Field>
         <Field label="Orientation"><select aria-label="Orientation" className={inputCls} value={a.orientation} onChange={(e) => set({ orientation: e.target.value })}>{ORIENT.map((o) => <option key={o}>{o}</option>)}</select></Field>
         <Field label="Size"><select aria-label="Size" className={inputCls} value={a.size} onChange={(e) => set({ size: e.target.value })}><option value="">Select…</option>{SIZES.map((s) => <option key={s}>{s}</option>)}</select></Field>
         {SLOTS.map((k) => { const opts = optionItems(k); if (!opts.length) return null; const cur = slotItem(k); return (
@@ -468,7 +468,7 @@ function DiscountTax({ d, set, p }: { d: OrderDraft; set: (p: Partial<OrderDraft
   );
 }
 
-function Summary({ p, paid, onPick }: { p: PricedOrder; paid: number; onPick: (i: number) => void }) {
+function Summary({ later = false, p, paid, onPick }: { later?: boolean; p: PricedOrder; paid: number; onPick: (i: number) => void }) {
   return (
     <aside className="h-fit rounded-2xl border border-line bg-white p-4 xl:sticky xl:top-4" aria-label="Live pricing summary" data-testid="summary">
       <h2 className="mb-3 text-sm font-extrabold">Live summary</h2>
@@ -487,7 +487,8 @@ function Summary({ p, paid, onPick }: { p: PricedOrder; paid: number; onPick: (i
         <div className="flex justify-between"><dt className="text-sub">Payments received</dt><dd className="tabular-nums">{money(paid)}</dd></div>
         <div className="flex justify-between font-bold"><dt>Balance</dt><dd className="tabular-nums">{money(Math.round((p.total - paid) * 100) / 100)}</dd></div>
       </dl>
-      {!p.canFinalize && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">{p.hasMissingPrice ? "Some prices are not configured — the order cannot be finalized until they are." : p.errors[0]?.message}</p>}
+      {later ? <p className="mt-3 rounded-lg bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-900" data-testid="summary-later">Invoice later: sheets, copies, size and prices are filled in after the design, when you prepare the invoice.</p>
+        : !p.canFinalize && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">{p.hasMissingPrice ? "Some prices are not configured — the order cannot be finalized until they are." : p.errors[0]?.message}</p>}
     </aside>
   );
 }

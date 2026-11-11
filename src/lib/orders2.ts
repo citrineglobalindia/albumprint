@@ -80,7 +80,8 @@ export function draftProblems(d: OrderDraft): { step: number; message: string }[
     d.albums.forEach((a, i) => {
       const s = String(a.sheets ?? "").trim();
       if (s && !/^\d+$/.test(s)) out.push({ step: 3, message: `Album ${i + 1}: sheets must be a whole number (or leave it empty until the design is done)` });
-      if (!(Number(a.copies) >= 1) || !Number.isInteger(Number(a.copies))) out.push({ step: 3, message: `Album ${i + 1}: copies must be 1 or more` });
+      const c = String(a.copies ?? "").trim();
+      if (c && !/^[1-9]\d*$/.test(c)) out.push({ step: 3, message: `Album ${i + 1}: copies must be 1 or more (or leave it empty)` });
     });
     return out;
   }

@@ -576,6 +576,9 @@ test("Design + Printing: create the order now, prepare the invoice after the des
   await buildOrder(page, { albums: [{ name: "Wedding album", sheets: 30 }], finalize: false });
   await page.getByRole("button", { name: /Albums & items/ }).click();
   await page.getByTestId("album-1").getByLabel("Sheets").fill("");                 // the sheet count is not known before the design
+  await page.getByTestId("album-1").getByLabel("Copies").fill("");
+  await page.getByTestId("album-1").getByLabel("Size").selectOption("");
+  await expect(page.getByTestId("summary-later")).toBeVisible();                     // no "sheets must be a positive whole number" warning
   await page.getByRole("button", { name: /Finalize/ }).first().click();
   await expect(page.getByLabel("Create order now, invoice later")).toBeChecked();      // on by default for Design + Printing
   await page.getByRole("button", { name: "Create order (invoice later)" }).click();
@@ -591,6 +594,8 @@ test("Design + Printing: create the order now, prepare the invoice after the des
   await page.getByTestId("prepare-invoice").click();
   await expect(page.getByTestId("preparing-invoice")).toBeVisible();
   await page.getByTestId("album-1").getByLabel("Sheets").fill("30");
+  await page.getByTestId("album-1").getByLabel("Copies").fill("1");
+  await page.getByTestId("album-1").getByLabel("Size").selectOption("12x36");
   await page.getByRole("button", { name: /Finalize/ }).first().click();
   await expect(page.getByLabel("Create order now, invoice later")).toHaveCount(0);
   await page.getByRole("button", { name: "Finalize & issue invoice" }).click();
