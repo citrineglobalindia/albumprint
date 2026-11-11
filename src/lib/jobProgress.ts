@@ -18,7 +18,7 @@ export const WORK_STATUS: { key: WorkStatus; label: string; tone: "slate" | "blu
 export const statusLabel = (s?: WorkStatus) => WORK_STATUS.find((x) => x.key === s)?.label ?? "";
 export const DEPT_LABEL: Record<Dept, string> = { order: "Order", grading: "Colour Grading", design: "Designing", printing: "Printing", qc: "QC", delivery: "Delivery" };
 /** album: 0 or left out = the whole order; 1.. = the album at that position on the order (migration 0064). */
-export interface Progress { orderId: string; album?: number; dept: Dept; count?: number; status?: WorkStatus; note?: string; by?: string; at?: string }
+export interface Progress { orderId: string; album?: number; dept: Dept; assigneeId?: string; assignee?: string; count?: number; status?: WorkStatus; note?: string; by?: string; at?: string }
 export const PROGRESS: Progress[] = persistArray<Progress>("job_progress", []);
 export const progressOf = (orderId: string, dept: Dept, album = 0) => PROGRESS.find((p) => p.orderId === orderId && p.dept === dept && (p.album ?? 0) === album);
 export const photosGiven = (orderId: string) => progressOf(orderId, "order")?.count;
@@ -33,7 +33,7 @@ export async function hydrateProgress() {
   const { sb } = await import("./db/core"); const { staffName } = await import("./db/production");
   const { data, error } = await sb().from("job_progress").select("*");
   if (error) throw new Error(error.message);
-  PROGRESS.splice(0, PROGRESS.length, ...((data ?? []) as Row[]).flatMap((r) => { const o = ORDERS.find((x) => x.uid === r.order_id); return o ? [{ orderId: o.id, album: r.album ?? 0, dept: r.dept as Dept, count: r.count ?? undefined, status: r.status ?? undefined, note: r.note ?? undefined, by: staffName(r.updated_by) ?? undefined, at: r.updated_at }] : []; }));
+  PROGRESS.splice(0, PROGRESS.length, ...((data ?? []) as Row[]).flatMap((r) => { const o = ORDERS.find((x) => x.uid === r.order_id); return o ? [{ orderId: o.id, album: r.album ?? 0, dept: r.dept as Dept, assigneeId: r.assignee ?? undefined, assignee: staffName(r.assignee) ?? undefined, count: r.count ?? undefined, status: r.status ?? undefined, note: r.note ?? undefined, by: staffName(r.updated_by) ?? undefined, at: r.updated_at }] : []; }));
   notify();
 }
 
@@ -42,7 +42,7 @@ export async function saveProgress(orderId: string, dept: Dept, patch: { count?:
   if (!canUpdate(dept)) return { ok: false, msg: `Your role can't update ${DEPT_LABEL[dept]}` };
   if (patch.count != null && (!Number.isInteger(patch.count) || patch.count < 0)) return { ok: false, msg: "Enter a whole number of 0 or more" };
   const cur = progressOf(orderId, dept, album);
-  const next: Progress = { orderId, album, dept, count: patch.count === undefined ? cur?.count : patch.count ?? undefined, status: patch.status === undefined ? cur?.status : patch.status ?? undefined, note: patch.note === undefined ? cur?.note : patch.note?.trim() || undefined, by: currentActor().name, at: new Date().toISOString() };
+  const next: Progress = { ...(cur ?? {}), orderId, album, dept, count: patch.count === undefined ? cur?.count : patch.count ?? undefined, status: patch.status === undefined ? cur?.status : patch.status ?? undefined, note: patch.note === undefined ? cur?.note : patch.note?.trim() || undefined, by: currentActor().name, at: new Date().toISOString() };
   if (backendOn) {
     const o = ORDERS.find((x) => x.id === orderId); if (!o?.uid) return { ok: false, msg: "Order not found" };
     const { sb } = await import("./db/core");
@@ -58,4 +58,19 @@ export async function applyPhotosGiven(code: string, n: number | undefined): Pro
   if (n === undefined) return null;
   if (backendOn && !ORDERS.some((o) => o.id === code && o.uid)) { const { rehydrate } = await import("./db/core"); await rehydrate(["customers and orders"]); }
   const r = await saveProgress(code, "order", { count: n }); return r.ok ? null : r.msg;
+}
+
+/** Admin / reception: who works on an album for a department (null = nobody). The person is notified (database mode). */
+export async function assignAlbum(orderId: string, album: number, dept: Dept, person: { id: string; name: string } | null): Promise<{ ok: boolean; msg: string }> {
+  const r = currentActor().role;
+  if (r !== "admin" && r !== "reception" && !hasModule("order")) return { ok: false, msg: "Only admin or reception assigns work" };
+  if (backendOn) {
+    const o = ORDERS.find((x) => x.id === orderId); if (!o?.uid) return { ok: false, msg: "Order not found" };
+    const { sb } = await import("./db/core");
+    const { error } = await sb().rpc("assign_album_work", { p_order: o.uid, p_album: album, p_dept: dept, p_user: person?.id ?? null });
+    if (error) return { ok: false, msg: error.message };
+  } else logAudit({ entity: "order", entityId: orderId, action: "album_assign", detail: `Album ${album} · ${DEPT_LABEL[dept]}: ${person?.name ?? "unassigned"}` });
+  const cur = progressOf(orderId, dept, album);
+  if (cur) { cur.assigneeId = person?.id; cur.assignee = person?.name; } else PROGRESS.push({ orderId, album, dept, assigneeId: person?.id, assignee: person?.name });
+  notify(); return { ok: true, msg: person ? `Album ${album} · ${DEPT_LABEL[dept]}: assigned to ${person.name}` : `Album ${album} · ${DEPT_LABEL[dept]}: unassigned` };
 }

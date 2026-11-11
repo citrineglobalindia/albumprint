@@ -20,6 +20,8 @@ export const staffName = (id?: string | null) => (id ? STAFF.find((s) => s.id ==
 export const staffId = (name?: string) => (name ? STAFF.find((s) => s.name === name)?.id : undefined);
 /** Active staff display names (database mode), for assignee pickers. */
 export const staffDirectory = () => STAFF.map((s) => s.name);
+/** Active staff with their role (database mode), for per-album assignment. */
+export const staffPeople = () => STAFF;
 
 /* ───────── label ⇄ database value ───────── */
 const slug = (s: string) => s.toLowerCase().replace(/[ -]+/g, "_");

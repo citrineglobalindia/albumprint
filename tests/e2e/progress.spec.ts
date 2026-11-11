@@ -48,3 +48,28 @@ test("an order with several albums keeps progress per album on the order page", 
   await page.reload();
   await expect(page.getByTestId("album-progress").getByTestId("cell-2-design")).toContainText("20 / 20");
 });
+
+test("albums: assign the grader per album; when every album is graded the order moves on by itself", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 30 }, { name: "Haldi", sheets: 20 }, { name: "Muhurtham", sheets: 25 }], finalize: true }))!;
+  await page.goto(`/orders/${code}`);
+  await page.getByRole("button", { name: "Move to Files Received" }).click();
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  const t = page.getByTestId("album-progress");
+  await t.getByTestId("assign-1-grading").selectOption({ label: "Karthik V" });
+  await expect(page.getByText("Album 1 · Colour Grading: assigned to Karthik V").first()).toBeVisible();
+  await t.getByTestId("assign-2-design").selectOption({ label: "Ramesh Kumar" });
+  await expect(t.getByTestId("assign-2-design")).toHaveValue("U2");
+  for (const k of [1, 2, 3]) {
+    await t.getByTestId(`cell-${k}-grading`).click();
+    const ed = page.getByTestId(`progress-grading-album-${k}`);
+    await ed.getByLabel("grading status").selectOption("done");
+    await ed.getByRole("button", { name: "Update" }).click();
+    await expect(t.getByTestId(`cell-${k}-grading`)).toContainText("Done");
+  }
+  await expect(page.getByText(`All albums done — ${code} moved to Admin Approval`).first()).toBeVisible();
+  await expect(page.getByTestId("step-admin_approval")).toHaveAttribute("data-state", "current");
+  await page.reload();
+  await expect(page.getByTestId("album-progress").getByTestId("assign-1-grading")).toHaveValue("U4");
+});
