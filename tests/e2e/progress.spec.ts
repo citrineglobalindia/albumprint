@@ -79,3 +79,20 @@ test("albums: assign the grader per album; when every album is graded the order 
   await page.reload();
   await expect(page.getByTestId("album-progress").getByTestId("assign-1-grading")).toHaveValue("U4");
 });
+
+test("colour grading: an unassigned job shows the grader who started it", async ({ page }) => {
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "One", sheets: 10 }], finalize: true }))!;
+  await page.goto(`/orders/${code}`);
+  await page.getByRole("button", { name: "Move to Files Received" }).click();
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  await page.goto("/colour-grading");
+  await page.getByPlaceholder(/Search by order ID/).fill(code);
+  await expect(page.getByTestId(`grader-${code}`)).toContainText(/Karthik V|Unassigned/);
+  const before = await page.getByTestId(`grader-${code}`).innerText();
+  if (before.includes("Unassigned")) {
+    await page.getByTestId(`job-${code}`).getByRole("button", { name: "Start" }).click();
+    await expect(page.getByTestId(`grader-${code}`)).not.toContainText("Unassigned");
+    await expect(page.getByTestId("assigned-grader")).not.toHaveText("Unassigned");
+  }
+});

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image as ImageIcon, Send, Save, Check, X, AlertCircle, Lock } from "lucide-react";
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, TodayChip, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
-import { gradingBy, photosGiven, photosGraded, photosPending } from "../lib/jobProgress";
+import { PROGRESS, gradingBy, photosGiven, photosGraded, photosPending } from "../lib/jobProgress";
 import { currentActor } from "../lib/audit";
 import { AlbumProgress } from "../components/AlbumProgress";
 import { WorkFiles } from "../components/WorkFiles";
@@ -26,6 +26,14 @@ type Tab = "queue" | "progress" | "submitted" | "approved" | "rework";
 const STATUS_TONE: Record<GStatus, Tone> = { New: "blue", "In Progress": "blue", Rework: "red", Submitted: "violet", Approved: "green" };
 const inTab = (j: GJob, t: Tab) => t === "queue" ? ["New", "In Progress", "Rework"].includes(j.status) : t === "progress" ? j.status === "In Progress" : t === "submitted" ? j.status === "Submitted" : t === "approved" ? j.status === "Approved" : j.status === "Rework";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
+/** The grader of a job: the job's assignee; else the graders assigned to its albums; else whoever started it. */
+const graderOf = (j: GJob): string => {
+  if (j.colorist && j.colorist !== "Unassigned") return j.colorist;
+  const albums = [...new Set(PROGRESS.filter((p) => p.orderId === j.orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.assignee).map((p) => p.assignee!))];
+  if (albums.length) return albums.join(", ");
+  const started = [...j.events].reverse().find((e) => e.text === "Grading started")?.by;
+  return started && started !== "System" ? started : "Unassigned";
+};
 const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "graded", label: "Photos graded" }, { key: "pending", label: "Photos pending" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "time", label: "Time" }, { key: "status", label: "Status" }];
 /** When the grading finished (the latest submission), or nothing while it is still being worked on. */
 const gradEnd = (j: GJob) => (j.status === "Submitted" || j.status === "Approved" ? j.submittedAt : undefined);
@@ -71,7 +79,7 @@ export default function ColourGrading() {
     const o = ordOf(j.orderId); if (!o) return false;
     const t = q.trim().toLowerCase();
     if (t && ![j.orderId, o.customer, o.event].some((v) => v.toLowerCase().includes(t))) return false;
-    if (col.length && !col.includes(j.colorist)) return false;
+    if (col.length && !col.includes(j.colorist) && !col.some((c) => graderOf(j).split(", ").includes(c))) return false;
     if (prio.length && !prio.includes(j.priority)) return false;
     if (fStatus.length && !fStatus.includes(j.status)) return false;
     return inRangeOpt(j.due, range);
@@ -107,7 +115,7 @@ export default function ColourGrading() {
   ];
   // photo counts: everything for the admin, otherwise the jobs this person works on (assigned, or their own updates)
   const me = currentActor().name;
-  const mine = isAdmin ? GJOBS : GJOBS.filter((j) => j.colorist === me || gradingBy(j.orderId).has(me));
+  const mine = isAdmin ? GJOBS : GJOBS.filter((j) => graderOf(j).split(", ").includes(me) || gradingBy(j.orderId).has(me));
   const worked = mine.filter((j) => j.status !== "New" || (photosGraded(j.orderId) ?? 0) > 0);
   const photoKpis: Kpi[] = [
     { label: isAdmin ? "Photos graded (all)" : "Photos graded by you", value: worked.reduce((s, j) => s + (photosGraded(j.orderId) ?? 0), 0), icon: CheckCircle2, tone: "green" },
@@ -203,7 +211,7 @@ export default function ColourGrading() {
                     {vis("files") && <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>}
                     {vis("graded") && <Td>{(() => { const g = photosGraded(j.orderId), t = photosGiven(j.orderId); return g == null && t == null ? <span className="text-sub">—</span> : <span data-testid={`graded-${j.orderId}`} className="font-semibold text-emerald-700">{g ?? 0}{t ? <span className="font-normal text-sub"> / {t}</span> : null}</span>; })()}</Td>}
                     {vis("pending") && <Td>{(() => { const p = photosPending(j.orderId); return <span data-testid={`pending-${j.orderId}`}>{p == null ? <span className="text-sub">—</span> : p === 0 ? <Pill tone="green">All done</Pill> : <Pill tone="amber">{p} pending</Pill>}</span>; })()}</Td>}
-                    {vis("colorist") && <Td><span className="inline-flex items-center gap-2"><Avatar name={j.colorist} size={24} />{j.colorist}</span></Td>}
+                    {vis("colorist") && <Td><span className="inline-flex items-center gap-2" data-testid={`grader-${j.orderId}`}><Avatar name={graderOf(j)} size={24} />{graderOf(j)}</span></Td>}
                     {vis("priority") && <Td><PriorityPill p={j.priority as Priority} /></Td>}
                     {vis("due") && <Td className={s.status === "breached" ? "text-rose-600" : ""}>{fmtDate(j.due)}</Td>}
                     {vis("time") && <Td><Elapsed start={j.startedAt} end={gradEnd(j)} /></Td>}
@@ -243,7 +251,7 @@ export default function ColourGrading() {
             </div>
             {closed && <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold"><Lock className="size-3.5" />Order is closed — read-only</p>}
             <dl className="mt-3 grid grid-cols-3 gap-3 text-[13px]">
-              <div><dt className="text-xs text-sub">Assigned grader</dt><dd className="font-semibold">{cur.colorist}</dd></div>
+              <div><dt className="text-xs text-sub">Assigned grader</dt><dd className="font-semibold" data-testid="assigned-grader">{graderOf(cur)}</dd></div>
               <div><dt className="text-xs text-sub">SLA due</dt><dd data-testid="sla-due" className={cx("font-semibold", sla?.status === "breached" && "text-rose-600")}>{sla?.dueAt ? fmtDate(sla.dueAt) : fmtDate(cur.due)}<span className="block text-[11px] font-normal text-sub">{sla ? sla.status.replace("_", " ") : ""}</span></dd></div>
               <div><dt className="text-xs text-sub">Rounds</dt><dd className="font-semibold">{cur.rounds}</dd></div>
             </dl>
