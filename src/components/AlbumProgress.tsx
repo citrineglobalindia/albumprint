@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PackageCheck, Pencil, Send } from "lucide-react";
 import { Pill, cx } from "./ui";
 import { JobProgress } from "./JobProgress";
@@ -27,6 +27,21 @@ const ROLE_OF: Partial<Record<Dept, RegExp>> = { grading: /^colou?r/i, design: /
 
 type Person = { id: string; name: string; role: string };
 const people = (): Person[] => (backendOn ? staffPeople() : DEMO_STAFF.filter((s) => s.status === "Active").map((s) => ({ id: s.id, name: s.name, role: s.role })));
+const ROLE_LABEL: Record<string, string> = { admin: "Administrator", reception: "Reception", colour: "Colour Grader", designer: "Designer", printing: "Printing", qc: "QC", accounts: "Accounts" };
+const MODULE_LABEL: Record<string, string> = { grading: "Colour Grading", design: "Designing", printing: "Printing", qc: "QC", delivery: "Delivery", order: "Orders", payments: "Payments", invoices: "Invoices", customer: "Customers", reports: "Reports" };
+const MODULE_OF: Partial<Record<Dept, string>> = { grading: "grading", design: "design" };
+/** Extra modules of every user (database mode; whatever this user may read), so the pickers show "Sanjay — Administrator + Designing". */
+let MODS: Record<string, string[]> = {}; let modsLoaded = false;
+async function loadMods(): Promise<boolean> {
+  if (!backendOn || modsLoaded) return false;
+  modsLoaded = true;
+  const { sb } = await import("../lib/db/core");
+  const { data, error } = await sb().from("user_modules").select("user_id,module");
+  if (error) return false;
+  MODS = {}; for (const r of (data ?? []) as { user_id: string; module: string }[]) (MODS[r.user_id] ??= []).push(r.module);
+  return true;
+}
+const label = (p: Person) => `${p.name} — ${[ROLE_LABEL[p.role] ?? p.role, ...(MODS[p.id] ?? []).map((m) => MODULE_LABEL[m] ?? m)].join(" + ")}`;
 
 /** Every album of the order is done for this department (printing: done, or received back from its lab). */
 export function allAlbumsDone(o: Order, dept: Dept) {
@@ -45,6 +60,8 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
   const { role } = useAuth();
   const albums = o.albums ?? [];
   const [sel, setSel] = useState<{ album: number; dept: Dept } | null>(null);
+  const [, setMods] = useState(0);
+  useEffect(() => { void loadMods().then((ok) => ok && setMods((n) => n + 1)); }, []);
   if (albums.length < 2) return null;                                                     // one album: the order's own progress is enough
   const printing = o.workflow === "Printing";
   const cols = COLS.filter((c) => (only ? only.includes(c.dept) : !printing || ["printing", "qc", "delivery"].includes(c.dept)));
@@ -62,7 +79,11 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
   };
   const run = (dept: Dept, p: Promise<{ ok: boolean; msg: string }>) => void p.then((r) => after(dept)(r.msg, r.ok));
   const staff = people();
-  const pickFor = (dept: Dept) => { const re = ROLE_OF[dept]; const fit = staff.filter((s) => re?.test(s.role)); return { fit, other: staff.filter((s) => !fit.includes(s)) }; };
+  const pickFor = (dept: Dept) => {
+    const re = ROLE_OF[dept], mod = MODULE_OF[dept];
+    const fit = staff.filter((s) => re?.test(s.role) || ROLE_LABEL[s.role] && re?.test(ROLE_LABEL[s.role]!) || (!!mod && (MODS[s.id] ?? []).includes(mod)));
+    return { fit, other: staff.filter((s) => !fit.includes(s)) };
+  };
   const labs = LABS.filter((l) => l.active), moveLab = canMoveLabWork();
   return (
     <div className="mb-3 rounded-xl border border-line p-3" data-testid="album-progress">
@@ -79,11 +100,11 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
               {cols.map((c) => { const p = progressOf(o.id, c.dept, k); const of = total(c.dept, i); const active = sel?.album === k && sel.dept === c.dept; const pick = c.assign ? pickFor(c.dept) : null; return (
                 <td key={c.dept} className="py-2 pr-3 align-top">
                   {c.assign && (canAssign
-                    ? <select aria-label={`Assign ${c.label} for ${name}`} data-testid={`assign-${k}-${c.dept}`} className={cx("mb-1 h-7 w-full max-w-[170px] rounded-md border px-1.5 text-xs", p?.assigneeId ? "border-brand/40 bg-brand-soft/40 font-semibold" : "border-line text-sub")}
+                    ? <select aria-label={`Assign ${c.label} for ${name}`} data-testid={`assign-${k}-${c.dept}`} className={cx("mb-1 h-7 w-full max-w-[230px] rounded-md border px-1.5 text-xs", p?.assigneeId ? "border-brand/40 bg-brand-soft/40 font-semibold" : "border-line text-sub")}
                         value={p?.assigneeId ?? ""} onChange={(e) => { const s = staff.find((x) => x.id === e.target.value); run(c.dept, assignAlbum(o.id, k, c.dept, s ? { id: s.id, name: s.name } : null)); }}>
                         <option value="">Assign…</option>
-                        {pick!.fit.length > 0 && <optgroup label={c.label}>{pick!.fit.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
-                        <optgroup label="Other staff">{pick!.other.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
+                        {pick!.fit.length > 0 && <optgroup label={c.label}>{pick!.fit.map((s) => <option key={s.id} value={s.id}>{label(s)}</option>)}</optgroup>}
+                        <optgroup label="Other staff">{pick!.other.map((s) => <option key={s.id} value={s.id}>{label(s)}</option>)}</optgroup>
                         {p?.assigneeId && !staff.some((s) => s.id === p.assigneeId) && <option value={p.assigneeId}>{p.assignee ?? "Former staff"}</option>}
                       </select>
                     : <div className="mb-1 text-xs text-sub" data-testid={`assignee-${k}-${c.dept}`}>{p?.assignee ? <>With <b className="text-ink">{p.assignee}</b></> : "Not assigned"}</div>)}

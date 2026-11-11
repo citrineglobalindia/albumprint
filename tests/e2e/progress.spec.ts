@@ -57,9 +57,10 @@ test("albums: assign the grader per album; when every album is graded the order 
   await page.getByRole("button", { name: "Move to Files Received" }).click();
   await page.getByRole("button", { name: "Move to Colour Grading" }).click();
   const t = page.getByTestId("album-progress");
-  await t.getByTestId("assign-1-grading").selectOption({ label: "Karthik V" });
+  await expect(t.getByTestId("assign-1-grading").locator("option", { hasText: "Karthik V — Colour Grading" })).toHaveCount(1);   // the role is shown
+  await t.getByTestId("assign-1-grading").selectOption("U4");
   await expect(page.getByText("Album 1 · Colour Grading: assigned to Karthik V").first()).toBeVisible();
-  await t.getByTestId("assign-2-design").selectOption({ label: "Ramesh Kumar" });
+  await t.getByTestId("assign-2-design").selectOption({ label: "Ramesh Kumar — Designer" });
   await expect(t.getByTestId("assign-2-design")).toHaveValue("U2");
   for (const k of [1, 2, 3]) {
     await t.getByTestId(`cell-${k}-grading`).click();
