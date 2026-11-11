@@ -149,3 +149,25 @@ test("album-wise process: assign at order taking → graded → admin approves �
   await t.getByTestId("lab-cell-2").getByRole("button", { name: "Received" }).click();
   await expect(page.getByTestId("step-qc")).toHaveAttribute("data-state", "current");                // everything back from the lab → QC
 });
+
+test("Album Designing lists one row per album; the designer sees the albums assigned to them", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 20 }, { name: "Haldi", sheets: 15 }, { name: "Muhurtham", sheets: 25 }, { name: "Reception", sheets: 30 }], finalize: true }))!;
+  await page.goto(`/orders/${code}`);
+  const t = page.getByTestId("album-progress");
+  for (const k of [1, 2, 3]) await t.getByTestId(`assign-${k}-design`).selectOption("U2");             // Ramesh Kumar: three albums
+  await t.getByTestId("assign-4-design").selectOption("U1");                                              // someone else: the fourth
+  for (const b of ["Move to Files Received", "Move to Colour Grading", "Move to Admin Approval", "Move to Designing"]) await page.getByRole("button", { name: b }).click();
+  await page.goto("/designing");
+  await page.getByPlaceholder(/Search by order ID/).fill(code);
+  await expect(page.getByTestId(`djob-${code}`)).toContainText("Engagement");
+  await expect(page.getByTestId(`djob-${code}-4`)).toContainText("Reception");                          // admin: every album
+  await page.evaluate(() => { localStorage.setItem("albumpro.role", "designer"); });
+  await page.goto("/designing");
+  await page.getByPlaceholder(/Search by order ID/).fill(code);
+  await expect(page.getByTestId(`djob-${code}`)).toContainText("Engagement");
+  await expect(page.getByTestId(`djob-${code}-2`)).toContainText("Haldi");
+  await expect(page.getByTestId(`djob-${code}-3`)).toContainText("Muhurtham");
+  await expect(page.getByTestId(`djob-${code}-4`)).toHaveCount(0);                                       // not theirs
+});

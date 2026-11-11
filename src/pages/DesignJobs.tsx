@@ -14,7 +14,8 @@ import { latestProof } from "../lib/proofs";
 import { fmtDT } from "../lib/production";
 import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveDesignNote, sendToClient, startDesign, type DStatus } from "../lib/designJobs";
 import { JobProgress } from "../components/JobProgress";
-import { filesPathOf, photosGiven } from "../lib/jobProgress";
+import { WORK_STATUS, filesPathOf, photosGiven, progressOf, statusLabel } from "../lib/jobProgress";
+import { currentActor } from "../lib/audit";
 import { advanceAfter } from "../lib/albumFlow";
 import { AlbumProgress } from "../components/AlbumProgress";
 import type { Order, Priority } from "../lib/data";
@@ -23,6 +24,14 @@ import type { Order, Priority } from "../lib/data";
 // a job card with the photos to design with, the pages uploaded, the client's corrections, an internal note and the history.
 type Tab = "queue" | "progress" | "client" | "corrections" | "approved";
 const inTab = (s: DStatus, t: Tab) => t === "queue" ? ["New", "In Progress", "Corrections"].includes(s) : t === "progress" ? s === "In Progress" : t === "client" ? s === "With Client" : t === "corrections" ? s === "Corrections" : s === "Approved";
+/** One row per album: the albums a designer works on (assigned to them; unassigned albums of their own or unassigned orders); admins see all. */
+type ARow = { o: Order; k: number; title: string; sheets: number; designer: string };
+function albumRows(o: Order, admin: boolean, me: string): ARow[] {
+  const list = o.albums?.length ? o.albums.map((a, i) => ({ title: a.title || `Album ${i + 1}`, sheets: a.sheets })) : [{ title: o.event || "Album 1", sheets: o.pages }];
+  const orderDesigner = designerOf(o);
+  return list.map((a, i) => ({ o, k: i + 1, title: a.title, sheets: a.sheets, designer: progressOf(o.id, "design", i + 1)?.assignee ?? orderDesigner }))
+    .filter((r) => admin || r.designer === me || (r.designer === orderDesigner && (orderDesigner === me || orderDesigner === "Unassigned")));
+}
 const pages = (id: string) => FILES.filter((f) => f.orderId === id && f.category === "Design Draft" && !f.archived && !f.pending).length;
 
 export default function DesignJobs() {
@@ -48,8 +57,10 @@ export default function DesignJobs() {
   ];
   const tabs: { key: Tab; label: string }[] = [{ key: "queue", label: "My Queue" }, { key: "progress", label: "In Progress" }, { key: "client", label: "With Client" }, { key: "corrections", label: "Corrections" }, { key: "approved", label: "Approved" }];
   const term = q.trim().toLowerCase();
-  const list = base.filter((o) => inTab(st(o), tab) && (!term || [o.id, o.customer, o.event, designerOf(o)].some((x) => x.toLowerCase().includes(term))));
-  const PS = 10, shown = list.slice((page - 1) * PS, page * PS);
+  const admin = role === "admin", me = currentActor().name;
+  const rowsOf = (t: Tab) => base.filter((o) => inTab(st(o), t)).flatMap((o) => albumRows(o, admin, me));
+  const list = rowsOf(tab).filter((r) => !term || [r.o.id, r.o.customer, r.o.event, r.title, r.designer].some((x) => x.toLowerCase().includes(term)));
+  const PS = 15, shown = list.slice((page - 1) * PS, page * PS);
   const cur = openId ? base.find((o) => o.id === openId) ?? null : null;
 
   const start = async (o: Order) => { const r = await startDesign(o.id); show(r.msg); if (r.ok) setOpenId(o.id); };
@@ -59,37 +70,42 @@ export default function DesignJobs() {
       <KpiRow items={kpis} cols={6} />
       <Panel className="mt-5" title="Design Jobs" subtitle="Click a job for the photos, pages, client corrections and history" bodyClassName="p-0">
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-3">
-          <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: base.filter((o) => inTab(st(o), t.key)).length }))} />
+          <LineTabs<Tab> className="!border-0" value={tab} onChange={(t) => { setTab(t); setPage(1); }} tabs={tabs.map((t) => ({ ...t, count: rowsOf(t.key).length }))} />
           <div className="w-64"><SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search by order ID, customer, event..." /></div>
         </div>
         <div className="overflow-x-auto">
           <table className={tableCls}>
-            <thead><tr><Th>Order ID</Th><Th>Customer</Th><Th>Event</Th><Th>Pages</Th><Th>Designer</Th><Th>Priority</Th><Th>Due</Th><Th>Time</Th><Th>Status</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th>Order ID</Th><Th>Album</Th><Th>Customer</Th><Th>Sheets designed</Th><Th>Designer</Th><Th>Priority</Th><Th>Due</Th><Th>Time</Th><Th>Album status</Th><Th>Order status</Th><Th className="text-right">Actions</Th></tr></thead>
             <tbody>
-              {shown.map((o) => {
-                const s = st(o), j = djob(o.id);
+              {shown.map(({ o, k, title, sheets, designer }, ri) => {
+                const s = st(o), j = djob(o.id), ap = progressOf(o.id, "design", k) ?? (k === 1 && (o.albums?.length ?? 0) <= 1 ? progressOf(o.id, "design") : undefined);
+                const first = ri === 0 || shown[ri - 1]!.o.id !== o.id;
                 return (
-                  <tr key={o.id} data-testid={`djob-${o.id}`} onClick={() => setOpenId(o.id)} className={cx(trCls, "cursor-pointer", openId === o.id && "bg-brand-soft")}>
-                    <Td className="font-bold">{o.id}</Td><Td>{o.customer}</Td><Td>{o.event}</Td>
-                    <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{pages(o.id)}</span></Td>
-                    <Td><span className="inline-flex items-center gap-2"><Avatar name={designerOf(o)} size={24} />{designerOf(o)}</span></Td>
+                  <tr key={`${o.id}-${k}`} data-testid={k === 1 ? `djob-${o.id}` : `djob-${o.id}-${k}`} onClick={() => setOpenId(o.id)} className={cx(trCls, "cursor-pointer", openId === o.id && "bg-brand-soft", !first && "border-t-0")}>
+                    <Td className="font-bold">{first ? o.id : <span className="pl-3 text-sub">↳</span>}</Td>
+                    <Td><span className="font-semibold">{title}</span>{sheets ? <span className="block text-[11px] text-sub">{sheets} sheets</span> : null}</Td>
+                    <Td>{o.customer}</Td>
+                    <Td data-testid={`dsheets-${o.id}-${k}`}>{ap?.count != null ? <span className="font-semibold text-emerald-700">{ap.count}{sheets ? <span className="font-normal text-sub"> / {sheets}</span> : null}</span> : <span className="inline-flex items-center gap-1.5 text-sub"><ImageIcon className="size-3.5" />{k === 1 ? pages(o.id) : "—"}</span>}</Td>
+                    <Td><span className="inline-flex items-center gap-2"><Avatar name={designer} size={24} />{designer}</span></Td>
                     <Td><PriorityPill p={o.priority as Priority} /></Td>
                     <Td className={new Date(o.due) < TODAY && s !== "Approved" ? "font-semibold text-rose-600" : ""}>{fmtDate(o.due)}</Td>
                     <Td><Elapsed start={j?.startedAt} end={designEnd(o)} /></Td>
+                    <Td>{ap?.status ? <Pill tone={WORK_STATUS.find((x) => x.key === ap.status)?.tone ?? "slate"}>{statusLabel(ap.status)}</Pill> : <span className="text-xs text-sub">Not started</span>}</Td>
                     <Td><Pill tone={DSTATUS_TONE[s]} className="min-w-[90px] justify-center">{s}</Pill></Td>
                     <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      {canWork && (s === "New" || s === "Corrections") && !j?.startedAt ? <button onClick={() => void start(o)} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>
+                      {!first ? <button onClick={() => setOpenId(o.id)} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">Update</button>
+                        : canWork && (s === "New" || s === "Corrections") && !j?.startedAt ? <button onClick={() => void start(o)} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>
                         : canWork && s === "Corrections" ? <button onClick={() => void start(o)} className="h-8 rounded-lg bg-rose-600 px-3 text-xs font-bold text-white hover:bg-rose-700">Fix corrections</button>
                         : <Link to={`/designing/${o.id}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{s === "In Progress" ? "Continue" : "Open"}</Link>}
                     </td>
                   </tr>
                 );
               })}
-              {shown.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-sub">No design jobs here. Orders arrive once Colour Grading is approved.</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-sub">No design jobs here. Orders arrive once Colour Grading is approved.</td></tr>}
             </tbody>
           </table>
         </div>
-        <Pagination page={page} pageSize={PS} total={list.length} onPage={setPage} noun="jobs" />
+        <Pagination page={page} pageSize={PS} total={list.length} onPage={setPage} noun="albums" />
       </Panel>
 
       <SlideOver open={!!cur} onClose={() => setOpenId(null)} title={cur ? `Design ${cur.id}` : "Design"} width={560}>
