@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image as ImageIcon, Send, Save, Check, X, AlertCircle, Lock } from "lucide-react";
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, TodayChip, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
-import { photosGiven } from "../lib/jobProgress";
+import { gradingBy, photosGiven, photosGraded, photosPending } from "../lib/jobProgress";
+import { currentActor } from "../lib/audit";
 import { AlbumProgress } from "../components/AlbumProgress";
 import { WorkFiles } from "../components/WorkFiles";
 import { ORDERS, PRIORITIES, type Priority, type Tone } from "../lib/data";
@@ -25,7 +26,7 @@ type Tab = "queue" | "progress" | "submitted" | "approved" | "rework";
 const STATUS_TONE: Record<GStatus, Tone> = { New: "blue", "In Progress": "blue", Rework: "red", Submitted: "violet", Approved: "green" };
 const inTab = (j: GJob, t: Tab) => t === "queue" ? ["New", "In Progress", "Rework"].includes(j.status) : t === "progress" ? j.status === "In Progress" : t === "submitted" ? j.status === "Submitted" : t === "approved" ? j.status === "Approved" : j.status === "Rework";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
-const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "time", label: "Time" }, { key: "status", label: "Status" }];
+const COLS = [{ key: "order", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "files", label: "Files" }, { key: "graded", label: "Photos graded" }, { key: "pending", label: "Photos pending" }, { key: "colorist", label: "Colorist" }, { key: "priority", label: "Priority" }, { key: "due", label: "SLA due" }, { key: "time", label: "Time" }, { key: "status", label: "Status" }];
 /** When the grading finished (the latest submission), or nothing while it is still being worked on. */
 const gradEnd = (j: GJob) => (j.status === "Submitted" || j.status === "Approved" ? j.submittedAt : undefined);
 interface ViewState { tab: Tab; col: string[]; prio: string[]; status: string[]; range: SavedRange; q: string; hidden: string[]; sort: SortState }
@@ -104,6 +105,16 @@ export default function ColourGrading() {
     { label: "Approved", value: cnt("Approved"), icon: CheckCircle2, tone: "green" },
     { label: "Overdue", value: overdue, icon: Clock, tone: "red", invert: true },
   ];
+  // photo counts: everything for the admin, otherwise the jobs this person works on (assigned, or their own updates)
+  const me = currentActor().name;
+  const mine = isAdmin ? GJOBS : GJOBS.filter((j) => j.colorist === me || gradingBy(j.orderId).has(me));
+  const worked = mine.filter((j) => j.status !== "New" || (photosGraded(j.orderId) ?? 0) > 0);
+  const photoKpis: Kpi[] = [
+    { label: isAdmin ? "Photos graded (all)" : "Photos graded by you", value: worked.reduce((s, j) => s + (photosGraded(j.orderId) ?? 0), 0), icon: CheckCircle2, tone: "green" },
+    { label: "Photos pending", value: mine.filter((j) => j.status !== "Approved").reduce((s, j) => s + (photosPending(j.orderId) ?? 0), 0), icon: Clock, tone: "orange" },
+    { label: isAdmin ? "Projects worked (all)" : "Projects you worked on", value: worked.length, icon: ClipboardList, tone: "blue" },
+    { label: "Projects completed", value: worked.filter((j) => j.status === "Approved" || j.status === "Submitted").length, icon: CheckCircle2, tone: "green" },
+  ];
 
   const saveJob = () => {
     const e: Record<string, string> = {};
@@ -144,6 +155,7 @@ export default function ColourGrading() {
       </PageHeader>
       {!work && <div role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2 text-[13px] font-semibold text-amber-800"><Lock className="size-4" />View only — colour grading work is limited to the Colour Grading team and Admin.</div>}
       <KpiRow items={kpis} cols={6} />
+      <div className="mt-3" data-testid="photo-kpis"><KpiRow items={photoKpis} cols={4} /></div>
 
       <Panel title="Grading Jobs" subtitle="Click a job for instructions, graded files and review" action={<ExportBtn onClick={() => exportRows(list)} />} bodyClassName="!p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -170,6 +182,8 @@ export default function ColourGrading() {
               {vis("customer") && <SortTh k="customer" sort={sort} onSort={setSort}>Customer</SortTh>}
               {vis("event") && <SortTh k="event" sort={sort} onSort={setSort}>Event</SortTh>}
               {vis("files") && <SortTh k="files" sort={sort} onSort={setSort}>Files</SortTh>}
+              {vis("graded") && <Th>Photos graded</Th>}
+              {vis("pending") && <Th>Photos pending</Th>}
               {vis("colorist") && <SortTh k="colorist" sort={sort} onSort={setSort}>Colorist</SortTh>}
               {vis("priority") && <SortTh k="priority" sort={sort} onSort={setSort}>Priority</SortTh>}
               {vis("due") && <SortTh k="due" sort={sort} onSort={setSort}>SLA due</SortTh>}
@@ -187,6 +201,8 @@ export default function ColourGrading() {
                     {vis("customer") && <Td>{oo.customer}</Td>}
                     {vis("event") && <Td>{oo.event}</Td>}
                     {vis("files") && <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>}
+                    {vis("graded") && <Td>{(() => { const g = photosGraded(j.orderId), t = photosGiven(j.orderId); return g == null && t == null ? <span className="text-sub">—</span> : <span data-testid={`graded-${j.orderId}`} className="font-semibold text-emerald-700">{g ?? 0}{t ? <span className="font-normal text-sub"> / {t}</span> : null}</span>; })()}</Td>}
+                    {vis("pending") && <Td>{(() => { const p = photosPending(j.orderId); return <span data-testid={`pending-${j.orderId}`}>{p == null ? <span className="text-sub">—</span> : p === 0 ? <Pill tone="green">All done</Pill> : <Pill tone="amber">{p} pending</Pill>}</span>; })()}</Td>}
                     {vis("colorist") && <Td><span className="inline-flex items-center gap-2"><Avatar name={j.colorist} size={24} />{j.colorist}</span></Td>}
                     {vis("priority") && <Td><PriorityPill p={j.priority as Priority} /></Td>}
                     {vis("due") && <Td className={s.status === "breached" ? "text-rose-600" : ""}>{fmtDate(j.due)}</Td>}

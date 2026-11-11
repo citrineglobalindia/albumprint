@@ -22,6 +22,15 @@ export interface Progress { orderId: string; album?: number; dept: Dept; assigne
 export const PROGRESS: Progress[] = persistArray<Progress>("job_progress", []);
 export const progressOf = (orderId: string, dept: Dept, album = 0) => PROGRESS.find((p) => p.orderId === orderId && p.dept === dept && (p.album ?? 0) === album);
 export const photosGiven = (orderId: string) => progressOf(orderId, "order")?.count;
+/** Photos graded on an order: the albums' counts added up when they are kept per album, else the order's own count. */
+export function photosGraded(orderId: string): number | undefined {
+  const per = PROGRESS.filter((p) => p.orderId === orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.count != null);
+  return per.length ? per.reduce((s, p) => s + (p.count ?? 0), 0) : progressOf(orderId, "grading")?.count;
+}
+/** Photos still to grade (photos given − graded), when the photos given are known. */
+export const photosPending = (orderId: string) => { const g = photosGiven(orderId); return g == null ? undefined : Math.max(0, g - (photosGraded(orderId) ?? 0)); };
+/** Who updated the grading of an order (the order's own row or any album's). */
+export const gradingBy = (orderId: string) => new Set(PROGRESS.filter((p) => p.orderId === orderId && p.dept === "grading").flatMap((p) => [p.by, p.assignee]).filter(Boolean) as string[]);
 
 const WRITE: Record<Dept, RoleKey[]> = { order: ["admin", "reception"], grading: ["admin", "colour"], design: ["admin", "designer"], printing: ["admin", "printing"], qc: ["admin", "qc"], delivery: ["admin", "reception", "qc"] };
 const DEPT_MODULE: Record<Dept, Module> = { order: "order", grading: "grading", design: "design", printing: "printing", qc: "qc", delivery: "delivery" };

@@ -26,6 +26,11 @@ test("photos given → photos graded → sheets designed, with status updates, s
   await g.getByLabel("Photos graded").fill("120"); await g.getByLabel("grading status").selectOption("working"); await g.getByLabel("grading note").fill("rest tomorrow");
   await g.getByRole("button", { name: "Update" }).click();
   await expect(g.getByTestId("progress-grading-pct")).toHaveText("120 / 400 · 30%");
+  // the jobs table shows photos graded and pending; the cards add them up
+  await expect(page.getByTestId(`graded-${code}`)).toHaveText("120 / 400");
+  await expect(page.getByTestId(`pending-${code}`)).toHaveText("280 pending");
+  await expect(page.getByTestId("photo-kpis")).toContainText("Photos graded (all)");
+  await expect(page.getByTestId("photo-kpis")).toContainText("Projects worked (all)");
   await page.goto(`/orders/${code}`);
   await expect(page.getByTestId("step-progress-colour_grading")).toContainText("Photos graded 120 of 400 · Working on it · “rest tomorrow”");
 });
