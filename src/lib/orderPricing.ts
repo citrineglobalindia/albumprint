@@ -13,7 +13,7 @@ export interface DraftItem { itemId: string; qty: number; sheetQty?: number | st
  *  a rate per sheet (× sheets) or a fixed amount — added once per album. Left out = the rate card when one is set up, otherwise per sheet. */
 export type DesignMode = "card" | "per_sheet" | "fixed";
 export interface DesignCharge { mode: DesignMode; amount: string }
-export interface DraftAlbum { id: string; name: string; events?: string; eventDate?: string; labId?: string; purchase?: number; sheets: number; copies: number; size: string; paper: string; finish: string; orientation: string; notes: string; items: DraftItem[]; design?: DesignCharge }
+export interface DraftAlbum { id: string; name: string; eventDate?: string; labId?: string; purchase?: number; sheets: number; copies: number; size: string; paper: string; finish: string; orientation: string; notes: string; items: DraftItem[]; design?: DesignCharge }
 export interface NewCustomerDraft { name: string; phone: string; email: string; address: string }
 export interface OrderDraft {
   orderType: OrderType | "";

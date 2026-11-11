@@ -19,7 +19,7 @@ import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
-import { DRAFTS, invoiceLaterOn, isInvoicePending, sheetsDesigned, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
+import { DRAFTS, albumsForEvents, invoiceLaterOn, isInvoicePending, sheetsDesigned, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 
 const STEPS = ["Order type", "Customer", "Event & dates", "Albums & items", "Invoice", "Finalize"];
@@ -58,15 +58,6 @@ export default function OrderBuilder() {
   const [loaded, setLoaded] = useState(false);
   const busyRef = useRef(false);
   const errRef = useRef<HTMLDivElement>(null);
-  // Printing orders: events are ticked per album; the order's events are all of them together
-  useEffect(() => {
-    if (d.orderType !== "printing_only") return;
-    const all: string[] = [];
-    for (const a of d.albums) for (const x of (a.events ?? "").split(",").map((s) => s.trim()).filter(Boolean)) if (!all.some((y) => y.toLowerCase() === x.toLowerCase())) all.push(x);
-    if (!all.length) return;                                                            // nothing ticked per album: keep what the order had
-    const name = all.join(", ");
-    if (name !== d.event.name) setD((x) => ({ ...x, event: { ...x.event, name } }));
-  }, [d.orderType, d.albums]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (errs.length) errRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [errs]);
 
   useEffect(() => {
@@ -99,6 +90,10 @@ export default function OrderBuilder() {
   const go = async (s: number) => {
     if (s > step && step < 4) { const e = stepProblems(step).filter((m) => !(step === 3 && /not configured|rate card/.test(m))); if (e.length) { setErrs(e); return; } }
     setErrs([]); setStep(s); setVisited(Math.max(visited, s)); window.scrollTo({ top: 0 });
+    if (step === 2 && s === 3) {                                                          // Next from the events: one album per ticked event
+      const r = albumsForEvents(d);
+      if (r) { set({ albums: r.albums }); setCur(r.albums.findIndex((a) => a.name === r.added[0])); show(`${r.added.length} album${r.added.length === 1 ? "" : "s"} created: ${r.added.join(", ")}`); }
+    }
     if (d.orderType || d.customerId || d.newCustomer) void persist(true);
   };
   // ───── drafts: saved by hand, and automatically while an order is being entered ─────
@@ -341,7 +336,7 @@ function CustomerStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>)
 }
 
 /** Events of the order: tick all that apply (the admin's list in Masters › Event types), or add any other event by name. */
-function EventPicker({ value, onChange, title = "Events", summary = "Order events", testId = "event-picker" }: { value: string; onChange: (v: string) => void; title?: string; summary?: string; testId?: string }) {
+function EventPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [other, setOther] = useState("");
   const picked = value.split(",").map((x) => x.trim()).filter(Boolean);
   const base = EVENT_TYPES.filter((t) => t.toLowerCase() !== "other");
@@ -351,8 +346,8 @@ function EventPicker({ value, onChange, title = "Events", summary = "Order event
   const toggle = (n: string) => setList(has(n) ? picked.filter((p) => p.toLowerCase() !== n.toLowerCase()) : [...picked, n]);
   const add = () => { const n = other.trim().replace(/,/g, " "); if (!n) return; if (!has(n)) setList([...picked, n]); setOther(""); };
   return (
-    <div className="mb-4 md:col-span-2" data-testid={testId}>
-      <div className="mb-1.5 text-[13px] font-semibold">{title} <span className="font-normal text-sub">(tick all that apply)</span></div>
+    <div className="mb-4 md:col-span-2" data-testid="event-picker">
+      <div className="mb-1.5 text-[13px] font-semibold">Events <span className="font-normal text-sub">(tick all that apply)</span></div>
       <div className="flex flex-wrap gap-2">
         {[...base, ...extra].map((n) => (
           <label key={n} className={cx("inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm", has(n) ? "border-brand bg-brand-soft font-semibold text-brand" : "border-line hover:bg-slate-50")}>
@@ -364,7 +359,7 @@ function EventPicker({ value, onChange, title = "Events", summary = "Order event
         <input aria-label="Other event" className={cx(inputCls, "h-9 text-sm")} placeholder="Other event, e.g. Kunkuma Shastra" value={other} maxLength={60} onChange={(x) => setOther(x.target.value)} onKeyDown={(x) => { if (x.key === "Enter") { x.preventDefault(); add(); } }} />
         <button type="button" onClick={add} disabled={!other.trim()} className="h-9 shrink-0 rounded-lg border border-line px-3 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-40">+ Add event</button>
       </div>
-      {picked.length > 0 && <div className="mt-1.5 text-xs text-sub" data-testid={`${testId === "event-picker" ? "event" : testId}-summary`}>{summary}: <b className="text-ink">{picked.join(", ")}</b></div>}
+      {picked.length > 0 && <div className="mt-1.5 text-xs text-sub" data-testid="event-summary">Order events: <b className="text-ink">{picked.join(", ")}</b></div>}
     </div>
   );
 }
@@ -373,9 +368,7 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
   const ev = d.event; const e = (k: keyof OrderDraft["event"], v: string) => set({ event: { ...ev, [k]: v } });
   return (
     <section className="grid gap-x-4 rounded-2xl border border-line bg-white p-5 md:grid-cols-2" aria-label="Event details">
-      {d.orderType === "printing_only"
-        ? <p className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-semibold text-sky-900 md:col-span-2" data-testid="events-per-album">Printing orders: tick the events for each album in <b>Albums & items</b>.</p>
-        : <EventPicker value={ev.name} onChange={(v) => e("name", v)} />}
+      <EventPicker value={ev.name} onChange={(v) => e("name", v)} />
       <Field label="Couple name (optional)" hint="e.g. Asha & Ravi"><input aria-label="Couple name" className={inputCls} value={ev.couple ?? ""} maxLength={150} onChange={(x) => e("couple", x.target.value)} /></Field>
       <Field label="Order date" hint="The day the order was taken: today unless you pick an earlier date"><input aria-label="Order date" type="date" max={orderToday()} className={inputCls} value={ev.orderDate || orderToday()} onChange={(x) => e("orderDate", x.target.value)} /></Field>
       <Field label="Photos given (optional)" hint="How many photos the customer gave for this order"><input aria-label="Photos given" type="number" min={0} step={1} className={inputCls} value={ev.photosGiven ?? ""} onChange={(x) => e("photosGiven", x.target.value)} /></Field>
@@ -416,7 +409,6 @@ function AlbumEditor({ later = false, a, n, total, designed, priced, designErr, 
         <div className="ml-auto flex gap-2"><button onClick={onDuplicate} className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft"><Copy className="size-3.5" />Duplicate</button>
           <button disabled={total === 1} onClick={onRemove} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="size-3.5" />Remove</button></div></div>
       <div className="grid gap-x-4 md:grid-cols-3">
-        {!designed && <div className="md:col-span-3"><EventPicker title="Events in this album" summary="Album events" testId={`album-events-${n}`} value={a.events ?? ""} onChange={(v) => set({ events: v })} /></div>}
         <div className="md:col-span-2"><Field label="Album name / reference" required><input aria-label="Album name" className={inputCls} value={a.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Wedding album" /></Field></div>
         <Field label="Event date (optional)" hint="The event this album covers"><input aria-label="Album event date" type="date" className={inputCls} value={a.eventDate ?? ""} onChange={(e) => set({ eventDate: e.target.value })} /></Field>
         <Field label="Printing lab (optional)" hint="The lab that prints this album"><select aria-label="Album lab" className={inputCls} value={a.labId ?? ""} onChange={(e) => set({ labId: e.target.value || undefined })}><option value="">No lab / in-house</option>{LABS.filter((l) => l.active).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>

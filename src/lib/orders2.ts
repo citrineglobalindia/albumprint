@@ -49,6 +49,22 @@ export const blankDraft = (): OrderDraft => ({
   orderType: "", customerId: "", newCustomer: null, event: { type: "", name: "", date: "", delivery: "", notes: "", workGroup: "", priority: "Normal" },
   albums: [newAlbum(1)], orderCharges: [], discount: { type: "none", value: "" }, applyTax: true,
 });
+/** One album per ticked event: an event without an album of its name gets one (a blank album is used first). Nothing is removed.
+ *  Returns the new album list and the events that got an album, or null when nothing changes. */
+export function albumsForEvents(d: OrderDraft): { albums: DraftAlbum[]; added: string[] } | null {
+  const events = d.event.name.split(",").map((x) => x.trim()).filter(Boolean);
+  if (!events.length) return null;
+  const albums = d.albums.map((a) => ({ ...a }));
+  const blank = (a: DraftAlbum) => !a.name.trim() && !String(a.sheets ?? "").trim() && !a.items.length;
+  const added: string[] = [];
+  for (const ev of events) {
+    if (albums.some((a) => a.name.trim().toLowerCase() === ev.toLowerCase())) continue;
+    const free = albums.find(blank);
+    if (free) free.name = ev; else albums.push({ ...newAlbum(albums.length + 1), name: ev });
+    added.push(ev);
+  }
+  return added.length ? { albums, added } : null;
+}
 /** The day the order was taken: the picked order date, or today. */
 export const orderDateOf = (d: OrderDraft) => (d.event.orderDate && /^\d{4}-\d{2}-\d{2}$/.test(d.event.orderDate) ? d.event.orderDate : todayIso());
 export function customerName(d: OrderDraft): string {
