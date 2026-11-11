@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, FolderOpen, Plus, Save } from "lucide-react";
 import { Pill, cx, inputCls } from "./ui";
 import { useStore } from "../lib/store";
-import { WORK_STATUS, canUpdate, progressOf, saveProgress, statusLabel, type Dept } from "../lib/jobProgress";
+import { WORK_STATUS, statusesFor, canUpdate, progressOf, saveProgress, statusLabel, type Dept } from "../lib/jobProgress";
 import { fmtDT } from "../lib/production";
 
 /** A department's own update on a job: an optional count (photos graded, sheets designed…) of a total, a status and a note. */
@@ -43,7 +43,7 @@ export function JobProgress({ orderId, dept, album = 0, title = "My update", cou
         )}
         <label className="block"><span className="mb-1 block text-[11px] font-semibold text-sub">Status</span>
           <select aria-label={`${dept} status`} disabled={!can} className={cx(inputCls, "h-9 w-44 text-sm")} value={s} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">—</option>{WORK_STATUS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}</select></label>
+            <option value="">—</option>{statusesFor(dept).map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}</select></label>
         <label className="block min-w-[160px] flex-1"><span className="mb-1 block text-[11px] font-semibold text-sub">Note</span>
           <input aria-label={`${dept} note`} disabled={!can} maxLength={300} className={cx(inputCls, "h-9 text-sm")} value={n} onChange={(e) => setNote(e.target.value)} placeholder="e.g. 120 of 400 done, rest tomorrow" /></label>
         {can && <button type="button" disabled={!dirty} onClick={() => void save()} className="inline-flex h-9 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-40"><Save className="size-3.5" />Update</button>}

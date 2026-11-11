@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedRole, buildOrder } from "./helpers";
+import { seedRole, buildOrder, invoiceNow } from "./helpers";
 
 // Counts and status updates: photos given at order time (optional), photos graded by the grader, sheets designed by the designer,
 // each department's status + note — all shown on the order page's process list.
@@ -103,4 +103,49 @@ test("colour grading: an unassigned job shows the grader who started it", async 
     await expect(page.getByTestId(`grader-${code}`)).not.toContainText("Unassigned");
     await expect(page.getByTestId("assigned-grader")).not.toHaveText("Unassigned");
   }
+});
+
+test("album-wise process: assign at order taking → graded → admin approves → designer records client approval → final approval sends albums to the lab → received → QC", async ({ page }) => {
+  test.setTimeout(180_000);
+  await seedRole(page, "admin");
+  await page.goto("/labs");
+  await page.getByRole("button", { name: "Add lab" }).click();
+  await page.getByLabel("Lab name").fill("Flow Lab"); await page.getByRole("button", { name: "Save lab" }).click();
+  await buildOrder(page, { albums: [{ name: "Engagement", sheets: 20 }, { name: "Haldi", sheets: 20 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  for (const k of [1, 2]) {
+    await page.getByRole("tab").nth(k - 1).click();
+    const a = page.getByTestId(`album-${k}`);
+    await a.getByLabel("Album colour grader").selectOption("U4");
+    await a.getByLabel("Album designer").selectOption("U2");
+    await a.getByLabel("Album lab").selectOption({ label: "Flow Lab" });
+  }
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  const code = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
+
+  await page.goto(`/orders/${code}`);
+  const t = page.getByTestId("album-progress");
+  await expect(t.getByTestId("assign-1-grading")).toHaveValue("U4");
+  await expect(t.getByTestId("assign-2-design")).toHaveValue("U2");
+  const setStatus = async (k: number, dept: string, status: string) => {
+    await t.getByTestId(`cell-${k}-${dept}`).click();
+    const ed = page.getByTestId(`progress-${dept}-album-${k}`);
+    await ed.getByLabel(`${dept} status`).selectOption(status);
+    await ed.getByRole("button", { name: "Update" }).click();
+    await expect(t.getByTestId(`cell-${k}-${dept}`)).toContainText(status === "done" ? "Done" : "Client approved");
+  };
+  await page.getByRole("button", { name: "Move to Files Received" }).click();
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  await setStatus(1, "grading", "done"); await setStatus(2, "grading", "done");
+  await expect(page.getByTestId("step-admin_approval")).toHaveAttribute("data-state", "current");   // all graded → the approver
+  await page.getByRole("button", { name: "Move to Designing" }).click();                               // the approver approves
+  await setStatus(1, "design", "client_approved"); await setStatus(2, "design", "client_approved");
+  await expect(page.getByTestId("step-final_approval")).toHaveAttribute("data-state", "current");   // client approved every album → final approval
+  await page.getByRole("button", { name: "Move to Printing" }).click();                                // admin's final approval → the lab
+  await expect(t.getByTestId("lab-cell-1")).toContainText("At lab");
+  await expect(t.getByTestId("lab-cell-2")).toContainText("At lab");
+  await t.getByTestId("lab-cell-1").getByRole("button", { name: "Received" }).click();
+  await t.getByTestId("lab-cell-2").getByRole("button", { name: "Received" }).click();
+  await expect(page.getByTestId("step-qc")).toHaveAttribute("data-state", "current");                // everything back from the lab → QC
 });

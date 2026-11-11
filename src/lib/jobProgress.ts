@@ -9,12 +9,15 @@ import type { RoleKey } from "./auth";
 // Work counts and status updates per order and department (migration 0056, job_progress):
 // photos given (order), photos graded (grading), sheets designed (design), and each department's own status update with a note.
 export type Dept = "order" | "grading" | "design" | "printing" | "qc" | "delivery";
-export type WorkStatus = "not_started" | "working" | "waiting_files" | "waiting_client" | "paused" | "done";
+export type WorkStatus = "not_started" | "working" | "waiting_files" | "waiting_client" | "paused" | "done" | "client_approved";
 export const WORK_STATUS: { key: WorkStatus; label: string; tone: "slate" | "blue" | "amber" | "indigo" | "orange" | "green" }[] = [
   { key: "not_started", label: "Not started", tone: "slate" }, { key: "working", label: "Working on it", tone: "blue" },
   { key: "waiting_files", label: "Waiting for files", tone: "amber" }, { key: "waiting_client", label: "Waiting for client", tone: "indigo" },
   { key: "paused", label: "Paused", tone: "orange" }, { key: "done", label: "Done", tone: "green" },
+  { key: "client_approved", label: "Client approved", tone: "green" },                   // designing only: the client approved the design (taken manually)
 ];
+/** The statuses a department can choose (Client approved is the designer's). */
+export const statusesFor = (dept: Dept) => WORK_STATUS.filter((s) => s.key !== "client_approved" || dept === "design");
 export const statusLabel = (s?: WorkStatus) => WORK_STATUS.find((x) => x.key === s)?.label ?? "";
 export const DEPT_LABEL: Record<Dept, string> = { order: "Order", grading: "Colour Grading", design: "Designing", printing: "Printing", qc: "QC", delivery: "Delivery" };
 /** album: 0 or left out = the whole order; 1.. = the album at that position on the order (migration 0064). */

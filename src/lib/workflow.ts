@@ -10,6 +10,17 @@ import type { RoleKey } from "./auth";
 import { dbAdvance, dbSetHold, dbSetSla } from "./db/workflowDb";
 import { autoAssignLocal } from "./autoAssign";
 import { invoicePending } from "./pendingInvoice";
+import { progressOf } from "./jobProgress";
+
+/** Things that follow a stage move (registered by other modules, e.g. albums marked "sent to lab" on the way to Printing). */
+const AFTER_MOVE: ((o: Order, from: StageKey, to: StageKey) => void)[] = [];
+export const onStageMoved = (f: (o: Order, from: StageKey, to: StageKey) => void) => { AFTER_MOVE.push(f); };
+/** The designer recorded the client's approval (taken manually): on the order's own design row, or on every album's (migration 0068). */
+export const clientApprovedManually = (o: Order) => {
+  if (progressOf(o.id, "design")?.status === "client_approved") return true;
+  const n = o.albums?.length ?? 0;
+  return n > 0 && Array.from({ length: n }, (_, i) => i + 1).every((k) => progressOf(o.id, "design", k)?.status === "client_approved");
+};
 
 // Client-side mirror of the database's advance_order() (supabase/migrations/0002_rules.sql).
 // When the backend is connected, moveStage() becomes a thin call to that function; callers don't change.
@@ -23,7 +34,7 @@ export const TRANSITIONS: T[] = [
   { flow: "Design + Printing", from: "admin_approval", to: "colour_grading", roles: ["admin"], reason: true },
   { flow: "Design + Printing", from: "designing", to: "client_review", roles: ["admin", "designer"] },
   { flow: "Design + Printing", from: "client_review", to: "designing", roles: ["admin", "designer"], reason: true },
-  { flow: "Design + Printing", from: "client_review", to: "final_approval", roles: ["admin"] },
+  { flow: "Design + Printing", from: "client_review", to: "final_approval", roles: ["admin", "designer"] },     // the designer records the client's approval (0068)
   { flow: "Design + Printing", from: "final_approval", to: "printing", roles: ["admin"] },
   { flow: "Printing", from: "files_received", to: "printing", roles: ["admin", "reception"] },
   { flow: "both", from: "printing", to: "qc", roles: ["admin", "printing"] },
@@ -67,7 +78,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   }
   if (to === "printing" && flowOf(o) === "Design + Printing" && invoicePending(o.id) && !(opts.override && admin && reason)) return fail("Prepare the invoice before printing: open the order and use Prepare invoice");
   if (!opts.override) {                                                                                   // gates
-    if (o.stage === "final_approval" && to === "printing" && flowOf(o) === "Design + Printing" && !proofApproved(o.id)) return fail("Final client approval is required before release to printing");   // ALB-FR-0495
+    if (o.stage === "final_approval" && to === "printing" && flowOf(o) === "Design + Printing" && !proofApproved(o.id) && !clientApprovedManually(o)) return fail("Final client approval is required before release to printing");   // ALB-FR-0495
     if (o.stage === "files_received" && to === "printing" && flowOf(o) === "Printing" && uploadsRequired() && !hasPrintReadyFile(o.id)) return fail("Upload a print-ready file (category Final Print) before printing");               // ALB-FR-0077
     if (to === "ready_for_delivery" && !qcPassed(o)) return fail("QC must pass before Ready for Delivery");                                                                                              // ALB-FR-0496
   }
@@ -78,6 +89,7 @@ export function moveStage(orderId: string, to: StageKey, opts: { reason?: string
   notify();
   dbAdvance(o.uid, to, reason || undefined, !!opts.override, () => { o.stage = from; o.progress = prev.progress; o.qc = prev.qc; notify(); });
   notifyStage(o, from, to);
+  for (const f of AFTER_MOVE) { try { f(o, from, to); } catch (e) { console.warn("[workflow] after-move step failed", e); } }
   autoAssignLocal(o, to);                                                                                // demo: the admin's auto-assign rule (the database applies it itself)
   logAudit({ entity: "order", entityId: o.id, action: overridden ? "stage_override" : "stage_change", from: stageLabel(from), to: stageLabel(to), reason: reason || undefined, override: overridden || undefined });
   return { ok: true, order: o };

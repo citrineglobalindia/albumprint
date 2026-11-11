@@ -4,3 +4,4 @@ import { persistArray } from "./persist";
 import "./audit"; import "./files"; import "./proofs";
 persistArray("orders", ORDERS);
 persistArray("customers", CUSTOMERS);
+import "./albumFlow";                                    // the album-wise process: automatic stage moves, albums marked sent to the lab

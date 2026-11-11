@@ -19,6 +19,7 @@ import { PRIORITIES } from "../lib/data";
 import { cleanMobile, mobileError } from "../lib/format";
 import { ITEMS, SCOPE_LABEL, itemById, loadCatalog2, optionItems, pricingSettings, rateCard, seedDemoCatalog, type OptionKind } from "../lib/catalog2";
 import { money, type DraftAlbum, type OrderDraft, type PricedOrder } from "../lib/orderPricing";
+import { applyAlbumAssignments, loadMods, personLabel, pickFor } from "../lib/albumFlow";
 import { DRAFTS, albumsForEvents, invoiceLaterOn, isInvoicePending, sheetsDesigned, addDays, businessNameShown, canChooseBusinessName, blankDraft, deleteDraft, draftProblems, finalizeDraft, listDrafts, newAlbum, openDrafts, orderToday, previewSnapshot, price, saveDraft, serverPrice, type FinalizeResult, type InvoiceSnapshot } from "../lib/orders2";
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 
@@ -70,7 +71,7 @@ export default function OrderBuilder() {
   useEffect(() => {
     seedDemoCatalog();
     void (async () => {
-      await Promise.all([loadCatalog2(), listDrafts()]);
+      await Promise.all([loadCatalog2(), listDrafts(), loadMods()]);
       const id = params.get("draft");
       const rec = id ? DRAFTS.find((x) => x.id === id) : undefined;
       if (rec) {
@@ -147,6 +148,7 @@ export default function OrderBuilder() {
       show(r.result.invoicePending ? `Order ${r.result.code} created · prepare the invoice after the design` : `Order ${r.result.code} finalized · invoice ${r.result.invoiceNumber}`);
       const pg = d.event.photosGiven?.trim(); void applyPhotosGiven(r.result.code, pg ? Math.max(0, Math.floor(Number(pg))) : undefined);
       void applyAlbumLabs(r.result.code, d.albums.map((a) => ({ labId: a.labId, purchase: a.purchase }))).then((e) => { if (e) setErrs([`Order saved, but the lab details were not: ${e}`]); });
+      if (!d.reopenOrder) void applyAlbumAssignments(r.result.code, d.albums.map((a) => ({ graderId: a.graderId, designerId: a.designerId }))).then((e) => { if (e) setErrs([`Order saved, but the album assignments were not: ${e}`]); });
     } finally { busyRef.current = false; setBusy(false); }
   };
   const verify = async () => {
@@ -418,6 +420,13 @@ function AlbumEditor({ later = false, a, n, total, designed, priced, designErr, 
         <div className="md:col-span-2"><Field label="Album name / reference" required><input aria-label="Album name" className={inputCls} value={a.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Wedding album" /></Field></div>
         <Field label="Event date (optional)" hint="The event this album covers"><input aria-label="Album event date" type="date" className={inputCls} value={a.eventDate ?? ""} onChange={(e) => set({ eventDate: e.target.value })} /></Field>
         <Field label="Printing lab (optional)" hint="The lab that prints this album"><select aria-label="Album lab" className={inputCls} value={a.labId ?? ""} onChange={(e) => set({ labId: e.target.value || undefined })}><option value="">No lab / in-house</option>{LABS.filter((l) => l.active).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
+        {designed && (["grading", "design"] as const).map((dept) => { const pick = pickFor(dept); const key = dept === "grading" ? "graderId" : "designerId"; return (
+          <Field key={dept} label={dept === "grading" ? "Colour grader (optional)" : "Designer (optional)"} hint="Notified when the order is created">
+            <select aria-label={dept === "grading" ? "Album colour grader" : "Album designer"} className={inputCls} value={a[key] ?? ""} onChange={(e) => set({ [key]: e.target.value || undefined })}>
+              <option value="">Assign later</option>
+              {pick.fit.length > 0 && <optgroup label={dept === "grading" ? "Colour Grading" : "Designing"}>{pick.fit.map((p) => <option key={p.id} value={p.id}>{personLabel(p)}</option>)}</optgroup>}
+              <optgroup label="Other staff">{pick.other.map((p) => <option key={p.id} value={p.id}>{personLabel(p)}</option>)}</optgroup>
+            </select></Field>); })}
         {canSeeCost() && <Field label="Purchase amount (₹, optional)" hint={(() => { const e = a.labId && priced ? labCostOf(priced.lines, priced.copies, a.labId) : undefined; return e && e.items > e.missing.length ? `From ${labName(a.labId)} rates: ₹${e.amount.toLocaleString("en-IN")}${e.missing.length ? ` (no rate for ${e.missing.length} item${e.missing.length === 1 ? "" : "s"})` : ""} — used when left empty` : "What the lab charges us — for profit"; })()}><input aria-label="Album purchase amount" type="number" min={0} step="0.01" className={inputCls} value={a.purchase ?? ""} onChange={(e) => set({ purchase: e.target.value === "" ? undefined : Number(e.target.value) })} /></Field>}
         <Field label={later ? "Sheets (optional — after the design)" : "Sheets"} required={!later}><input aria-label="Sheets" type="number" min={1} step={1} className={inputCls} value={a.sheets} onChange={(e) => set({ sheets: num(e.target.value) })} /></Field>
         <Field label={later ? "Copies (optional)" : "Copies"} required={!later}><input aria-label="Copies" type="number" min={1} step={1} className={inputCls} value={a.copies} onChange={(e) => set({ copies: num(e.target.value) })} /></Field>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PackageCheck, Send, TrendingUp, Undo2 } from "lucide-react";
 import { Panel, Pill, cx, inputCls } from "./ui";
 import { useStore } from "../lib/store";
+import { advanceAfter } from "../lib/albumFlow";
 import { inr, fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
 import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, purchaseOf, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
@@ -14,7 +15,7 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
   useStore();
   const cost = canSeeCost(), move = canMoveLabWork();
   const [amt, setAmt] = useState<Record<number, string>>({});
-  const run = (p: Promise<{ ok: boolean; msg: string }>) => void p.then((r) => onDone(r.msg, r.ok));
+  const run = (p: Promise<{ ok: boolean; msg: string }>) => void p.then((r) => { onDone(r.msg, r.ok); const a = r.ok ? advanceAfter(o.id, "printing") : null; if (a) onDone(a.msg, a.ok); });
   const labs = LABS.filter((l) => l.active);
   const pr = profitOf(o);
   return (
