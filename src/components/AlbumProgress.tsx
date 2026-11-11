@@ -128,7 +128,7 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
             </tr>); })}</tbody>
         </table>
       </div>
-      {sel && col && <JobProgress key={`${sel.album}-${sel.dept}`} orderId={o.id} dept={sel.dept} album={sel.album} title={`${albums[sel.album - 1]?.title || `Album ${sel.album}`} · ${col.label}`} countLabel={col.count} of={total(sel.dept, sel.album - 1)} onDone={after(sel.dept)} />}
+      {sel && col && <JobProgress key={`${sel.album}-${sel.dept}`} orderId={o.id} dept={sel.dept} album={sel.album} title={`${albums[sel.album - 1]?.title || `Album ${sel.album}`} · ${col.label}`} countLabel={col.count} of={total(sel.dept, sel.album - 1)} pathLabel={sel.dept === "grading" ? "Graded files path / link" : sel.dept === "design" ? "Design files path / link" : undefined} onDone={after(sel.dept)} />}
     </div>
   );
 }

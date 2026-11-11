@@ -14,7 +14,7 @@ import { latestProof } from "../lib/proofs";
 import { fmtDT } from "../lib/production";
 import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveDesignNote, sendToClient, startDesign, type DStatus } from "../lib/designJobs";
 import { JobProgress } from "../components/JobProgress";
-import { photosGiven } from "../lib/jobProgress";
+import { filesPathOf, photosGiven } from "../lib/jobProgress";
 import { AlbumProgress } from "../components/AlbumProgress";
 import type { Order, Priority } from "../lib/data";
 
@@ -110,7 +110,8 @@ export default function DesignJobs() {
                 <div><dt className="text-xs text-sub">Sheets</dt><dd className="font-semibold">{cur.pages}</dd></div>
               </dl>
               <JobTimer start={j?.startedAt} end={designEnd(cur)} label="Design time" paused={cur.hold ? cur.hold : undefined} />
-              <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} onDone={(m) => show(m)} />
+              {filesPathOf(cur.id, "grading").length > 0 && <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[13px]" data-testid="graded-path"><b>Graded photos are at:</b> {filesPathOf(cur.id, "grading").map((x) => <span key={x} className="ml-1 select-all break-all font-mono text-xs">{x}</span>)}</div>}
+              <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} pathLabel="Design files path / link" onDone={(m) => show(m)} />
               <div className="mt-3"><AlbumProgress o={cur} only={["design"]} onDone={(m) => show(m)} /></div>
               {s === "Corrections" && p && (
                 <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700" data-testid="client-corrections">

@@ -255,7 +255,7 @@ export default function ColourGrading() {
               <div><dt className="text-xs text-sub">SLA due</dt><dd data-testid="sla-due" className={cx("font-semibold", sla?.status === "breached" && "text-rose-600")}>{sla?.dueAt ? fmtDate(sla.dueAt) : fmtDate(cur.due)}<span className="block text-[11px] font-normal text-sub">{sla ? sla.status.replace("_", " ") : ""}</span></dd></div>
               <div><dt className="text-xs text-sub">Rounds</dt><dd className="font-semibold">{cur.rounds}</dd></div>
             </dl>
-            <JobProgress orderId={cur.orderId} dept="grading" countLabel="Photos graded" of={photosGiven(cur.orderId)} onDone={(m) => show(m)} />
+            <JobProgress orderId={cur.orderId} dept="grading" countLabel="Photos graded" of={photosGiven(cur.orderId)} pathLabel="Graded files path / link" onDone={(m) => show(m)} />
             {o && <div className="mt-3"><AlbumProgress o={o} only={["grading"]} onDone={(m) => show(m)} /></div>}
             <JobTimer start={cur.startedAt} end={gradEnd(cur)} label="Grading time" paused={o.hold ? "On hold" : undefined} />
             <div className="mt-3 rounded-xl bg-slate-50 p-3 text-[13px]"><div className="mb-1 text-xs font-bold uppercase text-sub">Grading instructions</div><p data-testid="instructions">{cur.instructions}</p></div>

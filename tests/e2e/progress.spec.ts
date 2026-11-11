@@ -31,8 +31,16 @@ test("photos given → photos graded → sheets designed, with status updates, s
   await expect(page.getByTestId(`pending-${code}`)).toHaveText("280 pending");
   await expect(page.getByTestId("photo-kpis")).toContainText("Photos graded (all)");
   await expect(page.getByTestId("photo-kpis")).toContainText("Projects worked (all)");
+  // a later sitting: add 80 more to the total; the grader notes where the graded files are
+  await g.getByLabel("Add more done now").fill("80"); await g.getByRole("button", { name: "Add" }).click();
+  await expect(g.getByTestId("progress-grading-pct")).toHaveText("200 / 400 · 50%");
+  await expect(page.getByTestId(`pending-${code}`)).toHaveText("200 pending");
+  await g.getByLabel("Graded files path / link").fill("D:\\Orders\\Graded");
+  await g.getByRole("button", { name: "Update" }).click();
+  await expect(g.getByLabel("Graded files path / link")).toHaveValue("D:\\Orders\\Graded");
   await page.goto(`/orders/${code}`);
-  await expect(page.getByTestId("step-progress-colour_grading")).toContainText("Photos graded 120 of 400 · Working on it · “rest tomorrow”");
+  await expect(page.getByTestId("step-progress-colour_grading")).toContainText("Photos graded 200 of 400 · Working on it · “rest tomorrow”");
+  await expect(page.getByTestId("step-path-colour_grading")).toContainText("D:\\Orders\\Graded");
 });
 
 test("an order with several albums keeps progress per album on the order page", async ({ page }) => {

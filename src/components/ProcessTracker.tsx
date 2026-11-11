@@ -8,7 +8,7 @@ import { backendOn } from "../lib/supabase";
 import { sb } from "../lib/db/core";
 import { fmtDate } from "../lib/format";
 import type { RoleKey } from "../lib/auth";
-import { photosGiven, progressOf, statusLabel, type Dept } from "../lib/jobProgress";
+import { filesPathOf, photosGiven, progressOf, statusLabel, type Dept } from "../lib/jobProgress";
 const STAGE_DEPT: Partial<Record<StageKey, Dept>> = { new_order: "order", colour_grading: "grading", designing: "design", printing: "printing", qc: "qc", ready_for_delivery: "delivery" };
 const COUNT_LABEL: Partial<Record<Dept, string>> = { grading: "Photos graded", design: "Sheets designed", printing: "Sheets printed" };
 
@@ -87,6 +87,7 @@ export function ProcessTracker({ o, role, tick }: { o: Order; role: RoleKey | nu
               {(() => { const d = STAGE_DEPT[s.stage]; const p = d ? progressOf(o.id, d) : undefined; if (!p || (p.count == null && !p.status && !p.note)) return null;
                 const total = d === "design" ? o.pages : d === "grading" ? photosGiven(o.id) : undefined;
                 return <div className="text-xs text-sub" data-testid={`step-progress-${s.stage}`}>{d === "order" ? `Photos given: ${p.count}` : [p.count != null ? `${COUNT_LABEL[d!] ?? "Count"} ${p.count}${total ? ` of ${total}` : ""}` : "", statusLabel(p.status), p.note ? `“${p.note}”` : ""].filter(Boolean).join(" · ")}{p.by && d !== "order" ? ` — ${p.by}` : ""}</div>; })()}
+              {(() => { const d = STAGE_DEPT[s.stage]; const paths = d && (d === "grading" || d === "design") ? filesPathOf(o.id, d) : []; return paths.length ? <div className="text-xs text-sub" data-testid={`step-path-${s.stage}`}>Files at: {paths.map((x) => <span key={x} className="ml-1 select-all break-all font-mono text-ink">{x}</span>)}</div> : null; })()}
               {state === "done" && <div className="text-xs text-sub" data-testid="step-by">{by ? <>by <b className="text-ink">{by.actor}</b> ({ROLE_NAME[by.role] ?? by.role}) · {when(by.at)}{by.reason ? ` · “${by.reason}”` : ""}</> : "Completed"}</div>}
               {state === "current" && <>
                 <div className="text-xs text-sub">{s.todo}</div>
