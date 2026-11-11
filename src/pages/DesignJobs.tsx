@@ -14,7 +14,7 @@ import { latestProof } from "../lib/proofs";
 import { fmtDT } from "../lib/production";
 import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveDesignNote, sendToClient, startDesign, type DStatus } from "../lib/designJobs";
 import { JobProgress } from "../components/JobProgress";
-import { WORK_STATUS, filesPathOf, photosGiven, progressOf, statusLabel } from "../lib/jobProgress";
+import { WORK_STATUS, filesPathOf, photosGiven, progressOf, saveProgress, statusLabel } from "../lib/jobProgress";
 import { currentActor } from "../lib/audit";
 import { advanceAfter } from "../lib/albumFlow";
 import { AlbumProgress } from "../components/AlbumProgress";
@@ -40,7 +40,9 @@ export default function DesignJobs() {
   const canWork = role === "admin" || role === "designer" || hasModule("design");
   const [tab, setTab] = useState<Tab>("queue");
   const [q, setQ] = useState(""); const [page, setPage] = useState(1);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenIdRaw] = useState<string | null>(null);
+  const [openAlbum, setOpenAlbum] = useState(0);                                   // the album whose update box opens with the job (0 = the order)
+  const setOpenId = (id: string | null, album = 0) => { setOpenIdRaw(id); setOpenAlbum(album); };
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [toast, show] = useToast();
   const base = designOrders();
@@ -64,6 +66,21 @@ export default function DesignJobs() {
   const cur = openId ? base.find((o) => o.id === openId) ?? null : null;
 
   const start = async (o: Order) => { const r = await startDesign(o.id); show(r.msg); if (r.ok) setOpenId(o.id); };
+  /** Start one album: the order's design job starts with its first album. */
+  const startAlbum = async (o: Order, k: number) => {
+    if (!djob(o.id)?.startedAt) { const r = await startDesign(o.id); if (!r.ok) { show(r.msg); return; } }
+    const r = await saveProgress(o.id, "design", { status: "working" }, k);
+    show(r.ok ? `Album ${k} started` : r.msg); if (r.ok) setOpenId(o.id, k);
+  };
+  /** The whole order: albums finished (done or client approved) and sheets designed over all albums. */
+  const orderProgress = (o: Order) => {
+    const albums = o.albums?.length ? o.albums : [{ sheets: o.pages }];
+    const at = (k: number) => progressOf(o.id, "design", k) ?? (albums.length === 1 ? progressOf(o.id, "design") : undefined);
+    const done = albums.filter((_, i) => ["done", "client_approved"].includes(at(i + 1)?.status ?? "")).length;
+    const designed = albums.reduce((s0, _, i) => s0 + (at(i + 1)?.count ?? 0), 0), total = albums.reduce((s0, a) => s0 + (Number(a.sheets) || 0), 0);
+    const pct = total > 0 ? Math.min(100, Math.round((designed / total) * 100)) : Math.round((done / albums.length) * 100);
+    return { done, n: albums.length, designed, total, pct };
+  };
   return (
     <>
       <PageHeader title="Album Designing" subtitle="Design jobs: start, work from the graded photos, upload the album pages and send the proof to the client." />
@@ -75,14 +92,14 @@ export default function DesignJobs() {
         </div>
         <div className="overflow-x-auto">
           <table className={tableCls}>
-            <thead><tr><Th>Order ID</Th><Th>Album</Th><Th>Customer</Th><Th>Sheets designed</Th><Th>Designer</Th><Th>Priority</Th><Th>Due</Th><Th>Time</Th><Th>Album status</Th><Th>Order status</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th>Order ID</Th><Th>Album</Th><Th>Customer</Th><Th>Sheets designed</Th><Th>Designer</Th><Th>Priority</Th><Th>Due</Th><Th>Time</Th><Th>Album status</Th><Th>Order progress</Th><Th className="text-right">Actions</Th></tr></thead>
             <tbody>
               {shown.map(({ o, k, title, sheets, designer }, ri) => {
                 const s = st(o), j = djob(o.id), ap = progressOf(o.id, "design", k) ?? (k === 1 && (o.albums?.length ?? 0) <= 1 ? progressOf(o.id, "design") : undefined);
                 const first = ri === 0 || shown[ri - 1]!.o.id !== o.id;
                 return (
                   <tr key={`${o.id}-${k}`} data-testid={k === 1 ? `djob-${o.id}` : `djob-${o.id}-${k}`} onClick={() => setOpenId(o.id)} className={cx(trCls, "cursor-pointer", openId === o.id && "bg-brand-soft", !first && "border-t-0")}>
-                    <Td className="font-bold">{first ? o.id : <span className="pl-3 text-sub">↳</span>}</Td>
+                    <Td className="font-bold">{o.id}</Td>
                     <Td><span className="font-semibold">{title}</span>{sheets ? <span className="block text-[11px] text-sub">{sheets} sheets</span> : null}</Td>
                     <Td>{o.customer}</Td>
                     <Td data-testid={`dsheets-${o.id}-${k}`}>{ap?.count != null ? <span className="font-semibold text-emerald-700">{ap.count}{sheets ? <span className="font-normal text-sub"> / {sheets}</span> : null}</span> : <span className="inline-flex items-center gap-1.5 text-sub"><ImageIcon className="size-3.5" />{k === 1 ? pages(o.id) : "—"}</span>}</Td>
@@ -91,12 +108,18 @@ export default function DesignJobs() {
                     <Td className={new Date(o.due) < TODAY && s !== "Approved" ? "font-semibold text-rose-600" : ""}>{fmtDate(o.due)}</Td>
                     <Td><Elapsed start={j?.startedAt} end={designEnd(o)} /></Td>
                     <Td>{ap?.status ? <Pill tone={WORK_STATUS.find((x) => x.key === ap.status)?.tone ?? "slate"}>{statusLabel(ap.status)}</Pill> : <span className="text-xs text-sub">Not started</span>}</Td>
-                    <Td><Pill tone={DSTATUS_TONE[s]} className="min-w-[90px] justify-center">{s}</Pill></Td>
+                    <Td>{(() => { const p = orderProgress(o); return (
+                      <div className="min-w-[150px]" data-testid={`dprogress-${o.id}-${k}`}>
+                        <div className="flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded bg-line"><div className="h-full bg-emerald-500" style={{ width: `${p.pct}%` }} /></div><span className="text-[11px] font-bold tabular-nums">{p.pct}%</span></div>
+                        <div className="mt-0.5 text-[11px] text-sub">{p.done}/{p.n} albums done{p.total ? ` · ${p.designed}/${p.total} sheets` : ""} · <span className="font-semibold">{s}</span></div>
+                      </div>); })()}</Td>
                     <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      {!first ? <button onClick={() => setOpenId(o.id)} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">Update</button>
-                        : canWork && (s === "New" || s === "Corrections") && !j?.startedAt ? <button onClick={() => void start(o)} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>
-                        : canWork && s === "Corrections" ? <button onClick={() => void start(o)} className="h-8 rounded-lg bg-rose-600 px-3 text-xs font-bold text-white hover:bg-rose-700">Fix corrections</button>
-                        : <Link to={`/designing/${o.id}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{s === "In Progress" ? "Continue" : "Open"}</Link>}
+                      {(() => {
+                        const st0 = ap?.status;
+                        if (canWork && o.stage === "designing" && (!st0 || st0 === "not_started")) return <button onClick={() => void startAlbum(o, k)} data-testid={`dstart-${o.id}-${k}`} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>;
+                        if (canWork && s === "Corrections") return <button onClick={() => setOpenId(o.id, k)} className="h-8 rounded-lg bg-rose-600 px-3 text-xs font-bold text-white hover:bg-rose-700">Fix corrections</button>;
+                        return <button onClick={() => setOpenId(o.id, k)} data-testid={`dopen-${o.id}-${k}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{st0 && !["done", "client_approved"].includes(st0) ? "Continue" : "Open"}</button>;
+                      })()}
                     </td>
                   </tr>
                 );
@@ -128,7 +151,9 @@ export default function DesignJobs() {
               </dl>
               <JobTimer start={j?.startedAt} end={designEnd(cur)} label="Design time" paused={cur.hold ? cur.hold : undefined} />
               {filesPathOf(cur.id, "grading").length > 0 && <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[13px]" data-testid="graded-path"><b>Graded photos are at:</b> {filesPathOf(cur.id, "grading").map((x) => <span key={x} className="ml-1 select-all break-all font-mono text-xs">{x}</span>)}</div>}
-              <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} pathLabel="Design files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.id, "design") : null; if (a) show(a.msg); }} />
+              {openAlbum > 0 && (cur.albums?.length ?? 0) > 1
+                ? <JobProgress key={`album-${openAlbum}`} orderId={cur.id} dept="design" album={openAlbum} title={`${cur.albums?.[openAlbum - 1]?.title || `Album ${openAlbum}`} · my update`} countLabel="Sheets designed" of={cur.albums?.[openAlbum - 1]?.sheets || undefined} pathLabel="Design files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.id, "design") : null; if (a) show(a.msg); }} />
+                : <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} pathLabel="Design files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.id, "design") : null; if (a) show(a.msg); }} />}
               <div className="mt-3"><AlbumProgress o={cur} only={["design"]} onDone={(m) => show(m)} /></div>
               {s === "Corrections" && p && (
                 <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700" data-testid="client-corrections">

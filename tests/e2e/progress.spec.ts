@@ -170,4 +170,15 @@ test("Album Designing lists one row per album; the designer sees the albums assi
   await expect(page.getByTestId(`djob-${code}-2`)).toContainText("Haldi");
   await expect(page.getByTestId(`djob-${code}-3`)).toContainText("Muhurtham");
   await expect(page.getByTestId(`djob-${code}-4`)).toHaveCount(0);                                       // not theirs
+  // each album has its own Start; the order shows its total progress
+  await expect(page.getByTestId(`djob-${code}-2`)).toContainText(code);
+  await page.getByTestId(`dstart-${code}-2`).click();
+  await expect(page.getByTestId(`djob-${code}-2`)).toContainText("Working on it");
+  await expect(page.getByTestId(`dstart-${code}-1`)).toBeVisible();                                     // the other albums still wait to be started
+  const ed = page.getByTestId("progress-design-album-2").first();
+  await ed.getByLabel("Sheets designed").fill("15"); await ed.getByLabel("design status").selectOption("done");
+  await ed.getByRole("button", { name: "Update" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId(`dprogress-${code}-1`)).toContainText("1/4 albums done · 15/90 sheets");
+  await expect(page.getByTestId(`dprogress-${code}-1`)).toContainText("17%");
 });
