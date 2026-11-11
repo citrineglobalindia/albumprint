@@ -65,7 +65,7 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
 }
 
 const DETAIL = "*, order_specs(album_size,pages), order_albums(*), order_items(*), album_lines(*, album_line_costs(cost_price)), order_costing(*)";
-/** The order list loads light; albums, items and costing (heavier) are fetched when one order is opened. */
+/** The order list loads light with every order's albums (the album-wise screens need them); items and costing (heavier) are fetched when one order is opened. */
 export async function loadOrderDetail(code: string): Promise<void> {
   const o = ORDERS.find((x) => x.id === code); if (!o?.uid) return;
   const { data, error } = await sb().from("orders").select(DETAIL).eq("id", o.uid).maybeSingle();
@@ -82,7 +82,7 @@ async function hydrate() {
   const client = sb();
   const [custRows, ordRows, staffRows] = await Promise.all([
     q<Row[]>("Loading customers", client.rpc("list_customers") as never),
-    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages)").order("created_at", { ascending: false }) as never),
+    q<Row[]>("Loading orders", client.from("orders").select("*, order_specs(album_size,pages), order_albums(*)").order("created_at", { ascending: false }) as never),
     sharedStaff(),
   ]);
   const customers = (custRows ?? []).map(customerFromRow);
@@ -98,7 +98,7 @@ async function hydrate() {
     c.lastOrder = mine.map((o) => o.pendingAt).sort().at(-1) ?? c.since;
   }
   // a refresh keeps the detail (albums, items, costing) of orders that were opened, then re-reads it so it stays current
-  const opened = ORDERS.filter((o) => o.uid && (o.albums || o.items || o.costing));
+  const opened = ORDERS.filter((o) => o.uid && (o.items || o.costing));          // albums now come with the list
   const prev = new Map(opened.map((o) => [o.uid!, o]));
   for (const o of orders) { const p = o.uid ? prev.get(o.uid) : undefined; if (p) { o.albums ??= p.albums; o.items ??= p.items; o.costing ??= p.costing; } }
   ORDERS.splice(0, ORDERS.length, ...orders);
