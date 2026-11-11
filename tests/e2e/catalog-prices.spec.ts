@@ -66,7 +66,7 @@ test("import the product list, price it in bulk, use the price in an order", asy
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await page.getByRole("button", { name: "Next" }).click();
-  await page.getByLabel("Event date").fill("2026-12-12"); await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Sheets", { exact: true }).fill("10");
   const p1 = page.getByTestId("picker-1");
@@ -184,7 +184,7 @@ test("sheet balance: all per-sheet items share the album's sheets; the next item
   await page.getByRole("radio", { name: /Album Printing Only/ }).click(); await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await page.getByRole("button", { name: "Next" }).click();
-  await page.getByLabel("Event date").fill("2026-12-12"); await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
   const a1 = page.getByTestId("album-1"), p1 = page.getByTestId("picker-1");
   await a1.getByLabel("Album name").fill("Wedding Album"); await a1.getByLabel("Sheets", { exact: true }).fill("30");
 

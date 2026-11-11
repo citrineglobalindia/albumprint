@@ -30,7 +30,6 @@ export async function buildOrder(page: Page, o: { type?: RegExp; customer?: RegE
   }
   await page.getByRole("button", { name: "Next" }).click();
   if (o.eventName) { await page.getByLabel("Other event").fill(o.eventName); await page.getByLabel("Other event").press("Enter"); }
-  await page.getByLabel("Event date").fill("2026-12-12");
   if (o.photosGiven) await page.getByLabel("Photos given").fill(o.photosGiven);
   await page.getByRole("button", { name: "Next" }).click();
   const albums = o.albums ?? [{ name: "Wedding album" }];

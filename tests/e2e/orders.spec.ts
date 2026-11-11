@@ -39,7 +39,7 @@ test.describe("orders", () => {
     await expect(page.getByRole("alert")).toContainText("Mobile number must start with 6, 7, 8 or 9");
     await mobile.fill("6123456789");
     await page.getByRole("button", { name: "Next" }).click();
-    await expect(page.getByLabel("Event date")).toBeVisible();
+    await expect(page.getByLabel("Order date")).toBeVisible();
   });
 
   test("a new customer + order persist, customers list included", async ({ page }) => {

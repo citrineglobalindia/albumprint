@@ -16,7 +16,7 @@ test("Design + Printing: multiple independent albums, dependent categories, all 
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Other event").fill("Asha & Ravi"); await page.getByLabel("Other event").press("Enter"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Other event").fill("Asha & Ravi"); await page.getByLabel("Other event").press("Enter"); await next(page);
 
   // album 1: 30 sheets × 2 copies, 12x36, cover + box (per copy), UV spot per sheet (Extras ▸ Premium), name foiling (per album)
   const a1 = page.getByTestId("album-1");
@@ -252,9 +252,6 @@ test("drafts: save, leave, resume with everything kept; steps keep their data", 
   await page.getByRole("button", { name: /Albums & items/ }).click();
   await expect(page.getByTestId("album-1").getByLabel("Album name")).toHaveValue("Draft album");
   await expect(page.getByTestId("album-1").getByLabel("Sheets")).toHaveValue("44");
-  await page.getByRole("button", { name: /Event & dates/ }).click();
-  await expect(page.getByLabel("Event date")).toHaveValue("2026-12-12");
-  await page.getByRole("button", { name: /Albums & items/ }).click();
   await expect(page.getByTestId("album-1").getByLabel("Copies")).toHaveValue("3");
 });
 
@@ -326,7 +323,7 @@ test("the event step has no event type; an order finalizes without one", async (
   await expect(page.getByLabel("Event type")).toHaveCount(0);
   await expect(page.getByTestId("event-picker")).toBeVisible();
   await expect(page.getByLabel("Order date")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);       // today by default
-  await page.getByLabel("Event date").fill("");                                     // the event date is optional
+                                      // the event date is optional
   await next(page);
   await expect(page.getByTestId("album-1")).toBeVisible();                           // went on to Albums without asking for it
   await page.getByRole("button", { name: "Back" }).click();
@@ -341,7 +338,7 @@ test("Design + Printing: design charge typed on the order (per sheet or fixed, o
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await next(page);
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Wedding"); await a1.getByLabel("Sheets", { exact: true }).fill("30"); await a1.getByLabel("Copies").fill("2");
   // default: the design rate card (sample ₹40/sheet, per copy): 30×90 + 30×40 = 3,900 per copy
@@ -377,7 +374,7 @@ test("a half-entered order is saved as a draft automatically and can be resumed"
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page);
   await page.getByRole("button", { name: /^Search customer/ }).click();
   await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
-  await page.getByLabel("Other event").fill("Half entry"); await page.getByLabel("Other event").press("Enter"); await page.getByLabel("Event date").fill("2026-12-12"); await next(page);
+  await page.getByLabel("Other event").fill("Half entry"); await page.getByLabel("Other event").press("Enter"); await next(page);
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Album name").fill("Main album"); await a1.getByLabel("Sheets", { exact: true }).fill("24");
   await expect(page.getByTestId("autosave")).toContainText("Draft saved automatically");
@@ -644,4 +641,18 @@ test("ticking events and pressing Next creates one album per event", async ({ pa
   await page.getByLabel("Event Wedding").check();
   await next(page);
   await expect(page.getByRole("tab")).toHaveText([/^Engagement/, /^Haldi/, /^Wedding/]);
+});
+
+test("event step: no order-level event date; photos given only on Design + Printing orders", async ({ page }) => {
+  await seedRole(page, "admin");
+  await page.goto("/orders/new");
+  await page.getByRole("radio", { name: /Album Printing Only/ }).click(); await next(page);
+  await page.getByRole("button", { name: /^Search customer/ }).click();
+  await page.getByRole("button", { name: /^Sharma Studio/ }).first().click(); await next(page);
+  await expect(page.getByLabel("Event date", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Photos given")).toHaveCount(0);
+  await page.getByRole("button", { name: "Back" }).click(); await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page); await next(page);
+  await expect(page.getByLabel("Photos given")).toBeVisible();
+  await expect(page.getByLabel("Event date", { exact: true })).toHaveCount(0);
 });

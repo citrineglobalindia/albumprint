@@ -58,6 +58,13 @@ export default function OrderBuilder() {
   const [loaded, setLoaded] = useState(false);
   const busyRef = useRef(false);
   const errRef = useRef<HTMLDivElement>(null);
+  // the order's event date is the earliest album event date (each album has its own; there is no separate order field)
+  useEffect(() => {
+    const first = d.albums.map((a) => a.eventDate ?? "").filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort()[0] ?? "";
+    if (first !== d.event.date) setD((x) => ({ ...x, event: { ...x.event, date: first } }));
+  }, [d.albums]); // eslint-disable-line react-hooks/exhaustive-deps
+  // photos given are counted only on Design + Printing orders
+  useEffect(() => { if (d.orderType === "printing_only" && d.event.photosGiven) setD((x) => ({ ...x, event: { ...x.event, photosGiven: "" } })); }, [d.orderType]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (errs.length) errRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [errs]);
 
   useEffect(() => {
@@ -371,8 +378,7 @@ function EventStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>) =>
       <EventPicker value={ev.name} onChange={(v) => e("name", v)} />
       <Field label="Couple name (optional)" hint="e.g. Asha & Ravi"><input aria-label="Couple name" className={inputCls} value={ev.couple ?? ""} maxLength={150} onChange={(x) => e("couple", x.target.value)} /></Field>
       <Field label="Order date" hint="The day the order was taken: today unless you pick an earlier date"><input aria-label="Order date" type="date" max={orderToday()} className={inputCls} value={ev.orderDate || orderToday()} onChange={(x) => e("orderDate", x.target.value)} /></Field>
-      <Field label="Photos given (optional)" hint="How many photos the customer gave for this order"><input aria-label="Photos given" type="number" min={0} step={1} className={inputCls} value={ev.photosGiven ?? ""} onChange={(x) => e("photosGiven", x.target.value)} /></Field>
-      <Field label="Event date (optional)"><input aria-label="Event date" type="date" className={inputCls} value={ev.date} onChange={(x) => e("date", x.target.value)} /></Field>
+      {d.orderType === "design_printing" && <Field label="Photos given (optional)" hint="How many photos the customer gave for this order"><input aria-label="Photos given" type="number" min={0} step={1} className={inputCls} value={ev.photosGiven ?? ""} onChange={(x) => e("photosGiven", x.target.value)} /></Field>}
       <Field label="Delivery date (optional)" hint={`If left empty: ${pricingSettings().defaultDeliveryDays} days after the order date`}><input aria-label="Delivery date" type="date" min={ev.orderDate || orderToday()} className={inputCls} value={ev.delivery} onChange={(x) => e("delivery", x.target.value)} /></Field>
       <Field label="Work group"><select aria-label="Work Group" className={inputCls} value={ev.workGroup ?? ""} onChange={(x) => e("workGroup", x.target.value)}><option value="">Select</option>{WORK_GROUPS.map((w) => <option key={w}>{w}</option>)}</select></Field>
       <Field label="Priority"><select aria-label="Priority" className={inputCls} value={ev.priority || "Normal"} onChange={(x) => e("priority", x.target.value)}>{PRIORITIES.filter((x) => x !== "Low").map((x) => <option key={x}>{x}</option>)}</select></Field>
