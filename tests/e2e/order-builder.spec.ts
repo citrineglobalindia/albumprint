@@ -605,3 +605,26 @@ test("Design + Printing: create the order now, prepare the invoice after the des
   await expect(page.getByTestId("order-pricing")).toBeVisible();
   await expect(page.getByTestId("invoice-pending")).toHaveCount(0);
 });
+
+test("a per-sheet design charge typed on the order is billed as its sheet count on the invoice", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { albums: [{ name: "Wedding", sheets: 30, copies: 2 }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  const a1 = page.getByTestId("album-1");
+  await a1.getByLabel("Design charge type").selectOption("per_sheet");
+  await a1.getByLabel("Design charge", { exact: true }).fill("50");
+  const total = await page.getByTestId("album-total-1").innerText();
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  await expect(page.getByTestId("finalized")).toContainText(total);
+  const code = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
+  type L = { desc: string; qty: number; price: number };
+  const read = () => page.evaluate((c) => (JSON.parse(localStorage.getItem("albumpro.v1.invoices") ?? "[]") as { orderId: string; lines: L[] }[]).find((i) => i.orderId === c)?.lines ?? [], code);
+  await expect.poll(async () => (await read()).length).toBeGreaterThan(0);
+  const lines = await read();
+  const design = lines.find((l) => l.desc.startsWith("Album design"))!;
+  expect(design).toMatchObject({ qty: 30, price: 50 });
+  expect(design.desc).toContain("30 sheets (per album)");
+  expect(`₹${lines.reduce((s, l) => s + l.qty * l.price, 0).toLocaleString("en-IN")}`).toBe(total);
+});

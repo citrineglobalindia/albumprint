@@ -23,6 +23,16 @@ import { DRAFTS, invoiceLaterOn, isInvoicePending, sheetsDesigned, addDays, busi
 import { downloadBlob, invoicePdf, openBlob } from "../lib/invoicePdf";
 
 const STEPS = ["Order type", "Customer", "Event & dates", "Albums & items", "Invoice", "Finalize"];
+/** The step where a problem is fixed, read from its message (server messages included), so the error box can take the user there. */
+const stepOf = (m: string): number | null => {
+  const t = m.toLowerCase();
+  if (/order type/.test(t)) return 0;
+  if (/customer|phone|mobile/.test(t)) return 1;
+  if (/discount|tax/.test(t)) return 4;
+  if (/album|sheet|cop(y|ies)|price|rate|design|item|size|paper|charge/.test(t)) return 3;
+  if (/date|delivery|event|photos/.test(t)) return 2;
+  return null;
+};
 const ORIENT = ["Landscape", "Portrait", "Square"];
 const SLOTS: OptionKind[] = ["cover", "binding", "box"];
 const SLOT_LABEL: Record<string, string> = { cover: "Cover", binding: "Binding", box: "Box" };
@@ -47,6 +57,8 @@ export default function OrderBuilder() {
   const [server, setServer] = useState<{ total?: number; error?: string; checking?: boolean } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const busyRef = useRef(false);
+  const errRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (errs.length) errRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [errs]);
 
   useEffect(() => {
     seedDemoCatalog();
@@ -189,7 +201,17 @@ export default function OrderBuilder() {
       {!loaded ? <p className="p-6 text-sm text-sub">Loading…</p> : (
         <div className={cx("grid gap-5", step >= 3 && !done && "xl:grid-cols-[minmax(0,1fr)_340px]")}>
           <div className="min-w-0">
-            {errs.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><b>Please fix:</b><ul className="ml-4 list-disc">{errs.map((e) => <li key={e}>{e}</li>)}</ul></div>}
+            {errs.length > 0 && (
+              <div ref={errRef} role="alert" tabIndex={-1} data-testid="errors" className="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 text-sm text-rose-800 shadow-sm outline-none">
+                <div className="mb-2 flex items-center gap-2 text-base font-extrabold"><AlertTriangle className="size-5 shrink-0" />{errs.length === 1 ? "This needs your attention" : `${errs.length} things need your attention`}</div>
+                <ul className="space-y-2">{errs.map((e) => { const s = stepOf(e); return (
+                  <li key={e} className="flex flex-wrap items-center gap-3 rounded-xl bg-white px-3 py-2">
+                    <span className="min-w-0 flex-1 font-semibold">{e.charAt(0).toUpperCase() + e.slice(1)}</span>
+                    {s != null && s !== step && <button onClick={() => { setErrs([]); setStep(s); setVisited(Math.max(visited, s)); window.scrollTo({ top: 0 }); }} className="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-600 px-3 text-xs font-bold text-white hover:bg-rose-700">Go to {STEPS[s]}<ChevronRight className="size-3.5" /></button>}
+                  </li>); })}</ul>
+                <p className="mt-2 text-xs text-rose-700">Nothing is lost: the order is saved as a draft.</p>
+              </div>
+            )}
 
             {step === 0 && <TypeStep value={d.orderType} onChange={(t) => set({ orderType: t })} />}
             {step === 1 && <CustomerStep d={d} set={set} />}

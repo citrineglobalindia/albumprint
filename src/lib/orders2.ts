@@ -172,8 +172,10 @@ const lineNote = (l: PricedOrder["orderLines"][number], mult: number) => [l.rule
 export function invoiceLines(p: PricedOrder): Line[] {
   const out: Line[] = [];
   for (const a of p.albums) for (const l of a.lines) {
-    const what = l.scope === "copy" ? ` — ${l.method === "per_sheet" ? `${l.qty} sheets` : `${l.qty} ${l.unit}`}${a.copies > 1 ? ` × ${a.copies} copies` : ""}` : l.scope === "album" ? " — per album" : "";
-    out.push({ desc: l.name + what, qty: l.scope === "copy" ? l.qty * a.copies : 1, price: l.rate ?? 0, section: a.name, scope: l.scope, note: lineNote(l, l.scope === "copy" ? a.copies : 1) });
+    // an album line charged per sheet (a design rate typed on the order: rate × sheets, once per album) bills its sheet count
+    const albumSheets = l.scope === "album" && l.method === "per_sheet" && l.qty > 1 && Math.round((l.rate ?? 0) * l.qty * 100) === Math.round(l.amount * 100);
+    const what = l.scope === "copy" ? ` — ${l.method === "per_sheet" ? `${l.qty} sheets` : `${l.qty} ${l.unit}`}${a.copies > 1 ? ` × ${a.copies} copies` : ""}` : l.scope === "album" ? (albumSheets ? ` — ${l.qty} sheets (per album)` : " — per album") : "";
+    out.push({ desc: l.name + what, qty: l.scope === "copy" ? l.qty * a.copies : albumSheets ? l.qty : 1, price: l.rate ?? 0, section: a.name, scope: l.scope, note: lineNote(l, l.scope === "copy" ? a.copies : 1) });
   }
   for (const l of p.orderLines) out.push({ desc: `${l.name} — one-time order charge`, qty: 1, price: l.rate ?? 0, section: "Order charges", scope: "order", note: l.rule ?? undefined });
   return out;
