@@ -628,3 +628,26 @@ test("a per-sheet design charge typed on the order is billed as its sheet count 
   expect(design.desc).toContain("30 sheets (per album)");
   expect(`₹${lines.reduce((s, l) => s + l.qty * l.price, 0).toLocaleString("en-IN")}`).toBe(total);
 });
+
+test("Album Printing Only: events are ticked per album in Albums & items; the order lists them all", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Engagement book", sheets: 20, size: "12x36" }], finalize: false });
+  await page.getByRole("button", { name: /Event & dates/ }).click();
+  await expect(page.getByTestId("events-per-album")).toBeVisible();
+  await expect(page.getByTestId("event-picker")).toHaveCount(0);
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  const e1 = page.getByTestId("album-events-1");
+  await e1.getByLabel("Event Engagement").check(); await e1.getByLabel("Event Haldi").check();
+  await expect(page.getByTestId("album-events-1-summary")).toHaveText("Album events: Engagement, Haldi");
+  await page.getByRole("button", { name: "Add another album" }).click();
+  const a2 = page.getByTestId("album-2");
+  await a2.getByLabel("Album name").fill("Wedding book"); await a2.getByLabel("Sheets").fill("20"); await a2.getByLabel("Size").selectOption("12x36");
+  await page.getByTestId("album-events-2").getByLabel("Event Wedding").check();
+  await page.getByTestId("album-events-2").getByLabel("Other event").fill("Kunkuma Shastra"); await page.getByTestId("album-events-2").getByRole("button", { name: "+ Add event" }).click();
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await page.getByRole("button", { name: /^Finalize order/ }).click();
+  const code = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByText("Engagement, Haldi, Wedding, Kunkuma Shastra").first()).toBeVisible();
+});
