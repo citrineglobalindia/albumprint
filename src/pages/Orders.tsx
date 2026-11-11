@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { isInvoicePending } from "../lib/orders2";
+import { OrderAlbumRows } from "../components/OrderAlbumRows";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useNotice } from "../components/Notice";
 import { useReason } from "../components/ReasonDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle, Trash2, FileText } from "lucide-react";
+import { SlidersHorizontal, ClipboardList, Clock, MonitorPlay, PlusCircle, RotateCcw, ShieldCheck, Users, Check, AlarmClock, ExternalLink, PauseCircle, PlayCircle, Trash2, FileText, Layers } from "lucide-react";
 import {
   PageHeader, PrimaryButton, OutlineButton, KpiRow, Panel, Pill, Avatar, Thumb, SearchInput, CountTabs,
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
@@ -73,7 +74,8 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const [evt, setEvt] = useState<string[]>([]);
   const [stages, setStages] = useState<string[]>(() => csv(init.get("stage")).map((k) => STAGES.find((s) => s.key === k)?.label).filter(Boolean) as string[]);
   const [late, setLate] = useState(() => init.get("overdue") === "1");
-  const [ipend, setIpend] = useState(() => init.get("invoice") === "pending");     // Design + Printing orders whose invoice is still to be prepared
+  const [ipend, setIpend] = useState(() => init.get("invoice") === "pending");
+  const [showAlbums, setShowAlbums] = useState(true);                                   // each album of a multi-album order under it     // Design + Printing orders whose invoice is still to be prepared
   const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
   const [hidden, setHidden] = useState<string[]>([]);
   const [sort, setSort] = useState<SortState>(null);
@@ -218,6 +220,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
           <MultiSelect className="w-32" label="Assignee" options={assignees()} value={asg} onChange={f(setAsg)} />
           <MultiSelect className="w-28" label="Event" options={EVENTS} value={evt} onChange={f(setEvt)} />
           <button aria-pressed={late} onClick={() => { setLate(!late); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", late ? "border-rose-400 bg-rose-50 text-rose-600" : "border-line bg-white")}><AlarmClock className="size-4" />Overdue</button>
+          <button aria-pressed={showAlbums} data-testid="toggle-albums" onClick={() => setShowAlbums(!showAlbums)} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", showAlbums ? "border-brand/50 bg-brand-soft text-brand" : "border-line bg-white")}><Layers className="size-4" />Albums</button>
           <button aria-pressed={ipend} data-testid="filter-invoice-pending" onClick={() => { setIpend(!ipend); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", ipend ? "border-amber-400 bg-amber-50 text-amber-800" : "border-line bg-white")}><FileText className="size-4" />Invoice pending</button>
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
           <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
@@ -250,8 +253,8 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((o) => (
-                <tr key={o.id} data-row={o.id} onClick={() => setDrawer(o.id)} className={cx(trCls, "cursor-pointer", sel.has(o.id) && "bg-brand-soft/60")}>
+              {pageRows.map((o) => (<Fragment key={o.id}>
+                <tr data-row={o.id} onClick={() => setDrawer(o.id)} className={cx(trCls, "cursor-pointer", sel.has(o.id) && "bg-brand-soft/60")}>
                   <Td><input type="checkbox" aria-label={`Select ${o.id}`} checked={sel.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} /></Td>
                   {show_("id") && <Td className="font-bold">{o.id}</Td>}
                   {show_("customer") && <Td><div className="flex items-center gap-3"><Thumb seed={o.customer} size={36} /><div className="leading-tight"><div className="font-semibold">{o.customer}</div><div className="text-xs text-sub">{o.mobile}</div></div></div></Td>}
@@ -291,7 +294,8 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
                       ]} /></span>
                   </Td>
                 </tr>
-              ))}
+                {showAlbums && <OrderAlbumRows o={o} colSpan={visibleCols} onOpen={() => nav(`/orders/${o.id}`)} />}
+              </Fragment>))}
               {pageRows.length === 0 && <tr><td colSpan={visibleCols} className="py-10 text-center text-sub">No orders match the current filters.</td></tr>}
             </tbody>
           </table>

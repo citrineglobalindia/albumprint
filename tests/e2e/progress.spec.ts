@@ -182,3 +182,24 @@ test("Album Designing lists one row per album; the designer sees the albums assi
   await expect(page.getByTestId(`dprogress-${code}-1`)).toContainText("1/4 albums done · 15/90 sheets");
   await expect(page.getByTestId(`dprogress-${code}-1`)).toContainText("17%");
 });
+
+test("Orders list: each album of a multi-album order on its own line with grading / design / lab status and the order's progress", async ({ page }) => {
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 20 }, { name: "Haldi", sheets: 15 }], finalize: true }))!;
+  await page.goto(`/orders/${code}`);
+  const t = page.getByTestId("album-progress");
+  await t.getByTestId("assign-1-design").selectOption("U2");
+  await t.getByTestId("cell-1-grading").click();
+  const ed = page.getByTestId("progress-grading-album-1");
+  await ed.getByLabel("grading status").selectOption("done"); await ed.getByRole("button", { name: "Update" }).click();
+  await expect(t.getByTestId("cell-1-grading")).toContainText("Done");
+  await page.goto("/design-orders");
+  await expect(page.getByTestId(`order-album-${code}-1`)).toContainText("Engagement");
+  await expect(page.getByTestId(`order-album-${code}-1`)).toContainText("Done");
+  await expect(page.getByTestId(`order-album-${code}-1`)).toContainText("Ramesh Kumar");
+  await expect(page.getByTestId(`order-album-${code}-2`)).toContainText("Haldi");
+  await expect(page.getByTestId(`order-albums-${code}`)).toContainText("Graded 1/2");
+  await expect(page.getByTestId(`order-albums-${code}`)).toContainText("50%");
+  await page.getByTestId("toggle-albums").click();
+  await expect(page.getByTestId(`order-album-${code}-1`)).toHaveCount(0);
+});
