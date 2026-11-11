@@ -6,20 +6,20 @@ import { WORK_STATUS, canUpdate, progressOf, saveProgress, statusLabel, type Dep
 import { fmtDT } from "../lib/production";
 
 /** A department's own update on a job: an optional count (photos graded, sheets designed…) of a total, a status and a note. */
-export function JobProgress({ orderId, dept, countLabel, of, onDone }: { orderId: string; dept: Dept; countLabel?: string; of?: number; onDone: (m: string, ok: boolean) => void }) {
+export function JobProgress({ orderId, dept, album = 0, title = "My update", countLabel, of, onDone }: { orderId: string; dept: Dept; album?: number; title?: string; countLabel?: string; of?: number; onDone: (m: string, ok: boolean) => void }) {
   useStore();
-  const p = progressOf(orderId, dept), can = canUpdate(dept);
+  const p = progressOf(orderId, dept, album), can = canUpdate(dept);
   const [count, setCount] = useState<string | null>(null), [status, setStatus] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
   const c = count ?? (p?.count != null ? String(p.count) : ""), s = status ?? p?.status ?? "", n = note ?? p?.note ?? "";
   const dirty = count !== null || status !== null || note !== null;
   const pct = of && p?.count != null ? Math.min(100, Math.round((p.count / of) * 100)) : null;
   const save = async () => {
-    const r = await saveProgress(orderId, dept, { ...(countLabel ? { count: c.trim() === "" ? null : Number(c) } : {}), status: (s || null) as never, note: n });
+    const r = await saveProgress(orderId, dept, { ...(countLabel ? { count: c.trim() === "" ? null : Number(c) } : {}), status: (s || null) as never, note: n }, album);
     onDone(r.msg, r.ok); if (r.ok) { setCount(null); setStatus(null); setNote(null); }
   };
   return (
-    <div className="mt-3 rounded-xl border border-line p-3 text-[13px]" data-testid={`progress-${dept}`}>
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-sub">My update
+    <div className="mt-3 rounded-xl border border-line p-3 text-[13px]" data-testid={album ? `progress-${dept}-album-${album}` : `progress-${dept}`}>
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-sub">{title}
         {p?.status && <Pill tone={WORK_STATUS.find((x) => x.key === p.status)?.tone ?? "slate"}>{statusLabel(p.status)}</Pill>}
         {p?.at && <span className="ml-auto font-normal normal-case tracking-normal">{p.by ? `${p.by} · ` : ""}{fmtDT(p.at)}</span>}
       </div>

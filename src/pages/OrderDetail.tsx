@@ -13,6 +13,7 @@ import CostingPanel from "../components/CostingPanel";
 import OrderPricingPanel from "../components/OrderPricingPanel";
 import { AssignOrder } from "../components/AssignOrder";
 import { ProcessTracker } from "../components/ProcessTracker";
+import { AlbumProgress } from "../components/AlbumProgress";
 import { pricingOf } from "../lib/orders2";
 import { backendOn } from "../lib/supabase";
 import { AUDIT, type AuditEntry } from "../lib/audit";
@@ -161,6 +162,7 @@ export default function OrderDetail() {
             );
           })}
         </div>
+        <div className="mt-3 border-t border-line pt-3"><AlbumProgress o={o} onDone={(m, ok) => (ok ? show(m) : fail(m))} /></div>
         <details className="mt-3 border-t border-line pt-3" open>
           <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-sub">Process · who does each step</summary>
           <div className="mt-2"><ProcessTracker o={o} role={role} tick={tick} /></div>

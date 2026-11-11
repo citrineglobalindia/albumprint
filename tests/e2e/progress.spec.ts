@@ -29,3 +29,22 @@ test("photos given → photos graded → sheets designed, with status updates, s
   await page.goto(`/orders/${code}`);
   await expect(page.getByTestId("step-progress-colour_grading")).toContainText("Photos graded 120 of 400 · Working on it · “rest tomorrow”");
 });
+
+test("an order with several albums keeps progress per album on the order page", async ({ page }) => {
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 30 }, { name: "Haldi", sheets: 20 }, { name: "Mehandi", sheets: 25 }], finalize: true }))!;
+  await page.goto(`/orders/${code}`);
+  const t = page.getByTestId("album-progress");
+  await expect(t.getByTestId(/^album-row-/)).toHaveCount(3);
+  await t.getByTestId("cell-2-design").click();
+  const ed = page.getByTestId("progress-design-album-2");
+  await ed.getByLabel("Sheets designed").fill("20");
+  await ed.getByLabel("design status").selectOption("done");
+  await ed.getByRole("button", { name: "Update" }).click();
+  await expect(t.getByTestId("cell-2-design")).toContainText("20 / 20");
+  await expect(t.getByTestId("cell-2-design")).toContainText("Done");
+  await expect(t.getByTestId("cell-1-design")).not.toContainText("Done");
+  await expect(t).toContainText("1/3 done");
+  await page.reload();
+  await expect(page.getByTestId("album-progress").getByTestId("cell-2-design")).toContainText("20 / 20");
+});

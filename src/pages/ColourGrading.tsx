@@ -4,6 +4,7 @@ import { ClipboardList, Settings, Users, RotateCcw, CheckCircle2, Clock, Image a
 import { PageHeader, PrimaryButton, OutlineButton, MoreButton, SlideOver, Field, inputCls, KpiRow, Panel, Pill, Avatar, SearchInput, LineTabs, TodayChip, Pagination, PriorityPill, tableCls, Th, Td, trCls, cx, type Kpi } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
 import { photosGiven } from "../lib/jobProgress";
+import { AlbumProgress } from "../components/AlbumProgress";
 import { WorkFiles } from "../components/WorkFiles";
 import { ORDERS, PRIORITIES, type Priority, type Tone } from "../lib/data";
 import { MultiSelect, Combobox, ColumnsMenu, DateRangePicker, FilterChips, SavedViews, SortTh, sortRows, type DateRange, type SortState } from "../components/controls";
@@ -231,6 +232,7 @@ export default function ColourGrading() {
               <div><dt className="text-xs text-sub">Rounds</dt><dd className="font-semibold">{cur.rounds}</dd></div>
             </dl>
             <JobProgress orderId={cur.orderId} dept="grading" countLabel="Photos graded" of={photosGiven(cur.orderId)} onDone={(m) => show(m)} />
+            {o && <div className="mt-3"><AlbumProgress o={o} only={["grading"]} onDone={(m) => show(m)} /></div>}
             <JobTimer start={cur.startedAt} end={gradEnd(cur)} label="Grading time" paused={o.hold ? "On hold" : undefined} />
             <div className="mt-3 rounded-xl bg-slate-50 p-3 text-[13px]"><div className="mb-1 text-xs font-bold uppercase text-sub">Grading instructions</div><p data-testid="instructions">{cur.instructions}</p></div>
             {cur.status === "Rework" && cur.revision && <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700"><b>Revision requested:</b> {cur.revision}</div>}

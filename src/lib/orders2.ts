@@ -255,8 +255,11 @@ export async function prepareInvoice(o: Order): Promise<{ draftId: string } | { 
   }
   const open = DRAFTS.find((x) => !x.result && x.payload.reopenOrder === o.id); if (open) return { draftId: open.id };
   const payload = { ...JSON.parse(JSON.stringify(pr.payload)) as OrderDraft, reopenOrder: o.id, invoiceLater: undefined };
-  const designed = sheetsDesigned(o.id);
-  if (designed && payload.albums.length === 1 && !(Number(payload.albums[0]!.sheets) > 0)) payload.albums[0]!.sheets = designed;
+  payload.albums.forEach((a, i) => {                                   // each album's own "Sheets designed"; one album falls back to the order's count
+    if (Number(a.sheets) > 0) return;
+    const n = progressOf(o.id, "design", i + 1)?.count || (payload.albums.length === 1 ? sheetsDesigned(o.id) : undefined);
+    if (n) a.sheets = n;
+  });
   const id = newId();
   DRAFTS.unshift({ id, title: `Invoice for ${o.id}`, payload, updatedAt: new Date().toISOString(), mine: true });
   notify(); return { draftId: id };
