@@ -5,6 +5,7 @@ import { CalendarClock, Clock, Coins, Download, ExternalLink, FileText, History,
 import { Combobox, DateRangePicker, FilterChips, MultiSelect, fmtShort, presetRange, type DateRange } from "../components/controls";
 import { KpiRow, LineTabs, Panel, PageHeader, Pill, ProgressBar, Td, Th, tableCls, trCls, inputCls, Field, SlideOver, cx } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { RolePerformance } from "../components/RolePerformance";
 import { downloadCsv } from "../lib/csv";
 import { downloadRows, type ExportFormat } from "../lib/exporters";
 import { ORDERS, STAFF, STAGES, CUSTOMERS, stageLabel, type Order, type StageKey } from "../lib/data";
@@ -378,6 +379,7 @@ export default function Reports() {
         </div>
       )}
 
+      {tab === "Team Performance" && <div className="mb-5"><RolePerformance /></div>}
       {tab === "Team Performance" && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Panel title="Team Output" subtitle="Assigned orders from the order list · stage moves and hand-off time from the audit trail"><DataTable head={["Name", "Role", "Assigned", "Overdue", "On-time %", "Stage moves", "Avg before hand-off"]} rows={team.map((t) => [<button key="n" onClick={() => openDrill(`Orders assigned to ${t.name}`, orders.filter((o) => o.assignee === t.first))} className="font-semibold text-brand hover:underline">{t.name}</button>, t.role, t.done, t.late, t.onTime === null ? "-" : <Pill key="p" tone={t.onTime > 90 ? "green" : "amber"}>{t.onTime}%</Pill>, t.moves, t.avgMs === null ? "-" : fmtDur(t.avgMs)])} /><p className="mt-2 text-xs text-sub">On-time % = assigned orders not past their due date. Avg before hand-off = how long orders sat in a stage before this person moved them on.</p></Panel>
