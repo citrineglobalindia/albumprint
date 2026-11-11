@@ -8,7 +8,7 @@ import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { ORDERS } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
-import { ALBUM_LABS, LABS, LAB_STATUS_LABEL, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, profitOf, purchaseOf, saveLab, setLabStatus, type Lab, type LabStatus } from "../lib/labs";
+import { ALBUM_LABS, LABS, LAB_STATUS_LABEL, albumPurchase, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, profitOf, purchaseOf, saveLab, setLabStatus, type Lab, type LabStatus } from "../lib/labs";
 
 // Labs: the printing labs we use, and every album's work at a lab — waiting to be sent, at the lab, received back.
 type Tab = LabStatus | "all";
@@ -57,7 +57,7 @@ export default function Labs() {
                   <Td><Pill tone={TONE[a.status]}>{LAB_STATUS_LABEL[a.status]}</Pill></Td>
                   <Td>{a.sentAt ? `${fmtDate(a.sentAt)}${a.sentBy ? ` · ${a.sentBy}` : ""}` : "—"}</Td>
                   <Td>{a.receivedAt ? `${fmtDate(a.receivedAt)}${a.receivedBy ? ` · ${a.receivedBy}` : ""}` : "—"}</Td>
-                  {cost && <Td className="text-right">{purchaseOf(o.id, a.position) !== undefined ? inr(purchaseOf(o.id, a.position)!) : "—"}</Td>}
+                  {cost && <Td className="text-right">{(() => { const x = albumPurchase(o, a.position); return x ? <>{inr(x.amount)}{x.source === "lab rates" && <span className="ml-1 text-[10px] font-semibold text-violet-800">lab rates</span>}</> : "—"; })()}</Td>}
                   <td className="px-3 py-2 text-right">
                     {move && a.status === "not_sent" && <button type="button" onClick={() => go(o.id, a.position, "sent")} className="inline-flex h-8 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark"><Send className="size-3.5" />Send</button>}
                     {move && a.status === "sent" && <button type="button" onClick={() => go(o.id, a.position, "received")} className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700"><PackageCheck className="size-3.5" />Receive</button>}
@@ -78,9 +78,9 @@ export default function Labs() {
             <div className="overflow-x-auto"><table className={tableCls} data-testid="profit-table">
               <thead><tr><Th>Order</Th><Th>Customer</Th><Th className="text-right">Selling</Th><Th className="text-right">Purchase</Th><Th className="text-right">Profit</Th><Th className="text-right">Margin</Th></tr></thead>
               <tbody>{withP.map((o) => { const p = profitOf(o); return (
-                <tr key={o.id} className={trCls}><Td><Link to={`/orders/${o.id}`} className="font-bold text-brand hover:underline">{o.id}</Link>{!p.complete && <span className="ml-1 text-[11px] text-amber-700">(partial)</span>}</Td><Td>{o.customer}</Td>
+                <tr key={o.id} className={trCls}><Td><Link to={`/orders/${o.id}`} className="font-bold text-brand hover:underline">{o.id}</Link>{!p.complete && <span className="ml-1 text-[11px] text-amber-700">(partial)</span>}{p.estimated && <span className="ml-1 text-[11px] text-violet-800">(lab rates)</span>}</Td><Td>{o.customer}</Td>
                   <Td className="text-right">{inr(p.selling)}</Td><Td className="text-right">{inr(p.purchase)}</Td><Td className={cx("text-right font-bold", p.profit < 0 ? "text-rose-600" : "text-emerald-700")}>{inr(p.profit)}</Td><Td className="text-right">{p.margin.toFixed(1)}%</Td></tr>); })}
-                {withP.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-sm text-sub">Enter purchase amounts on the order page to see profit here.</td></tr>}
+                {withP.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-sm text-sub">Choose the lab on each album and enter the labs' purchase rates (Catalog › Prices), or type purchase amounts on the order page, to see profit here.</td></tr>}
               </tbody>
             </table></div>
           </Panel>

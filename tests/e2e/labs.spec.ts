@@ -37,3 +37,38 @@ test("labs: add a lab, choose it for an album with a purchase amount, see profit
   await expect(page.getByTestId(`labrow-${id}-1`)).toContainText("Received");
   await expect(page.getByTestId("profit-table")).toContainText(id);
 });
+
+test("purchase rates per lab and item: the album's purchase cost and the profit are worked out from them", async ({ page }) => {
+  await seedRole(page, "admin");
+  await page.goto("/labs");
+  await page.getByRole("button", { name: "Add lab" }).click();
+  await page.getByLabel("Lab name").fill("Rate Lab"); await page.getByRole("button", { name: "Save lab" }).click();
+  await expect(page.getByTestId("lab-list")).toContainText("Rate Lab");
+
+  // Catalog › Prices: choose the lab, type its purchase rate for the cover; the margin shows next to the sales rate (₹600)
+  await page.goto("/catalog");
+  await page.getByRole("tab", { name: "Prices" }).click();
+  await page.getByTestId("purchase-lab").selectOption({ label: "Purchase rates · Rate Lab" });
+  await page.getByLabel("Search prices").fill("Leatherette cover");
+  await page.getByLabel(/^Purchase rate for .*Leatherette cover/).fill("250");
+  await expect(page.getByTestId("price-grid")).toContainText("₹350 · 58%");
+  await page.getByRole("button", { name: /^Save 1 change/ }).click();
+  await expect(page.getByText(/1 purchase rate\(s\) for Rate Lab saved/).first()).toBeVisible();
+
+  // an order: 2 copies with that cover at Rate Lab, no purchase amount typed → 2 × ₹250 from the lab's rates
+  await buildOrder(page, { albums: [{ name: "Rated album", sheets: 10, copies: 2, cover: "Leatherette cover (sample)" }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByTestId("album-1").getByLabel("Album lab").selectOption({ label: "Rate Lab" });
+  await expect(page.getByTestId("album-1")).toContainText("From Rate Lab rates: ₹500");
+  await page.getByRole("button", { name: /Finalize/ }).first().click();
+  await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
+  const id = (await page.getByTestId("finalized").locator("h2").innerText()).match(/IDP\d+/)![0];
+  await page.goto(`/orders/${id}`);
+  await expect(page.getByTestId("lab-estimate-1")).toContainText("Using Rate Lab rates: ₹500");
+  const total = Number((await page.getByTestId("order-pricing").getByTestId("final-amount").innerText()).replace(/[^\d.]/g, ""));
+  await expect(page.getByTestId("profit-value")).toContainText(`₹${(total - 500).toLocaleString("en-IN")}`);
+  // a typed amount wins over the lab rates
+  await page.getByTestId("lab-album-1").getByLabel(/^Purchase amount for/).fill("650");
+  await page.getByTestId("lab-album-1").getByLabel(/^Purchase amount for/).blur();
+  await expect(page.getByTestId("profit-value")).toContainText(`₹${(total - 650).toLocaleString("en-IN")}`);
+});

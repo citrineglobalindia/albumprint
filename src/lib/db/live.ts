@@ -14,7 +14,7 @@ const LOADER: Record<string, string> = {
   proofs: "proofs and design", proof_comments: "proofs and design", design_corrections: "proofs and design", design_docs: "proofs and design",
   payments: "payments and invoices", invoices: "payments and invoices",
   notifications: "settings, masters and notifications", settings: "settings, masters and notifications",
-  labs: "labs", album_labs: "labs", album_purchases: "labs", job_progress: "job progress",
+  labs: "labs", album_labs: "labs", album_purchases: "labs", lab_item_rates: "labs", job_progress: "job progress",
 };
 // orders first: the other loaders map order ids to codes
 const ORDER = ["customers and orders", "order pricing", "production", "files", "proofs and design", "payments and invoices", "settings, masters and notifications", "labs", "job progress"];

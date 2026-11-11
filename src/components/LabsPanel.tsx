@@ -5,7 +5,7 @@ import { Panel, Pill, cx, inputCls } from "./ui";
 import { useStore } from "../lib/store";
 import { inr, fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
-import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, profitOf, purchaseOf, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
+import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, purchaseOf, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
 
 const TONE: Record<LabStatus, "slate" | "amber" | "green"> = { not_sent: "slate", sent: "amber", received: "green" };
 
@@ -46,6 +46,10 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
                   <input id={`pa-${o.id}-${a.position}`} aria-label={`Purchase amount for ${a.title}`} type="number" min={0} step="0.01" className={cx(inputCls, "h-9 w-36 text-sm")} placeholder="What the lab charges"
                     value={amt[a.position] ?? (p !== undefined ? String(p) : "")} onChange={(e) => setAmt({ ...amt, [a.position]: e.target.value })}
                     onBlur={() => { const v = amt[a.position]; if (v === undefined) return; const n = v.trim() === "" ? null : Number(v); if (n === (p ?? null)) return; run(setPurchase(o.id, a.position, n)); }} />
+                  {(() => { const e = estimatedPurchase(o, a.position); if (!e) return al?.labId ? <span className="text-[11px] text-sub">No purchase rates for {labName(al.labId)} on these items yet (Catalog › Prices)</span> : null; return (
+                    <span className={cx("text-[11px]", p === undefined ? "font-semibold text-violet-800" : "text-sub")} data-testid={`lab-estimate-${a.position}`}>
+                      {p === undefined ? "Using" : "From"} {labName(al?.labId)} rates: {inr(e.amount)}{e.missing.length ? ` · no rate for ${e.missing.join(", ")}` : ""}{p !== undefined ? " (the amount typed is used)" : ""}
+                    </span>); })()}
                 </div>
               )}
             </li>
@@ -55,10 +59,11 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
       {cost && (
         <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center" data-testid="profit">
           <div><div className="text-[11px] text-sub">Selling</div><div className="font-extrabold">{inr(pr.selling)}</div></div>
-          <div><div className="text-[11px] text-sub">Purchase</div><div className="font-extrabold">{pr.entered ? inr(pr.purchase) : "—"}</div></div>
+          <div><div className="text-[11px] text-sub">Purchase</div><div className="font-extrabold">{pr.entered ? inr(pr.purchase) : "—"}</div>{pr.estimated && <div className="text-[10px] font-semibold text-violet-800">incl. lab rates</div>}</div>
           <div><div className="flex items-center justify-center gap-1 text-[11px] text-sub"><TrendingUp className="size-3" />Profit</div>
             <div className={cx("font-extrabold", pr.profit < 0 ? "text-rose-600" : "text-emerald-700")} data-testid="profit-value">{pr.entered ? `${inr(pr.profit)} (${pr.margin.toFixed(1)}%)` : "—"}</div></div>
           {pr.entered && !pr.complete && <p className="col-span-3 text-[11px] text-amber-700">Some albums have no purchase amount yet — the profit counts only those entered.</p>}
+          {pr.missingRates && <p className="col-span-3 text-[11px] text-amber-700">Some items have no purchase rate at the chosen lab — add them in Catalog › Prices (choose the lab) for an exact profit.</p>}
         </div>
       )}
     </Panel>
