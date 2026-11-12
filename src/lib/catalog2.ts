@@ -379,3 +379,21 @@ export async function deleteCategory(id: string): Promise<string | null> {
   if (!backendOn) logAudit({ entity: "catalog_category", entityId: id, action: "delete", detail: `${label} (${sum.categories} categor${sum.categories === 1 ? "y" : "ies"}, ${sum.items} item(s))` });
   return null;
 }
+
+/** An item typed on an order that is not in the catalog yet: saved under "Manual items" for later orders (add_manual_item, 0070). */
+export async function addManualItem(d: { name: string; method: PricingMethod; unit: string; rate: number | null }): Promise<{ id: string } | { error: string }> {
+  const name = d.name.trim().replace(/\s+/g, " ");
+  if (name.length < 2) return { error: "Enter the item name" };
+  if (d.rate != null && (!Number.isFinite(d.rate) || d.rate < 0)) return { error: "Enter a rate of 0 or more" };
+  if (backendOn) {
+    const { sb } = await import("./db/core");
+    const { data, error } = await sb().rpc("add_manual_item", { p_name: name, p_method: d.method, p_unit: d.unit.trim() || null, p_rate: d.rate });
+    if (error) return { error: error.message };
+    await loadCatalog2();
+    return { id: data as string };
+  }
+  let cat = CATEGORIES.find((c) => c.parentId === null && c.name.toLowerCase() === "manual items");
+  if (!cat) { const r = await saveCategory({ parentId: null, name: "Manual items", sort: 9999 }); if ("error" in r) return r; cat = CATEGORIES.find((c) => c.id === r.id)!; }
+  const same = ITEMS.find((i) => i.categoryId === cat!.id && i.name.toLowerCase() === name.toLowerCase());
+  return saveItem({ ...(same ?? {}), id: same?.id, categoryId: cat.id, name, method: d.method, unit: d.unit.trim() || (d.method === "per_sheet" ? "sheet" : "pcs"), rate: d.rate ?? same?.rate ?? null, active: true });
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Columns3, MoreVertical, Plus, Search, TrendingUp, X } from "lucide-react";
 import { cx } from "./ui";
-import { ITEMS, itemById, pathLabel, pathOf, usableItem, type CItem } from "../lib/catalog2";
+import { ITEMS, addManualItem, itemById, pathLabel, pathOf, usableItem, type CItem, type PricingMethod } from "../lib/catalog2";
 
 /** On screen an item shows every level: "Paper - NT - 125 GSM - Glossy". */
 export const fullName = (i: CItem) => [...pathOf(i.categoryId).map((c) => c.name), i.name].join(" - ");
@@ -27,6 +27,18 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
   const [q, setQ] = useState(""); const [msg, setMsg] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);                                     // the blank line opened by "+ Add item"
+  // an item that is not in the catalog: typed here, saved under "Manual items", then added to this album
+  const [manual, setManual] = useState<{ name: string; method: PricingMethod; unit: string; rate: string } | null>(null);
+  const [savingItem, setSavingItem] = useState(false);
+  const saveManual = async () => {
+    if (!manual) return;
+    const t = manual.rate.replace(/[₹,\s]/g, ""); const rate = t === "" ? null : Number(t);
+    if (rate !== null && (!Number.isFinite(rate) || rate < 0)) { setMsg("Enter a rate of 0 or more"); return; }
+    setSavingItem(true); const r = await addManualItem({ name: manual.name, method: manual.method, unit: manual.unit, rate }); setSavingItem(false);
+    if ("error" in r) { setMsg(r.error); return; }
+    const e = onAdd(r.id); if (e) { setMsg(e); return; }
+    setMsg(""); setManual(null);
+  };
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => { try { localStorage.setItem(COLS_KEY, JSON.stringify(cols)); } catch { /* private mode */ } }, [cols]);
 
@@ -107,7 +119,7 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
                         onChange={(e) => upd(di.itemId, { sheetQty: e.target.value === "" || e.target.value === String(a.sheets) ? null : e.target.value })} />
                       {di.sheetQty == null || di.sheetQty === "" ? <span className="text-[10px] font-semibold text-emerald-700" title="Follows the album's sheet count">auto</span>
                         : <button type="button" aria-label={`Match ${nm} to album sheets`} onClick={() => upd(di.itemId, { sheetQty: null })} className="text-[10px] font-semibold text-brand hover:underline" title="Follow the album's sheet count again">↺</button>}</span>
-                    : <span className="tabular-nums">{l.scope === "copy" ? l.qty : 1}</span>}
+                    : <span className="tabular-nums" data-testid={`qty-${l.kind}-${n}`}>{l.scope === "copy" || (l.method === "per_sheet" && l.qty > 1) ? l.qty : 1}</span>}
                 </td>
                 <td className="px-1.5"><span className="text-xs text-sub">{unit}</span></td>
                 <td className="px-1.5 text-center">{di ? <input aria-label={`Price of ${nm}`} inputMode="decimal" className={cx(cell, "w-20 text-right", l.missing && "border-rose-300 bg-rose-50", di.price && "border-brand/50")}
@@ -144,7 +156,27 @@ export function AlbumItemsTable({ a, n, priced, set, accept, onAdd, taxRate, bro
               </td></tr> : null;
             })()}
             <tr className="border-t border-line"><td colSpan={20} className="p-3">
-              <button type="button" onClick={() => setAdding(true)} disabled={adding} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line text-sm font-bold text-brand hover:bg-brand-soft disabled:opacity-50"><Plus className="size-4" />Add item</button>
+              <span className="flex gap-2">
+                <button type="button" onClick={() => setAdding(true)} disabled={adding} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line text-sm font-bold text-brand hover:bg-brand-soft disabled:opacity-50"><Plus className="size-4" />Add item</button>
+                <button type="button" onClick={() => setManual(manual ? null : { name: "", method: "per_unit", unit: "pcs", rate: "" })} data-testid={`manual-item-${n}`} className="flex h-11 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-violet-300 px-4 text-sm font-bold text-violet-800 hover:bg-violet-50"><Plus className="size-4" />New item (not in list)</button>
+              </span>
+              {manual && (
+                <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3" data-testid={`manual-form-${n}`}>
+                  <label className="block min-w-[180px] flex-1"><span className="mb-1 block text-[11px] font-semibold text-sub">Item name</span>
+                    <input aria-label="New item name" autoFocus className={cx(cell, "w-full")} value={manual.name} maxLength={120} placeholder="e.g. Velvet cover with name" onChange={(e) => setManual({ ...manual, name: e.target.value })} /></label>
+                  <label className="block"><span className="mb-1 block text-[11px] font-semibold text-sub">Charged</span>
+                    <select aria-label="New item charged" className={cell} value={manual.method} onChange={(e) => setManual({ ...manual, method: e.target.value as PricingMethod, unit: e.target.value === "per_sheet" ? "sheet" : manual.unit === "sheet" ? "pcs" : manual.unit })}>
+                      <option value="per_unit">Per piece (per copy)</option><option value="per_sheet">Per sheet (per copy)</option><option value="fixed_per_album">Once per album</option>
+                    </select></label>
+                  <label className="block"><span className="mb-1 block text-[11px] font-semibold text-sub">Unit</span>
+                    <input aria-label="New item unit" className={cx(cell, "w-20")} value={manual.unit} maxLength={20} onChange={(e) => setManual({ ...manual, unit: e.target.value })} /></label>
+                  <label className="block"><span className="mb-1 block text-[11px] font-semibold text-sub">Rate (₹)</span>
+                    <input aria-label="New item rate" inputMode="decimal" className={cx(cell, "w-28 text-right")} value={manual.rate} placeholder="0.00" onChange={(e) => setManual({ ...manual, rate: e.target.value })} /></label>
+                  <button type="button" disabled={savingItem} onClick={() => void saveManual()} className="h-9 rounded-lg bg-violet-700 px-4 text-xs font-bold text-white hover:bg-violet-800 disabled:opacity-50">{savingItem ? "Saving…" : "Save & add"}</button>
+                  <button type="button" onClick={() => setManual(null)} className="h-9 rounded-lg px-3 text-xs font-bold hover:bg-white">Cancel</button>
+                  <p className="w-full text-[11px] text-sub">Saved in the catalog under <b>Manual items</b>, so you can pick it on later orders. An admin can move or edit it in Catalog & Pricing.</p>
+                </div>
+              )}
             </td></tr>
           </tbody>
           {priced && <tfoot className="bg-slate-50/80">

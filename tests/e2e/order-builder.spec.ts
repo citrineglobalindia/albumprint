@@ -611,6 +611,7 @@ test("a per-sheet design charge typed on the order is billed as its sheet count 
   const a1 = page.getByTestId("album-1");
   await a1.getByLabel("Design charge type").selectOption("per_sheet");
   await a1.getByLabel("Design charge", { exact: true }).fill("50");
+  await expect(page.getByTestId("qty-design-1")).toHaveText("30");                                  // the sheets, not 1
   const total = await page.getByTestId("album-total-1").innerText();
   await page.getByRole("button", { name: /Finalize/ }).first().click();
   await invoiceNow(page); await page.getByRole("button", { name: /^Finalize order/ }).click();
@@ -655,4 +656,24 @@ test("event step: no order-level event date; photos given only on Design + Print
   await page.getByRole("radio", { name: /Design \+ Printing/ }).click(); await next(page); await next(page);
   await expect(page.getByLabel("Photos given")).toBeVisible();
   await expect(page.getByLabel("Event date", { exact: true })).toHaveCount(0);
+});
+
+test("album items: a new item that is not in the list is added and saved in the catalog for later orders", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Manual album", sheets: 10, size: "12x36" }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByTestId("manual-item-1").click();
+  const f = page.getByTestId("manual-form-1");
+  await f.getByLabel("New item name").fill("Velvet cover with name");
+  await f.getByLabel("New item rate").fill("750");
+  await f.getByRole("button", { name: "Save & add" }).click();
+  await expect(f).toHaveCount(0);
+  await expect(page.getByTestId("album-1")).toContainText("Velvet cover with name");
+  await expect(page.getByTestId("summary")).toContainText("₹");
+  // the next order finds it
+  await buildOrder(page, { type: /Album Printing Only/, albums: [{ name: "Second album", sheets: 10, size: "12x36" }], finalize: false });
+  await page.getByRole("button", { name: /Albums & items/ }).click();
+  await page.getByTestId("album-1").getByPlaceholder(/Search products/).fill("velvet");
+  await expect(page.getByTestId("album-1").getByText("Velvet cover with name").first()).toBeVisible();
 });
