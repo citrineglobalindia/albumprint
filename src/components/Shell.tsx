@@ -56,7 +56,10 @@ function useDesktop() {
 
 function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; onClose: () => void }) {
   const { role } = useAuth();
-  const items = (NAV as readonly NavItem[]).filter((n) => navOf(role!).includes(n.sub ? "/orders" : n.to));
+  const nav0 = navOf(role!);
+  // designers work from My Jobs only: Album Designing stays reachable (the editor, links) but is not in their menu
+  const hideMenu = (to: string) => to === "/designing" && role !== "admin" && nav0.includes("/my-jobs");
+  const items = (NAV as readonly NavItem[]).filter((n) => nav0.includes(n.sub ? "/orders" : n.to) && !hideMenu(n.to));
   const hidden = !desktop && !open;
   const ref = useRef<HTMLElement>(null);
   useEffect(() => { if (open && !desktop) ref.current?.querySelector<HTMLElement>("a")?.focus(); }, [open, desktop]);

@@ -11,8 +11,8 @@ import { currentActor } from "../lib/audit";
 import { ORDERS, stageLabel, stageTone, type Order, type Priority } from "../lib/data";
 import { fmtDate } from "../lib/format";
 import { GJOBS } from "../lib/production";
-import { djob } from "../lib/designJobs";
-import { WORK_STATUS, photosGiven, progressOf, statusLabel } from "../lib/jobProgress";
+import { djob, sendToClient } from "../lib/designJobs";
+import { WORK_STATUS, photosGiven, progressOf, saveProgress, statusLabel, type WorkStatus } from "../lib/jobProgress";
 import { WORK_STAGE, advanceAfter, albumStatus, startAlbumWork } from "../lib/albumFlow";
 
 // My Jobs: every album this person works on (colour grading and/or designing), one line each, with its own Start / Continue
@@ -71,7 +71,14 @@ export default function MyJobs() {
     { label: "Coming up", value: todo.filter((r) => !st(r) && r.o.stage !== WORK_STAGE[r.dept]).length, icon: Hourglass, tone: "amber" },
     { label: "Done", value: done.length, icon: CheckCircle2, tone: "green" },
   ];
-  const start = async (r: Row) => { const x = await startAlbumWork(r.o, r.dept, r.k); show(x.msg); if (x.ok) setOpen(key(r)); };
+  const start = async (r: Row) => { const x = await startAlbumWork(r.o, r.dept, r.k); show(x.msg); };
+  /** One click: mark an album Done or Client approved; the order moves on by itself when every album is through. */
+  const mark = async (r: Row, status: WorkStatus) => {
+    const x = await saveProgress(r.o.id, r.dept, { status }, r.k);
+    show(x.ok ? `${r.o.id} · ${r.title}: ${statusLabel(status)}` : x.msg);
+    if (x.ok) { const a = advanceAfter(r.o.id, r.dept); if (a) show(a.msg); }
+  };
+  const btn = "inline-flex h-8 items-center rounded-lg px-3 text-xs font-bold";
   return (
     <>
       <PageHeader title="My Jobs" subtitle={`Every album you work on, one line each: start it, update how much is done, finish it. Signed in as ${me}.`} />
@@ -113,6 +120,12 @@ export default function MyJobs() {
                           <span className="flex flex-wrap items-center gap-3 text-sm">
                             <Link to={`/orders/${r.o.id}`} className="text-base font-extrabold hover:underline">{r.o.id}</Link>
                             <Pill tone={stageTone(r.o.stage)} dot>{stageLabel(r.o.stage)}</Pill>
+                            {orderRows.some((x) => x.dept === "design") && (
+                              <span className="ml-auto flex flex-wrap items-center gap-2 order-last">
+                                {r.o.stage === "designing" && orderRows.filter((x) => x.dept === "design").every((x) => finished(st(x))) && (
+                                  <button type="button" onClick={() => void sendToClient(r.o.id, "WhatsApp").then((x) => show(x.msg))} className={cx(btn, "bg-emerald-600 text-white hover:bg-emerald-700")} data-testid={`mysend-${r.o.id}`}>Send proof to client</button>)}
+                                {(r.o.stage === "designing" || r.o.stage === "client_review") && <Link to={`/designing/${r.o.id}`} className={cx(btn, "border border-line bg-white hover:bg-brand-soft")}>Files &amp; editor</Link>}
+                              </span>)}
                             <span className="text-xs text-sub">{r.o.event && r.o.event !== "—" ? `${r.o.event} · ` : ""}{orderRows.length} album{orderRows.length === 1 ? "" : "s"} for you · {orderRows.filter((x) => finished(st(x))).length} done · due {fmtDate(r.o.due)}</span>
                           </span>
                         </td>
@@ -129,9 +142,13 @@ export default function MyJobs() {
                       <Td><PriorityPill p={r.o.priority as Priority} /></Td>
                       <Td>{fmtDate(r.o.due)}</Td>
                       <td className="px-3 py-3 text-right">
-                        {!s.status && here ? <button onClick={() => void start(r)} data-testid={`mystart-${r.o.id}-${r.dept}-${r.k}`} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>
-                          : !s.status ? <span className="inline-flex h-8 items-center rounded-lg bg-slate-100 px-3 text-[11px] font-semibold text-sub">Waiting · {stageLabel(r.o.stage)}</span>
-                          : <button onClick={() => setOpen(open === id ? null : id)} data-testid={`myopen-${r.o.id}-${r.dept}-${r.k}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{finished(s.status) ? "Open" : open === id ? "Close" : "Continue"}</button>}
+                        <span className="inline-flex flex-wrap justify-end gap-1.5">
+                          {!s.status && here && <button onClick={() => void start(r)} data-testid={`mystart-${r.o.id}-${r.dept}-${r.k}`} className={cx(btn, "bg-brand px-4 text-white hover:bg-brand-dark")}>Start</button>}
+                          {!s.status && !here && <span className={cx(btn, "bg-slate-100 text-[11px] font-semibold text-sub")}>Waiting · {stageLabel(r.o.stage)}</span>}
+                          {s.status && !finished(s.status) && here && <button onClick={() => void mark(r, "done")} data-testid={`mydone-${r.o.id}-${r.dept}-${r.k}`} className={cx(btn, "bg-emerald-600 text-white hover:bg-emerald-700")}>Done ✓</button>}
+                          {r.dept === "design" && s.status === "done" && ["designing", "client_review"].includes(r.o.stage) && <button onClick={() => void mark(r, "client_approved")} data-testid={`myapproved-${r.o.id}-${r.k}`} className={cx(btn, "bg-violet-600 text-white hover:bg-violet-700")}>Client approved ✓</button>}
+                          {s.status && <button onClick={() => setOpen(open === id ? null : id)} data-testid={`myopen-${r.o.id}-${r.dept}-${r.k}`} className={cx(btn, "border border-line bg-white hover:bg-brand-soft")}>{open === id ? "Close" : "Update"}</button>}
+                        </span>
                       </td>
                     </tr>}
                     {!hidden && open === id && (

@@ -63,7 +63,7 @@ const CFG: Partial<Record<RoleKey, Cfg>> = {
     queueTitle: "My Queue", queue: st("files_received", "colour_grading", "admin_approval"), link: "/my-jobs",
   },
   designer: {
-    title: "Designer Dashboard", subtitle: "Your album designs, from waiting to the client's final approval.", cta: { label: "Open workspace", to: "/designing" }, mine: "design",
+    title: "Designer Dashboard", subtitle: "Your album designs, from waiting to the client's final approval.", cta: { label: "My Jobs", to: "/my-jobs" }, mine: "design",
     kpis: [
       { label: "Awaiting Design", icon: LayoutTemplate, tone: "blue", fn: st("new_order", "files_received", "colour_grading", "admin_approval") },
       { label: "Designing", icon: PlayCircle, tone: "pink", fn: st("designing") },

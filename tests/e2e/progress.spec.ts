@@ -252,10 +252,18 @@ test("My Jobs: the designer sees each assigned album with its own Start (every a
   await expect(page.getByTestId(`myjob-${code}-design-1`)).toContainText("Working on it");
   await page.getByTestId(`mystart-${code}-design-2`).click();                                     // the second album starts too
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("Working on it");
+  await page.getByTestId(`myopen-${code}-design-2`).click();
   const ed = page.getByTestId("progress-design-album-2");
   await ed.getByLabel("Sheets designed").fill("15"); await ed.getByLabel("design status").selectOption("done");
   await ed.getByRole("button", { name: "Update" }).click();
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toHaveCount(0);                       // done → the Done tab
   await page.getByRole("tab", { name: /Done/ }).click();
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("15");
+  // everything from the table: Done ✓ then Client approved ✓ on each album → the order goes to Final Approval
+  await expect(page.getByRole("link", { name: "Album Designing" })).toHaveCount(0);             // one page for designers
+  await page.getByRole("tab", { name: /To do/ }).click();
+  await page.getByTestId(`mydone-${code}-design-1`).click();
+  await page.getByRole("tab", { name: /Done/ }).click();
+  for (const k of [1, 2]) await page.getByTestId(`myapproved-${code}-${k}`).click();
+  await expect(page.getByText(`${code} is waiting for the admin's final approval`).first()).toBeVisible();
 });
