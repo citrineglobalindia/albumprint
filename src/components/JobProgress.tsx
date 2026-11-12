@@ -57,6 +57,12 @@ export function JobProgress({ orderId, dept, album = 0, title = "My update", cou
         </div>
       )}
       {pct !== null && <div className="mt-2 flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded bg-line"><div className="h-full bg-brand" style={{ width: `${pct}%` }} /></div><span className="text-[11px] font-bold text-sub" data-testid={`progress-${dept}-pct`}>{p?.count} / {of} · {pct}%</span></div>}
+      {countLabel && of ? (() => { const done = p?.count ?? 0, left = Math.max(0, of - done); return (
+        <div className={cx("mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg px-3 py-2 text-[13px]", left ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-800")} data-testid={`progress-${dept}-pending`}>
+          <span>{countLabel}: <b>{done}</b> of <b>{of}</b></span>
+          <span className="font-bold">{left ? `${left} pending` : "All done ✓"}</span>
+          {left > 0 && dept === "grading" && <span className="text-xs">Goes to the admin for approval automatically when all {of} are graded.</span>}
+        </div>); })() : null}
     </div>
   );
 }

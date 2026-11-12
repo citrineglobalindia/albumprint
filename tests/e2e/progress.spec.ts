@@ -43,6 +43,30 @@ test("photos given → photos graded → sheets designed, with status updates, s
   await expect(page.getByTestId("step-path-colour_grading")).toContainText("D:\\Orders\\Graded");
 });
 
+test("colour grading in sittings: pending shown clearly; when every photo is graded the job goes to the admin by itself", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Sitting album", sheets: 30 }], finalize: true, photosGiven: "400" }))!;
+  await page.goto(`/orders/${code}`);
+  await page.getByRole("button", { name: "Move to Files Received" }).click();
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  await page.goto("/colour-grading");
+  await page.getByPlaceholder(/Search by order ID/).fill(code);
+  const start = page.getByTestId(`job-${code}`).getByRole("button", { name: "Start" });
+  if (await start.count()) await start.click(); else await page.getByTestId(`job-${code}`).click();
+  const g = page.getByTestId("progress-grading");
+  // day 1: 280 of 400
+  await g.getByLabel("Add more done now").fill("280"); await g.getByRole("button", { name: "Add" }).click();
+  await expect(g.getByTestId("progress-grading-pending")).toContainText("Photos graded: 280 of 400");
+  await expect(g.getByTestId("progress-grading-pending")).toContainText("120 pending");
+  await expect(page.getByTestId("step-admin_approval")).toHaveCount(0);
+  // day 2: the rest → submitted to the admin automatically
+  await g.getByLabel("Add more done now").fill("120"); await g.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByText(`All 400 photos graded — ${code} sent to the admin for approval`).first()).toBeVisible();
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByTestId("step-admin_approval")).toHaveAttribute("data-state", "current");
+});
+
 test("an order with several albums keeps progress per album on the order page", async ({ page }) => {
   await seedRole(page, "admin");
   const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 30 }, { name: "Haldi", sheets: 20 }, { name: "Mehandi", sheets: 25 }], finalize: true }))!;

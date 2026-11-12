@@ -3,7 +3,8 @@ import { backendOn } from "./supabase";
 import { notify } from "./store";
 import { staffPeople } from "./db/production";
 import { moveStage, onStageMoved } from "./workflow";
-import { assignAlbum, progressOf, type Dept, type WorkStatus } from "./jobProgress";
+import { assignAlbum, photosGiven, photosGraded, progressOf, type Dept, type WorkStatus } from "./jobProgress";
+import { GJOBS, startGrading, submitGrading } from "./production";
 import { ALBUM_LABS, albumLab } from "./labs";
 import { currentActor } from "./audit";
 
@@ -31,7 +32,24 @@ const go = (o: Order, to: StageKey): Msg | null => {
 export function advanceAfter(orderId: string, dept: Dept): Msg | null {
   const o = ORDERS.find((x) => x.id === orderId); if (!o || o.hold || o.closed) return null;
   const done = (to: StageKey): Msg => ({ ok: true, msg: `All albums done — ${o.id} moved to ${stageLabel(to)}` });
-  if (dept === "grading" && o.stage === "colour_grading" && allAlbumsAt(o, "grading")) return go(o, "admin_approval") ?? done("admin_approval");
+  if (dept === "grading" && o.stage === "colour_grading") {
+    // every photo graded (the grader's count reached the photos given), or every album marked done → the job goes to the admin
+    const given = photosGiven(o.id) ?? 0, graded = photosGraded(o.id) ?? 0;
+    const allPhotos = given > 0 && graded >= given;
+    if (allPhotos || allAlbumsAt(o, "grading")) {
+      const j = GJOBS.find((x) => x.orderId === o.id);
+      if (j) {
+        if (j.status === "New") { const s = startGrading(o.id); if (!s.ok) return { ok: false, msg: s.msg }; }
+        if (j.status === "In Progress") {
+          const r = submitGrading(o.id);
+          return r.ok ? { ok: true, msg: allPhotos ? `All ${given} photos graded — ${o.id} sent to the admin for approval` : `All albums graded — ${o.id} sent to the admin for approval` }
+            : { ok: false, msg: `All graded, but ${o.id} could not be sent to the admin: ${r.msg}` };
+        }
+        return null;
+      }
+      return go(o, "admin_approval") ?? done("admin_approval");
+    }
+  }
   if (dept === "design" && (o.stage === "designing" || o.stage === "client_review") && allAlbumsAt(o, "design", "client_approved")) {
     if (o.stage === "designing") { const e = go(o, "client_review"); if (e) return e; }
     return go(o, "final_approval") ?? { ok: true, msg: `Client approved every album — ${o.id} is waiting for the admin's final approval` };
