@@ -5,7 +5,7 @@ import { JobProgress } from "./JobProgress";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import type { Order } from "../lib/data";
-import { advanceAfter, loadMods, people, personLabel, pickFor } from "../lib/albumFlow";
+import { advanceAfter, albumStatus, loadMods, people, personLabel, pickFor } from "../lib/albumFlow";
 import { WORK_STATUS, assignAlbum, canUpdate, photosGiven, progressOf, statusLabel, type Dept } from "../lib/jobProgress";
 import { LABS, LAB_STATUS_LABEL, albumLab, canMoveLabWork, labName, setAlbumLab, setLabStatus } from "../lib/labs";
 
@@ -32,7 +32,7 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
   const showLab = !only || only.includes("printing");
   const canAssign = role === "admin" || role === "reception";
   const total = (dept: Dept, i: number) => (dept === "design" || dept === "printing" ? albums[i]!.sheets || undefined : undefined);
-  const doneCount = (dept: Dept) => albums.filter((_, i) => ["done", "client_approved"].includes(progressOf(o.id, dept, i + 1)?.status ?? "")).length;
+  const doneCount = (dept: Dept) => albums.filter((_, i) => ["done", "client_approved"].includes(albumStatus(o, dept, i + 1).status ?? "")).length;
   const col = sel ? cols.find((c) => c.dept === sel.dept) : undefined;
   const after = (dept: Dept) => (m: string, ok: boolean) => {                              // a saved update may finish the stage for the whole order
     onDone(m, ok);
@@ -69,7 +69,8 @@ export function AlbumProgress({ o, only, onDone }: { o: Order; only?: Dept[]; on
                   <button type="button" onClick={() => setSel(active ? null : { album: k, dept: c.dept })} aria-label={`${name} ${c.label}`} data-testid={`cell-${k}-${c.dept}`}
                     className={cx("w-full rounded-lg border px-2 py-1.5 text-left hover:bg-brand-soft/50", active ? "border-brand bg-brand-soft/40" : "border-transparent")}>
                     {p?.count != null && c.count && <div className="text-xs font-semibold">{p.count}{of ? ` / ${of}` : ""}</div>}
-                    {p?.status ? <Pill tone={WORK_STATUS.find((x) => x.key === p.status)?.tone ?? "slate"}>{statusLabel(p.status)}</Pill> : p?.count == null && <span className="inline-flex items-center gap-1 text-xs text-sub">{canUpdate(c.dept) ? <><Pencil className="size-3" />Update</> : "—"}</span>}
+                    {(() => { const st = albumStatus(o, c.dept, k).status; return st ? <Pill tone={WORK_STATUS.find((x) => x.key === st)?.tone ?? "slate"}>{statusLabel(st)}</Pill> : null; })()}
+                    {!albumStatus(o, c.dept, k).status && p?.count == null && <span className="inline-flex items-center gap-1 text-xs text-sub">{canUpdate(c.dept) ? <><Pencil className="size-3" />Update</> : "—"}</span>}
                   </button>
                 </td>); })}
               {showLab && <td className="py-2 pr-3 align-top" data-testid={`lab-cell-${k}`}>

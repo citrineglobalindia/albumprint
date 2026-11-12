@@ -3,7 +3,9 @@ import { backendOn } from "./supabase";
 import { notify } from "./store";
 import { staffPeople } from "./db/production";
 import { moveStage, onStageMoved } from "./workflow";
-import { assignAlbum, photosGiven, photosGraded, progressOf, type Dept, type WorkStatus } from "./jobProgress";
+import { assignAlbum, photosGiven, photosGraded, progressOf, saveProgress, type Dept, type WorkStatus } from "./jobProgress";
+import { djob, startDesign } from "./designJobs";
+import { STAGES } from "./data";
 import { GJOBS, startGrading, submitGrading } from "./production";
 import { ALBUM_LABS, albumLab } from "./labs";
 import { currentActor } from "./audit";
@@ -106,4 +108,41 @@ export async function applyAlbumAssignments(code: string, albums: { graderId?: s
     const r = await assignAlbum(code, i + 1, dept, { id: p.id, name: p.name }); if (!r.ok) return r.msg;
   }
   return null;
+}
+
+/* ───────── an album's status as people should see it ───────── */
+const stageIdx = (k: StageKey) => STAGES.findIndex((x) => x.key === k);
+/** The album's own status; else the order's own status for the department; else what the order's stage says
+ *  (an order past Colour Grading has every album graded, past Client Review every album approved). `derived` = not the album's own. */
+export function albumStatus(o: Order, dept: Dept, k: number): { status?: WorkStatus; count?: number; derived: boolean } {
+  const own = progressOf(o.id, dept, k);
+  if (own?.status) return { status: own.status, count: own.count, derived: false };
+  const whole = progressOf(o.id, dept);
+  if (whole?.status && (o.albums?.length ?? 1) <= 1) return { status: whole.status, count: whole.count, derived: true };
+  const at = stageIdx(o.stage);
+  if (o.workflow !== "Printing" && o.hold !== "Cancelled") {
+    if (dept === "grading" && at > stageIdx("colour_grading")) return { status: "done", count: own?.count, derived: true };
+    if (dept === "design" && at > stageIdx("client_review")) return { status: "client_approved", count: own?.count, derived: true };
+  }
+  if (whole?.status === "done" || whole?.status === "client_approved") return { status: whole.status, derived: true };
+  return { status: undefined, count: own?.count, derived: false };
+}
+
+/** Which stage an album's work for a department happens at. */
+export const WORK_STAGE: Partial<Record<Dept, StageKey>> = { grading: "colour_grading", design: "designing" };
+/** Start one album's work (the person's own Start): the department's job for the order starts with its first album. */
+export async function startAlbumWork(o: Order, dept: "grading" | "design", k: number): Promise<{ ok: boolean; msg: string }> {
+  const stage = WORK_STAGE[dept]!;
+  if (o.stage !== stage) return { ok: false, msg: `Starts when ${o.id} reaches ${stageLabel(stage)} — it is at ${stageLabel(o.stage)} now` };
+  if (dept === "design" && !djob(o.id)?.startedAt) {
+    const r = await startDesign(o.id);
+    if (!r.ok && /check in|break|checked out/i.test(r.msg)) return r;              // attendance first; "already started" and the like are fine
+  }
+  if (dept === "grading") {
+    const j = GJOBS.find((x) => x.orderId === o.id);
+    if (j?.status === "New") { const r = startGrading(o.id); if (!r.ok && /check in|break|checked out/i.test(r.msg)) return { ok: false, msg: r.msg }; }
+  }
+  const r = await saveProgress(o.id, dept, { status: "working" }, k);
+  const name = o.albums?.[k - 1]?.title || `Album ${k}`;
+  return r.ok ? { ok: true, msg: `${o.id} · ${name}: started` } : r;
 }

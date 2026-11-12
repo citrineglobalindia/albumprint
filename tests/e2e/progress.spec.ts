@@ -227,3 +227,34 @@ test("Orders list: each album of a multi-album order on its own line with gradin
   await page.getByTestId("toggle-albums").click();
   await expect(page.getByTestId(`order-album-${code}-1`)).toHaveCount(0);
 });
+
+test("My Jobs: the designer sees each assigned album with its own Start (every album starts); the admin's list shows grading done once the order is past it", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Engagement", sheets: 20 }, { name: "Haldi", sheets: 15 }], finalize: true, photosGiven: "500" }))!;
+  await page.goto(`/orders/${code}`);
+  const t = page.getByTestId("album-progress");
+  await t.getByTestId("assign-1-design").selectOption("U2"); await t.getByTestId("assign-2-design").selectOption("U2");
+  await expect(t.getByTestId("assign-2-design")).toHaveValue("U2");
+  for (const b of ["Move to Files Received", "Move to Colour Grading", "Move to Admin Approval", "Move to Designing"]) await page.getByRole("button", { name: b }).click();
+  await page.goto("/design-orders");
+  await expect(page.getByTestId(`order-album-${code}-1`)).toContainText("Done");                  // grading: the order is past it
+  await expect(page.getByTestId(`order-albums-${code}`)).toContainText("Graded 500/500 photos");
+
+  await page.evaluate(() => { localStorage.setItem("albumpro.role", "designer"); });
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "My Jobs" })).toBeVisible();
+  await page.getByRole("link", { name: "My Jobs" }).click();
+  await expect(page.getByTestId(`myjob-${code}-design-1`)).toContainText("Engagement");
+  await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("Haldi");
+  await page.getByTestId(`mystart-${code}-design-1`).click();
+  await expect(page.getByTestId(`myjob-${code}-design-1`)).toContainText("Working on it");
+  await page.getByTestId(`mystart-${code}-design-2`).click();                                     // the second album starts too
+  await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("Working on it");
+  const ed = page.getByTestId("progress-design-album-2");
+  await ed.getByLabel("Sheets designed").fill("15"); await ed.getByLabel("design status").selectOption("done");
+  await ed.getByRole("button", { name: "Update" }).click();
+  await expect(page.getByTestId(`myjob-${code}-design-2`)).toHaveCount(0);                       // done → the Done tab
+  await page.getByRole("tab", { name: /Done/ }).click();
+  await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("15");
+});

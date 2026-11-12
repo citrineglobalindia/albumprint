@@ -7,8 +7,8 @@ export type Module = "order" | "customer" | "grading" | "design" | "printing" | 
 export const MODULES: { key: Module; label: string; routes: string[] }[] = [
   { key: "order", label: "Orders", routes: ["/orders"] },
   { key: "customer", label: "Customers", routes: ["/customers"] },
-  { key: "grading", label: "Colour Grading", routes: ["/colour-grading"] },
-  { key: "design", label: "Album Designing", routes: ["/designing"] },
+  { key: "grading", label: "Colour Grading", routes: ["/colour-grading", "/my-jobs"] },
+  { key: "design", label: "Album Designing", routes: ["/designing", "/my-jobs"] },
   { key: "printing", label: "Printing & Labs", routes: ["/printing", "/labs"] },
   { key: "qc", label: "Quality Control", routes: ["/qc"] },
   { key: "delivery", label: "Delivery", routes: ["/delivery"] },

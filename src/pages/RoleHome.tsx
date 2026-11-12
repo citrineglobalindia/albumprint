@@ -60,7 +60,7 @@ const CFG: Partial<Record<RoleKey, Cfg>> = {
       { label: "Completed", icon: CheckCircle2, tone: "green", fn: (o) => past(o, "admin_approval") },
       { label: "Due Today / Overdue", icon: AlarmClock, tone: "red", fn: (o) => o.stage === "colour_grading" && (today(o.due) || isOverdue(o.due)) },
     ],
-    queueTitle: "My Queue", queue: st("files_received", "colour_grading", "admin_approval"), link: "/colour-grading",
+    queueTitle: "My Queue", queue: st("files_received", "colour_grading", "admin_approval"), link: "/my-jobs",
   },
   designer: {
     title: "Designer Dashboard", subtitle: "Your album designs, from waiting to the client's final approval.", cta: { label: "Open workspace", to: "/designing" }, mine: "design",
@@ -71,7 +71,7 @@ const CFG: Partial<Record<RoleKey, Cfg>> = {
       { label: "Final Approved", icon: Lock, tone: "green", fn: (o) => past(o, "client_review") },
       { label: "Due Today / Overdue", icon: AlarmClock, tone: "amber", fn: (o) => ["designing", "client_review"].includes(o.stage) && (today(o.due) || isOverdue(o.due)) },
     ],
-    queueTitle: "My Design Jobs", queue: st("admin_approval", "designing", "client_review"), link: "/designing",
+    queueTitle: "My Design Jobs", queue: st("admin_approval", "designing", "client_review"), link: "/my-jobs",
   },
   printing: {
     title: "Printing Dashboard", subtitle: "Approved print jobs, albums at the lab and production.", cta: { label: "Open production", to: "/printing" },

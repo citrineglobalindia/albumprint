@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
   CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X, Factory,
-  AlarmClockCheck, Library, Paintbrush, PrinterCheck,
+  AlarmClockCheck, Library, Paintbrush, PrinterCheck, ListChecks,
 } from "lucide-react";
 import { cx } from "./ui";
 import { Avatar } from "./ui";
@@ -26,6 +26,7 @@ export const NAV = [
   { to: "/printing-orders", label: "Printing Orders", icon: PrinterCheck, sub: true },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/pipeline", label: "Production Pipeline", icon: KanbanSquare },
+  { to: "/my-jobs", label: "My Jobs", icon: ListChecks },
   { to: "/colour-grading", label: "Colour Grading", icon: Palette },
   { to: "/designing", label: "Album Designing", icon: LayoutTemplate },
   { to: "/printing", label: "Printing", icon: Printer },

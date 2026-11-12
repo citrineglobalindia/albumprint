@@ -16,7 +16,7 @@ import { DSTATUS_TONE, designEnd, designOrders, designerOf, djob, dstatus, saveD
 import { JobProgress } from "../components/JobProgress";
 import { WORK_STATUS, filesPathOf, photosGiven, progressOf, saveProgress, statusLabel } from "../lib/jobProgress";
 import { currentActor } from "../lib/audit";
-import { advanceAfter } from "../lib/albumFlow";
+import { advanceAfter, startAlbumWork } from "../lib/albumFlow";
 import { AlbumProgress } from "../components/AlbumProgress";
 import type { Order, Priority } from "../lib/data";
 
@@ -67,11 +67,7 @@ export default function DesignJobs() {
 
   const start = async (o: Order) => { const r = await startDesign(o.id); show(r.msg); if (r.ok) setOpenId(o.id); };
   /** Start one album: the order's design job starts with its first album. */
-  const startAlbum = async (o: Order, k: number) => {
-    if (!djob(o.id)?.startedAt) { const r = await startDesign(o.id); if (!r.ok) { show(r.msg); return; } }
-    const r = await saveProgress(o.id, "design", { status: "working" }, k);
-    show(r.ok ? `Album ${k} started` : r.msg); if (r.ok) setOpenId(o.id, k);
-  };
+  const startAlbum = async (o: Order, k: number) => { const r = await startAlbumWork(o, "design", k); show(r.msg); if (r.ok) setOpenId(o.id, k); };
   /** The whole order: albums finished (done or client approved) and sheets designed over all albums. */
   const orderProgress = (o: Order) => {
     const albums = o.albums?.length ? o.albums : [{ sheets: o.pages }];
@@ -116,6 +112,7 @@ export default function DesignJobs() {
                     <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       {(() => {
                         const st0 = ap?.status;
+                        if (canWork && o.stage !== "designing" && (!st0 || st0 === "not_started") && ["new_order", "files_received", "colour_grading", "admin_approval"].includes(o.stage)) return <span className="inline-flex h-8 items-center rounded-lg bg-slate-100 px-3 text-[11px] font-semibold text-sub" title={`Starts when ${o.id} reaches Designing`}>After {o.stage === "admin_approval" ? "admin approval" : "colour grading"}</span>;
                         if (canWork && o.stage === "designing" && (!st0 || st0 === "not_started")) return <button onClick={() => void startAlbum(o, k)} data-testid={`dstart-${o.id}-${k}`} className="h-8 rounded-lg bg-brand px-4 text-xs font-bold text-white hover:bg-brand-dark">Start</button>;
                         if (canWork && s === "Corrections") return <button onClick={() => setOpenId(o.id, k)} className="h-8 rounded-lg bg-rose-600 px-3 text-xs font-bold text-white hover:bg-rose-700">Fix corrections</button>;
                         return <button onClick={() => setOpenId(o.id, k)} data-testid={`dopen-${o.id}-${k}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{st0 && !["done", "client_approved"].includes(st0) ? "Continue" : "Open"}</button>;
