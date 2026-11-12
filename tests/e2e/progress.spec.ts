@@ -257,6 +257,9 @@ test("My Jobs: the designer sees each assigned album with its own Start (every a
   await ed.getByLabel("Sheets designed").fill("15"); await ed.getByLabel("design status").selectOption("done");
   await ed.getByRole("button", { name: "Update" }).click();
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toHaveCount(0);                       // done → the Done tab
+  await expect(page.getByTestId("my-stats")).toContainText("Albums assigned");
+  await expect(page.getByTestId("my-stats")).toContainText("15 of 35");                           // sheets designed of the albums' sheets
+  await expect(page.getByTestId("my-stats")).toContainText("Pending now");
   await page.getByRole("tab", { name: /Done/ }).click();
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("15");
   // everything from the table: Done ✓ then Client approved ✓ on each album → the order goes to Final Approval

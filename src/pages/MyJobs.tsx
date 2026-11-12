@@ -1,6 +1,8 @@
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, ClipboardList, Hourglass, PlayCircle } from "lucide-react";
+import { CheckCircle2, ClipboardList, Hourglass, Images, Layers, PlayCircle } from "lucide-react";
+import { DateRangePicker, inRange, presetRange, type DateRange } from "../components/controls";
+import { backendOn } from "../lib/supabase";
 import { KpiRow, LineTabs, PageHeader, Panel, Pill, PriorityPill, Td, Th, cx, tableCls, trCls, type Kpi } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
 import { useToast } from "../components/Toast";
@@ -56,9 +58,11 @@ export default function MyJobs() {
   const [open, setOpen] = useState<string | null>(null);
   const all = myRows(me, depts.length ? depts : ["grading", "design"]);
   const st = (r: Row) => albumStatus(r.o, r.dept, r.k).status;
+  const [range, setRange] = useState<DateRange>(() => presetRange(backendOn ? "This Month" : "All Time"));   // demo mode: "today" is a fixed sample date
   const todo = all.filter((r) => !finished(st(r))), done = all.filter((r) => finished(st(r)));
+  const doneIn = done.filter((r) => { const at = progressOf(r.o.id, r.dept, r.k)?.at; return !at || inRange(at, range); });
   // client-wise: each customer, then their orders, then the albums
-  const rows = [...(tab === "todo" ? todo : done)].sort((a, b) => a.o.customer.localeCompare(b.o.customer) || a.o.id.localeCompare(b.o.id) || a.k - b.k || a.dept.localeCompare(b.dept));
+  const rows = [...(tab === "todo" ? todo : doneIn)].sort((a, b) => a.o.customer.localeCompare(b.o.customer) || a.o.id.localeCompare(b.o.id) || a.k - b.k || a.dept.localeCompare(b.dept));
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const clientSummary = (name: string) => {
     const mine = rows.filter((r) => r.o.customer === name);
@@ -69,7 +73,22 @@ export default function MyJobs() {
     { label: "To start", value: todo.filter((r) => !st(r) && r.o.stage === WORK_STAGE[r.dept]).length, icon: ClipboardList, tone: "blue" },
     { label: "In progress", value: todo.filter((r) => !!st(r)).length, icon: PlayCircle, tone: "violet" },
     { label: "Coming up", value: todo.filter((r) => !st(r) && r.o.stage !== WORK_STAGE[r.dept]).length, icon: Hourglass, tone: "amber" },
-    { label: "Done", value: done.length, icon: CheckCircle2, tone: "green" },
+    { label: "Done", value: doneIn.length, icon: CheckCircle2, tone: "green" },
+  ];
+  // the period: albums assigned (order taken or worked on in it), finished in it, still pending, and what was produced in it
+  const updatedIn = (r: Row) => { const at = progressOf(r.o.id, r.dept, r.k)?.at; return !!at && inRange(at, range); };
+  const assignedIn = all.filter((r) => inRange(r.o.pendingAt, range) || updatedIn(r));
+  const sheetsIn = all.filter((r) => r.dept === "design" && updatedIn(r)).reduce((s0, r) => s0 + (progressOf(r.o.id, "design", r.k)?.count ?? 0), 0);
+  const sheetsTotal = all.filter((r) => r.dept === "design").reduce((s0, r) => s0 + r.sheets, 0);
+  const photosIn = all.filter((r) => r.dept === "grading" && updatedIn(r)).reduce((s0, r) => s0 + (progressOf(r.o.id, "grading", r.k)?.count ?? 0), 0);
+  const finishedIn = doneIn.length, pendingNow = todo.length;
+  const rate = assignedIn.length ? Math.round((assignedIn.filter((r) => finished(st(r))).length / assignedIn.length) * 100) : 0;
+  const stats: Kpi[] = [
+    { label: "Albums assigned", value: assignedIn.length, icon: ClipboardList, tone: "indigo" },
+    { label: "Finished", value: `${finishedIn}${assignedIn.length ? ` · ${rate}%` : ""}`, icon: CheckCircle2, tone: "green" },
+    { label: "Pending now", value: pendingNow, icon: Hourglass, tone: "amber", invert: true },
+    ...(depts.includes("design") || !depts.length ? [{ label: "Sheets designed", value: sheetsTotal ? `${sheetsIn} of ${sheetsTotal}` : sheetsIn, icon: Layers, tone: "violet" as const }] : []),
+    ...(depts.includes("grading") ? [{ label: "Photos graded", value: photosIn, icon: Images, tone: "blue" as const }] : []),
   ];
   const start = async (r: Row) => { const x = await startAlbumWork(r.o, r.dept, r.k); show(x.msg); };
   /** One click: mark an album Done or Client approved; the order moves on by itself when every album is through. */
@@ -82,9 +101,15 @@ export default function MyJobs() {
   return (
     <>
       <PageHeader title="My Jobs" subtitle={`Every album you work on, one line each: start it, update how much is done, finish it. Signed in as ${me}.`} />
-      <KpiRow items={kpis} cols={4} />
+      <div className="mb-3 flex flex-wrap items-center gap-3" data-testid="my-stats-bar">
+        <span className="text-sm font-extrabold">My work</span>
+        <DateRangePicker value={range} onChange={setRange} />
+        <span className="text-xs text-sub">Albums assigned, finished and produced in this period · pending is everything still open</span>
+      </div>
+      <div data-testid="my-stats"><KpiRow items={stats} cols={stats.length} /></div>
+      <div className="mt-3"><KpiRow items={kpis} cols={4} /></div>
       <Panel className="mt-5" title="My albums" subtitle="The order moves on by itself when every album is through the step" bodyClassName="p-0">
-        <div className="px-5 pt-3"><LineTabs className="!border-0" value={tab} onChange={(t) => { setTab(t); setOpen(null); }} tabs={[{ key: "todo", label: "To do", count: todo.length }, { key: "done", label: "Done", count: done.length }]} /></div>
+        <div className="px-5 pt-3"><LineTabs className="!border-0" value={tab} onChange={(t) => { setTab(t); setOpen(null); }} tabs={[{ key: "todo", label: "To do", count: todo.length }, { key: "done", label: "Done (this period)", count: doneIn.length }]} /></div>
         <div className="overflow-x-auto">
           <table className={tableCls} data-testid="my-jobs">
             <thead><tr><Th>Order</Th><Th>Album</Th><Th>Customer</Th><Th>Work</Th><Th>Order stage</Th><Th>Done so far</Th><Th>Status</Th><Th>Priority</Th><Th>Due</Th><Th className="text-right">Action</Th></tr></thead>
