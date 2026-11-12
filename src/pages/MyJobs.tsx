@@ -51,7 +51,13 @@ export default function MyJobs() {
   const all = myRows(me, depts.length ? depts : ["grading", "design"]);
   const st = (r: Row) => albumStatus(r.o, r.dept, r.k).status;
   const todo = all.filter((r) => !finished(st(r))), done = all.filter((r) => finished(st(r)));
-  const rows = tab === "todo" ? todo : done;
+  // client-wise: each customer, then their orders, then the albums
+  const rows = [...(tab === "todo" ? todo : done)].sort((a, b) => a.o.customer.localeCompare(b.o.customer) || a.o.id.localeCompare(b.o.id) || a.k - b.k || a.dept.localeCompare(b.dept));
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const clientSummary = (name: string) => {
+    const mine = rows.filter((r) => r.o.customer === name);
+    return { orders: new Set(mine.map((r) => r.o.id)).size, albums: mine.length, working: mine.filter((r) => !!st(r) && !finished(st(r))).length, ready: mine.filter((r) => !st(r) && r.o.stage === WORK_STAGE[r.dept]).length };
+  };
   const key = (r: Row) => `${r.o.id}-${r.dept}-${r.k}`;
   const kpis: Kpi[] = [
     { label: "To start", value: todo.filter((r) => !st(r) && r.o.stage === WORK_STAGE[r.dept]).length, icon: ClipboardList, tone: "blue" },
@@ -70,14 +76,31 @@ export default function MyJobs() {
           <table className={tableCls} data-testid="my-jobs">
             <thead><tr><Th>Order</Th><Th>Album</Th><Th>Customer</Th><Th>Work</Th><Th>Order stage</Th><Th>Done so far</Th><Th>Status</Th><Th>Priority</Th><Th>Due</Th><Th className="text-right">Action</Th></tr></thead>
             <tbody>
-              {rows.map((r) => {
+              {rows.map((r, ri) => {
+                const newClient = ri === 0 || rows[ri - 1]!.o.customer !== r.o.customer;
+                const newOrder = ri === 0 || rows[ri - 1]!.o.id !== r.o.id;
+                const hidden = closed.has(r.o.customer);
                 const s = albumStatus(r.o, r.dept, r.k), p = progressOf(r.o.id, r.dept, r.k), here = r.o.stage === WORK_STAGE[r.dept];
                 const of = r.dept === "design" ? r.sheets || undefined : (r.o.albums?.length ?? 1) <= 1 ? photosGiven(r.o.id) : undefined;
                 const id = key(r);
+                const cs = newClient ? clientSummary(r.o.customer) : null;
                 return (
                   <Fragment key={id}>
-                    <tr className={cx(trCls, open === id && "bg-brand-soft")} data-testid={`myjob-${r.o.id}-${r.dept}-${r.k}`}>
-                      <Td className="font-bold"><Link to={`/orders/${r.o.id}`} className="hover:underline">{r.o.id}</Link></Td>
+                    {cs && (
+                      <tr className="bg-slate-100/80" data-testid={`myclient-${r.o.customer}`}>
+                        <td colSpan={10} className="px-4 py-2">
+                          <button type="button" onClick={() => setClosed((p) => { const n = new Set(p); if (n.has(r.o.customer)) n.delete(r.o.customer); else n.add(r.o.customer); return n; })} className="flex w-full flex-wrap items-center gap-3 text-left text-sm">
+                            <span className="text-sub">{hidden ? "▸" : "▾"}</span><b className="text-base">{r.o.customer || "—"}</b>
+                            <span className="text-xs text-sub">{cs.orders} order{cs.orders === 1 ? "" : "s"} · {cs.albums} album{cs.albums === 1 ? "" : "s"}</span>
+                            {cs.ready > 0 && <Pill tone="blue">{cs.ready} ready to start</Pill>}
+                            {cs.working > 0 && <Pill tone="violet">{cs.working} in progress</Pill>}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                    {!hidden && newOrder && !newClient && <tr><td colSpan={10} className="h-1 bg-slate-50" /></tr>}
+                    {!hidden && <tr className={cx(trCls, open === id && "bg-brand-soft")} data-testid={`myjob-${r.o.id}-${r.dept}-${r.k}`}>
+                      <Td className="font-bold">{newOrder ? <Link to={`/orders/${r.o.id}`} className="hover:underline">{r.o.id}</Link> : <span className="pl-2 font-normal text-sub">{r.o.id}</span>}</Td>
                       <Td><span className="font-semibold">{r.title}</span>{r.sheets ? <span className="block text-[11px] text-sub">{r.sheets} sheets</span> : null}</Td>
                       <Td>{r.o.customer}</Td>
                       <Td>{LABEL[r.dept]}</Td>
@@ -91,8 +114,8 @@ export default function MyJobs() {
                           : !s.status ? <span className="inline-flex h-8 items-center rounded-lg bg-slate-100 px-3 text-[11px] font-semibold text-sub">Waiting · {stageLabel(r.o.stage)}</span>
                           : <button onClick={() => setOpen(open === id ? null : id)} data-testid={`myopen-${r.o.id}-${r.dept}-${r.k}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs font-bold hover:bg-brand-soft">{finished(s.status) ? "Open" : open === id ? "Close" : "Continue"}</button>}
                       </td>
-                    </tr>
-                    {open === id && (
+                    </tr>}
+                    {!hidden && open === id && (
                       <tr><td colSpan={10} className="bg-brand-soft/30 px-4 pb-3">
                         <JobProgress orderId={r.o.id} dept={r.dept} album={r.k} title={`${r.o.id} · ${r.title} · ${LABEL[r.dept]}`} countLabel={COUNT[r.dept]} of={of}
                           pathLabel={r.dept === "grading" ? "Graded files path / link" : "Design files path / link"}

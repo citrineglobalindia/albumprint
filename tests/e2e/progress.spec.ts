@@ -247,6 +247,7 @@ test("My Jobs: the designer sees each assigned album with its own Start (every a
   await page.getByRole("link", { name: "My Jobs" }).click();
   await expect(page.getByTestId(`myjob-${code}-design-1`)).toContainText("Engagement");
   await expect(page.getByTestId(`myjob-${code}-design-2`)).toContainText("Haldi");
+  await expect(page.getByTestId("myclient-Sharma Studio")).toContainText("ready to start");          // client-wise heading
   await page.getByTestId(`mystart-${code}-design-1`).click();
   await expect(page.getByTestId(`myjob-${code}-design-1`)).toContainText("Working on it");
   await page.getByTestId(`mystart-${code}-design-2`).click();                                     // the second album starts too
