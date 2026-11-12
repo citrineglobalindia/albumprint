@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { customerGroups, customerOrders, customerStats, mergeCustomers } from "../lib/customerGroups";
+import { useAuth } from "../lib/auth";
 import { useToast } from "../components/Toast";
 import { ActionMenu } from "../components/ActionMenu";
 import { Users, ShieldCheck, Crown, Phone, Repeat, IndianRupee, Mail, MapPin, CalendarDays, Tag, X, MoreHorizontal, ChevronDown, StickyNote, Pencil, RotateCcw, Check, AlertCircle, Plus, Undo2 } from "lucide-react";
@@ -33,11 +35,8 @@ interface Follow { id: number; text: string; due: string; done: boolean }
 const NOTES: Record<string, string[]> = {};
 const FOLLOWS: Record<string, Follow[]> = {};
 let fid = 1;
-const notesOf = (id: string) => (NOTES[id] ??= ["Discussed new album design samples. Client liked the premium matte finish. Follow up next week for final approval."]);
-const followsOf = (id: string) => (FOLLOWS[id] ??= [
-  { id: fid++, text: "Call about final approval", due: "2026-10-07", done: false },
-  { id: fid++, text: "Share new album samples", due: "2026-10-10", done: false },
-]);
+const notesOf = (id: string) => (NOTES[id] ??= []);
+const followsOf = (id: string) => (FOLLOWS[id] ??= []);
 
 /* ───────────── lookups ───────────── */
 const PIN_PREFIX: Record<string, [string, string]> = {
@@ -58,13 +57,23 @@ const COLS = [
 const TypePill = ({ t }: { t: Customer["type"] }) => <Pill tone={t === "VIP" ? "amber" : t === "New" ? "blue" : "slate"} icon={t === "VIP" ? Crown : undefined}>{t}</Pill>;
 const EMPTY = { name: "", studio: "", mobile: "", whatsapp: "", email: "", address: "", city: "", state: "", pin: "", gstin: "", notes: "", tags: [] as string[] };
 const Err = ({ children }: { children?: string }) => (children ? <p role="alert" className="mt-1 flex items-center gap-1 text-xs font-semibold text-rose-600"><AlertCircle className="size-3.5" />{children}</p> : null);
-const ordersOf = (c: Customer) => ORDERS.filter((o) => o.customer === c.name || o.customer === c.studio);
+const ordersOf = (c: Customer) => customerOrders(c);
 
 interface ViewState { q: string; type: string[]; city: string[]; status: string[]; tags: string[]; dues: boolean; segment: string | null; range: ReturnType<typeof packRange>; hidden: string[]; sort: SortState }
 
 export default function Customers() {
   useStore();
-  const all = CUSTOMERS;
+  // one line per customer: records with the same mobile are one studio; counts and money come from all of their orders
+  const groups = customerGroups();
+  const dupesOf = new Map(groups.map((g) => [g.primary.id, g.dupes]));
+  const all: Customer[] = groups.map(({ primary }) => { const st = customerStats(primary); return { ...primary, activeOrders: st.active, lifetime: st.billed, dues: st.dues, lastOrder: st.last ?? primary.lastOrder }; });
+  const nav = useNavigate();
+  const { role } = useAuth(); const isAdmin = role === "admin";
+  const merge = (c: Customer) => {
+    const d = dupesOf.get(c.id) ?? []; const keep = CUSTOMERS.find((x) => x.id === c.id); if (!keep || !d.length) return;
+    if (!window.confirm(`Merge ${d.length} duplicate record(s) (${d.map((x) => `${x.id} ${x.studio}`).join(", ")}) into ${c.id} ${c.studio}? Their orders and invoices move to ${c.id}.`)) return;
+    void mergeCustomers(keep, d).then((r) => show(r.msg));
+  };
   const newOrder = useNewOrder();
   const [toast, show] = useToast();
   const [adding, setAdding] = useState(false);
@@ -255,12 +264,14 @@ export default function Customers() {
                   <tr key={c.id} data-row={c.id} onClick={() => setActiveId(c.id)} className={cx(trCls, "cursor-pointer", activeId === c.id && "bg-brand-soft")}>
                     <Td><input type="checkbox" aria-label={`Select ${c.name}`} checked={checked.has(c.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })} /></Td>
                     {show_("id") && <Td className="text-brand">{c.id}</Td>}
-                    {show_("name") && <Td><span className="inline-flex items-center gap-2"><Avatar name={c.name} size={28} /><span className="font-semibold text-brand">{c.name}</span></span></Td>}
+                    {show_("name") && <Td><span className="inline-flex items-center gap-2"><Avatar name={c.name} size={28} /><span><Link to={`/customers/${c.id}`} onClick={(e) => e.stopPropagation()} className="font-semibold text-brand hover:underline" data-testid={`customer-link-${c.id}`}>{c.name}</Link>
+                      {(dupesOf.get(c.id)?.length ?? 0) > 0 && <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800" data-testid={`dupes-${c.id}`}>+{dupesOf.get(c.id)!.length} duplicate{dupesOf.get(c.id)!.length === 1 ? "" : "s"}{isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); merge(c); }} className="ml-1 rounded bg-amber-600 px-1.5 text-white hover:bg-amber-700">Merge</button>}</span>}</span></span></Td>}
                     {show_("studio") && <Td>{c.studio}</Td>}{show_("mobile") && <Td>{c.mobile}</Td>}{show_("email") && <Td className="text-brand">{c.email}</Td>}{show_("city") && <Td>{c.city}</Td>}{show_("type") && <Td><TypePill t={c.type} /></Td>}
                     {show_("orders") && <Td className="text-center"><span className="inline-grid size-6 place-items-center rounded-md bg-brand-soft font-bold text-brand">{c.activeOrders}</span></Td>}
                     {show_("lifetime") && <Td className="font-bold">{inr(c.lifetime)}</Td>}{show_("lastOrder") && <Td>{fmtDate(c.lastOrder)}</Td>}
                     <Td className="text-right"><ActionMenu trigger={<MoreHorizontal className="size-4" />} items={[
-                      { label: "View", onClick: () => { setActiveId(c.id); setDtab("history"); } },
+                      { label: "Open full profile", onClick: () => nav(`/customers/${c.id}`) },
+                      { label: "Quick view", onClick: () => { setActiveId(c.id); setDtab("history"); } },
                       { label: "Edit", onClick: () => openEdit(c) },
                       { label: "Create Order", onClick: () => newOrder.open({ customerId: c.id }) },
                       { label: "Add Note", onClick: () => { setActiveId(c.id); setDtab("notes"); } },
@@ -306,7 +317,8 @@ export default function Customers() {
               <div><div className="text-[11px] text-sub">Pending Dues</div><div className={cx("text-lg font-extrabold", cur.dues ? "text-rose-600" : "text-emerald-600")}>{inr(cur.dues)}</div></div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2"><PrimaryButton icon={Plus} onClick={() => newOrder.open({ customerId: cur.id })}>New Order</PrimaryButton>
-              <BalanceReminderButton d={duesByCustomer().find((x) => x.customer.id === cur.id)} onDone={(m) => show(m)} /></div>
+              <BalanceReminderButton d={duesByCustomer().find((x) => x.customer.id === cur.id)} onDone={(m) => show(m)} />
+              <Link to={`/customers/${cur.id}`} className="inline-flex h-9 items-center rounded-lg border border-line px-3 text-xs font-bold text-brand hover:bg-brand-soft" data-testid="full-profile">Full profile →</Link></div>
             <LineTabs<"history" | "notes" | "follow"> className="mt-4" value={dtab} onChange={setDtab} tabs={[{ key: "history", label: "Order History" }, { key: "notes", label: `Notes (${myNotes.length})` }, { key: "follow", label: `Follow-ups (${openFollow})` }]} />
             {dtab === "history" && (
               <ul className="mt-3 space-y-2.5">

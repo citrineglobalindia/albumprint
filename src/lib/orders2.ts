@@ -11,6 +11,7 @@ import { priceOrder, type DraftAlbum, type OrderDraft, type PricedOrder } from "
 import { mobileError, TODAY } from "./format";
 import { notifyOrderCreated } from "./events";
 import { registerInvoicePending } from "./pendingInvoice";
+import { customerByMobile } from "./customerGroups";
 import { progressOf } from "./jobProgress";
 
 // Order builder data: drafts, finalizing (order + albums + priced lines + invoice in one step), the pricing snapshot, and the authorized reopen.
@@ -203,7 +204,10 @@ const toSpec = (a: PricedOrder["albums"][number], d: DraftAlbum): AlbumSpec => {
 };
 
 /** Finalize: save the draft, then create the order, its albums, priced lines and the numbered invoice. Repeating the call returns the same result. */
-export async function finalizeDraft(id: string | undefined, payload: OrderDraft): Promise<{ result: FinalizeResult; draftId: string } | { error: string }> {
+export async function finalizeDraft(id: string | undefined, payloadIn: OrderDraft): Promise<{ result: FinalizeResult; draftId: string } | { error: string }> {
+  // a "new" customer whose mobile is already on file is that customer (no duplicate records)
+  const known = payloadIn.newCustomer ? customerByMobile(payloadIn.newCustomer.phone) : undefined;
+  const payload: OrderDraft = known ? { ...payloadIn, customerId: known.uid ?? known.id, newCustomer: null } : payloadIn;
   const problems = draftProblems(payload);
   if (problems.length) return { error: problems[0]!.message };
   const existing = id ? DRAFTS.find((x) => x.id === id) : undefined;

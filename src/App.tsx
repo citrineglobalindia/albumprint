@@ -16,6 +16,7 @@ const ColourGrading = lazy(() => import("./pages/ColourGrading"));
 const Designing = lazy(() => import("./pages/Designing"));
 const DesignJobs = lazy(() => import("./pages/DesignJobs"));
 const MyJobs = lazy(() => import("./pages/MyJobs"));
+const CustomerProfile = lazy(() => import("./pages/CustomerProfile"));
 const Labs = lazy(() => import("./pages/Labs"));
 const Printing = lazy(() => import("./pages/Printing"));
 const QualityControl = lazy(() => import("./pages/QualityControl"));
@@ -84,6 +85,7 @@ export default function App() {
             <Route path="design-orders" element={page(<Orders key="design" kind="Design + Printing" />)} />
             <Route path="printing-orders" element={page(<Orders key="printing" kind="Printing" />)} />
             <Route path="customers" element={page(<Customers />)} />
+            <Route path="customers/:id" element={page(<CustomerProfile />)} />
             <Route path="pipeline" element={page(<Pipeline />)} />
             <Route path="colour-grading" element={page(<ColourGrading />)} />
             <Route path="designing" element={page(<DesignJobs />)} />
