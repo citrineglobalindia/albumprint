@@ -22,6 +22,12 @@ type Row = { o: Order; k: number; title: string; sheets: number; dept: D };
 const LABEL: Record<D, string> = { grading: "Colour Grading", design: "Designing" };
 const COUNT: Record<D, string> = { grading: "Photos graded", design: "Sheets designed" };
 const finished = (s?: string) => s === "done" || s === "client_approved";
+/** Each order gets its own colour: a left edge and a light tint on its heading and albums. */
+const BOX = [
+  { edge: "border-l-indigo-500", head: "bg-indigo-50", row: "bg-indigo-50/30" }, { edge: "border-l-emerald-500", head: "bg-emerald-50", row: "bg-emerald-50/30" },
+  { edge: "border-l-amber-500", head: "bg-amber-50", row: "bg-amber-50/30" }, { edge: "border-l-pink-500", head: "bg-pink-50", row: "bg-pink-50/30" },
+  { edge: "border-l-sky-500", head: "bg-sky-50", row: "bg-sky-50/30" }, { edge: "border-l-violet-500", head: "bg-violet-50", row: "bg-violet-50/30" },
+];
 
 function myRows(me: string, depts: D[]): Row[] {
   const out: Row[] = [];
@@ -84,6 +90,9 @@ export default function MyJobs() {
                 const of = r.dept === "design" ? r.sheets || undefined : (r.o.albums?.length ?? 1) <= 1 ? photosGiven(r.o.id) : undefined;
                 const id = key(r);
                 const cs = newClient ? clientSummary(r.o.customer) : null;
+                const orderNo = new Set(rows.slice(0, ri + 1).map((x) => x.o.id)).size - 1, box = BOX[orderNo % BOX.length]!;
+                const lastOfOrder = ri === rows.length - 1 || rows[ri + 1]!.o.id !== r.o.id;
+                const orderRows = rows.filter((x) => x.o.id === r.o.id);
                 return (
                   <Fragment key={id}>
                     {cs && (
@@ -98,9 +107,19 @@ export default function MyJobs() {
                         </td>
                       </tr>
                     )}
-                    {!hidden && newOrder && !newClient && <tr><td colSpan={10} className="h-1 bg-slate-50" /></tr>}
-                    {!hidden && <tr className={cx(trCls, open === id && "bg-brand-soft")} data-testid={`myjob-${r.o.id}-${r.dept}-${r.k}`}>
-                      <Td className="font-bold">{newOrder ? <Link to={`/orders/${r.o.id}`} className="hover:underline">{r.o.id}</Link> : <span className="pl-2 font-normal text-sub">{r.o.id}</span>}</Td>
+                    {!hidden && newOrder && (
+                      <tr className={cx("border-l-4 border-t-8 border-t-white", box.edge, box.head)} data-testid={`myorder-${r.o.id}`}>
+                        <td colSpan={10} className="px-4 py-2">
+                          <span className="flex flex-wrap items-center gap-3 text-sm">
+                            <Link to={`/orders/${r.o.id}`} className="text-base font-extrabold hover:underline">{r.o.id}</Link>
+                            <Pill tone={stageTone(r.o.stage)} dot>{stageLabel(r.o.stage)}</Pill>
+                            <span className="text-xs text-sub">{r.o.event && r.o.event !== "—" ? `${r.o.event} · ` : ""}{orderRows.length} album{orderRows.length === 1 ? "" : "s"} for you · {orderRows.filter((x) => finished(st(x))).length} done · due {fmtDate(r.o.due)}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    {!hidden && <tr className={cx(trCls, "border-l-4", box.edge, open === id ? "bg-brand-soft" : box.row, lastOfOrder && "border-b-2 border-b-slate-200")} data-testid={`myjob-${r.o.id}-${r.dept}-${r.k}`}>
+                      <Td className="text-xs text-sub">{r.o.id}</Td>
                       <Td><span className="font-semibold">{r.title}</span>{r.sheets ? <span className="block text-[11px] text-sub">{r.sheets} sheets</span> : null}</Td>
                       <Td>{r.o.customer}</Td>
                       <Td>{LABEL[r.dept]}</Td>
@@ -116,7 +135,7 @@ export default function MyJobs() {
                       </td>
                     </tr>}
                     {!hidden && open === id && (
-                      <tr><td colSpan={10} className="bg-brand-soft/30 px-4 pb-3">
+                      <tr className={cx("border-l-4", box.edge)}><td colSpan={10} className="bg-brand-soft/30 px-4 pb-3">
                         <JobProgress orderId={r.o.id} dept={r.dept} album={r.k} title={`${r.o.id} · ${r.title} · ${LABEL[r.dept]}`} countLabel={COUNT[r.dept]} of={of}
                           pathLabel={r.dept === "grading" ? "Graded files path / link" : "Design files path / link"}
                           onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(r.o.id, r.dept) : null; if (a) show(a.msg); }} />
