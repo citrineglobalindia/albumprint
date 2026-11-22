@@ -6,6 +6,7 @@ import { JobProgress } from "../components/JobProgress";
 import { PROGRESS, gradingBy, photosGiven, photosGraded, photosPending } from "../lib/jobProgress";
 import { currentActor } from "../lib/audit";
 import { advanceAfter } from "../lib/albumFlow";
+import { QuickCount } from "../components/QuickCount";
 import { AlbumProgress } from "../components/AlbumProgress";
 import { WorkFiles } from "../components/WorkFiles";
 import { ORDERS, PRIORITIES, type Priority, type Tone } from "../lib/data";
@@ -210,7 +211,9 @@ export default function ColourGrading() {
                     {vis("customer") && <Td>{oo.customer}</Td>}
                     {vis("event") && <Td>{oo.event}</Td>}
                     {vis("files") && <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>}
-                    {vis("graded") && <Td>{(() => { const g = photosGraded(j.orderId), t = photosGiven(j.orderId); return g == null && t == null ? <span className="text-sub">—</span> : <span data-testid={`graded-${j.orderId}`} className="font-semibold text-emerald-700">{g ?? 0}{t ? <span className="font-normal text-sub"> / {t}</span> : null}</span>; })()}</Td>}
+                    {vis("graded") && <Td>{(() => { const g = photosGraded(j.orderId), t = photosGiven(j.orderId); return g == null && t == null ? <span className="text-sub">—</span> : <span data-testid={`graded-${j.orderId}`} className="font-semibold text-emerald-700">{g ?? 0}{t ? <span className="font-normal text-sub"> / {t}</span> : null}</span>; })()}
+                      {work && ordOf(j.orderId).stage === "colour_grading" && ["New", "In Progress", "Rework"].includes(j.status) && !PROGRESS.some((p) => p.orderId === j.orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.count != null)
+                        && <div className="mt-1"><QuickCount orderId={j.orderId} dept="grading" onDone={(m, ok) => (ok ? show(m) : show(m))} prepare={() => { if (j.status !== "New") return null; const r = startGrading(j.orderId); return r.ok || /already/i.test(r.msg) ? null : r.msg; }} /></div>}</Td>}
                     {vis("pending") && <Td>{(() => { const p = photosPending(j.orderId); return <span data-testid={`pending-${j.orderId}`}>{p == null ? <span className="text-sub">—</span> : p === 0 ? <Pill tone="green">All done</Pill> : <Pill tone="amber">{p} pending</Pill>}</span>; })()}</Td>}
                     {vis("colorist") && <Td><span className="inline-flex items-center gap-2" data-testid={`grader-${j.orderId}`}><Avatar name={graderOf(j)} size={24} />{graderOf(j)}</span></Td>}
                     {vis("priority") && <Td><PriorityPill p={j.priority as Priority} /></Td>}

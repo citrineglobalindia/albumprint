@@ -5,6 +5,7 @@ import { DateRangePicker, inRange, presetRange, type DateRange } from "../compon
 import { backendOn } from "../lib/supabase";
 import { KpiRow, LineTabs, PageHeader, Panel, Pill, PriorityPill, Td, Th, cx, tableCls, trCls, type Kpi } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
+import { QuickCount } from "../components/QuickCount";
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
@@ -162,7 +163,8 @@ export default function MyJobs() {
                       <Td>{r.o.customer}</Td>
                       <Td>{LABEL[r.dept]}</Td>
                       <Td><Pill tone={stageTone(r.o.stage)} dot>{stageLabel(r.o.stage)}</Pill></Td>
-                      <Td>{p?.count != null ? <b>{p.count}{of ? <span className="font-normal text-sub"> / {of}</span> : null}</b> : <span className="text-sub">—</span>}</Td>
+                      <Td>{p?.count != null ? <b>{p.count}{of ? <span className="font-normal text-sub"> / {of}</span> : null}</b> : <span className="text-sub">—</span>}
+                        {s.status && !finished(s.status) && here && <div className="mt-1"><QuickCount orderId={r.o.id} dept={r.dept} album={r.k} label={r.dept === "grading" ? "photos" : "sheets"} onDone={(m) => show(m)} /></div>}</Td>
                       <Td>{s.status ? <Pill tone={WORK_STATUS.find((x) => x.key === s.status)?.tone ?? "slate"}>{statusLabel(s.status)}</Pill> : <span className="text-xs text-sub">Not started</span>}</Td>
                       <Td><PriorityPill p={r.o.priority as Priority} /></Td>
                       <Td>{fmtDate(r.o.due)}</Td>

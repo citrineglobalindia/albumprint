@@ -12,7 +12,7 @@ test("team performance by role: grading work shows up for the grader with photos
   await page.goto("/colour-grading");
   await page.getByPlaceholder(/Search by order ID/).fill(code);
   const start = page.getByTestId(`job-${code}`).getByRole("button", { name: "Start" });
-  if (await start.count()) await start.click(); else await page.getByTestId(`job-${code}`).click();
+  if (await start.count()) await start.click(); else await page.getByTestId(`job-${code}`).getByRole("cell", { name: code, exact: true }).click();
   const g = page.getByTestId("progress-grading");
   await g.getByLabel("Photos graded").fill("250"); await g.getByRole("button", { name: "Update" }).click();
   await expect(g.getByTestId("progress-grading-pct")).toContainText("250 / 300");

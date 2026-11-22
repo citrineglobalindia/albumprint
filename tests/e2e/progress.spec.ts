@@ -21,7 +21,7 @@ test("photos given → photos graded → sheets designed, with status updates, s
   await page.getByRole("button", { name: "Move to Colour Grading" }).click();
   await page.goto("/colour-grading");
   await page.getByPlaceholder(/Search by order ID/).fill(code);
-  await page.getByTestId(`job-${code}`).click();
+  await page.getByTestId(`job-${code}`).getByRole("cell", { name: code, exact: true }).click();
   const g = page.getByTestId("progress-grading");
   await g.getByLabel("Photos graded").fill("120"); await g.getByLabel("grading status").selectOption("working"); await g.getByLabel("grading note").fill("rest tomorrow");
   await g.getByRole("button", { name: "Update" }).click();
@@ -53,7 +53,7 @@ test("colour grading in sittings: pending shown clearly; when every photo is gra
   await page.goto("/colour-grading");
   await page.getByPlaceholder(/Search by order ID/).fill(code);
   const start = page.getByTestId(`job-${code}`).getByRole("button", { name: "Start" });
-  if (await start.count()) await start.click(); else await page.getByTestId(`job-${code}`).click();
+  if (await start.count()) await start.click(); else await page.getByTestId(`job-${code}`).getByRole("cell", { name: code, exact: true }).click();
   const g = page.getByTestId("progress-grading");
   // day 1: 280 of 400
   await g.getByLabel("Add more done now").fill("280"); await g.getByRole("button", { name: "Add" }).click();
@@ -269,4 +269,23 @@ test("My Jobs: the designer sees each assigned album with its own Start (every a
   await page.getByRole("tab", { name: /Done/ }).click();
   for (const k of [1, 2]) await page.getByTestId(`myapproved-${code}-${k}`).click();
   await expect(page.getByText(`${code} is waiting for the admin's final approval`).first()).toBeVisible();
+});
+
+test("colour grading table: quick '+ photos' Add right in the row; the last photos send the job to the admin", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedRole(page, "admin");
+  const code = (await buildOrder(page, { albums: [{ name: "Quick album", sheets: 10 }], finalize: true, photosGiven: "300" }))!;
+  await page.goto(`/orders/${code}`);
+  await page.getByRole("button", { name: "Move to Files Received" }).click();
+  await page.getByRole("button", { name: "Move to Colour Grading" }).click();
+  await page.goto("/colour-grading");
+  await page.getByPlaceholder(/Search by order ID/).fill(code);
+  const q = page.getByTestId(`quick-grading-${code}`);
+  await q.getByRole("spinbutton").fill("200"); await q.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByTestId(`graded-${code}`)).toHaveText("200 / 300");
+  await expect(page.getByTestId(`pending-${code}`)).toHaveText("100 pending");
+  await q.getByRole("spinbutton").fill("100"); await q.getByRole("spinbutton").press("Enter");
+  await expect(page.getByText(`All 300 photos graded — ${code} sent to the admin for approval`).first()).toBeVisible();
+  await page.goto(`/orders/${code}`);
+  await expect(page.getByTestId("step-admin_approval")).toHaveAttribute("data-state", "current");
 });
