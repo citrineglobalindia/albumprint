@@ -4,6 +4,7 @@ import { extraRoutes, loadMyModules, onModules } from "./access";
 import ChangePassword from "../pages/ChangePassword";
 import MfaChallenge from "../pages/MfaChallenge";
 import { Navigate, useLocation } from "react-router-dom";
+import { BrandLoader } from "../components/BrandLoader";
 
 // SRS §1.2 role model. Demo-only auth: replace with real session/MFA service.
 export type RoleKey = "admin" | "reception" | "colour" | "designer" | "printing" | "qc" | "accounts";
@@ -138,7 +139,7 @@ export const useAuth = () => useContext(Ctx);
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { role, loading, mustChangePassword, mfaPending } = useAuth();
   const { pathname } = useLocation();
-  if (loading) return <div className="grid min-h-screen place-items-center text-sm text-sub" role="status">Loading…</div>;
+  if (loading) return <BrandLoader text="Checking your session" />;
   if (mfaPending) return <MfaChallenge />;
   if (!role) return <Navigate to="/login" replace state={{ from: pathname }} />;
   if (mustChangePassword) return <ChangePassword />;

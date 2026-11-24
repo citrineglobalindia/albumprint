@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider, RequireAuth, useAuth } from "./lib/auth";
+import { BrandLoader } from "./components/BrandLoader";
 
 // Route-level code splitting: only the shell + the page being visited are downloaded. Login and the public proof page stay tiny.
 const Shell = lazy(() => import("./components/Shell"));
@@ -46,7 +47,7 @@ function PageSkeleton() {
     </div>
   );
 }
-const FullSkeleton = () => <div className="p-4 sm:p-7"><PageSkeleton /></div>;
+const FullSkeleton = () => <BrandLoader />;
 const page = (el: React.ReactNode) => <Suspense fallback={<PageSkeleton />}>{el}</Suspense>;
 
 function Home() {

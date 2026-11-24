@@ -84,6 +84,7 @@ test("login page shows the logo, the tab icon and the Stepstones credit", async 
   const logo = page.getByRole("img", { name: "Innovative Photo Designers" }).first();
   await expect(logo).toBeVisible();
   await expect.poll(() => logo.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(100);   // the image really loaded
+  expect(await (await page.request.get("/")).text(), "branded loader on first paint").toContain('class="ipd-loader"');
   for (const f of ["/favicon.ico", "/favicon-32.png", "/apple-touch-icon.png", "/logo.png", "/logo-full.png", "/logo-invoice.jpg"]) expect((await page.request.get(f)).status(), f).toBe(200);
   await expect(page.getByText("Developed by:")).toBeVisible();
   await expect(page.getByText("Stepstones")).toBeVisible();
