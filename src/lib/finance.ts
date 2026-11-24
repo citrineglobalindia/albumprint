@@ -91,7 +91,7 @@ export function sweepOverdue() {
       logAudit({ entity: "invoice", entityId: i.no, action: "mark_overdue", detail: `due ${i.due}` });
     }
   });
-  if (n) notify();
+  if (n) queueMicrotask(notify);   // runs while a page renders (Payments, Invoices): refresh the other views after it, not during it
 }
 
 export function ensureFinance() {
@@ -111,7 +111,7 @@ export function ensureFinance() {
     });
     changed = true;
   }
-  if (changed) notify();
+  if (changed) queueMicrotask(notify);
   sweepOverdue();
 }
 
