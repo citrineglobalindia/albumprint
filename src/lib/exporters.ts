@@ -52,7 +52,7 @@ export async function toPdf(rows: Cell[][], title: string, subtitle = ""): Promi
     y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 22;
   }
   const n = doc.getNumberOfPages();
-  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`AlbumPro · page ${i} of ${n}`, 40, doc.internal.pageSize.getHeight() - 20); }
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Innovative Photo Designers · page ${i} of ${n}`, 40, doc.internal.pageSize.getHeight() - 20); }
   return doc.output("blob");
 }
 

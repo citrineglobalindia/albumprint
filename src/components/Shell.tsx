@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Users, KanbanSquare, Palette, LayoutTemplate, Printer, ShieldCheck, Truck,
-  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, Aperture, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X, Factory,
+  CreditCard, FileText, BarChart3, Boxes, UserCog, Settings, Search, Bell, CircleHelp, ChevronDown, LogOut, MonitorSmartphone, MessagesSquare, Gauge, ScrollText, FolderOpen, CheckCheck, Keyboard, Plus, UserPlus, Wallet, Clock, CornerDownLeft, Menu, X, Factory,
   AlarmClockCheck, Library, Paintbrush, PrinterCheck, ListChecks,
 } from "lucide-react";
 import { cx } from "./ui";
@@ -16,6 +16,8 @@ import { LiveBadge } from "./LiveBadge";
 import { DutyBar } from "./DutyBar";
 import { useToast } from "./Toast";
 import { onDbError } from "../lib/db/core";
+import { APP_NAME } from "../lib/brand";
+import { BrandLogo, DevCredit } from "./BrandMark";
 
 type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; sub?: boolean };   // sub: shown indented under the item above
 export const NAV = [
@@ -83,8 +85,8 @@ function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; 
       <aside id="app-sidebar" ref={ref} aria-label="Main navigation" {...(!desktop && open ? { role: "dialog", "aria-modal": true } : {})} inert={hidden}
         className={cx("app-sidebar no-print flex w-[260px] shrink-0 flex-col bg-side px-3 py-5 text-white transition-transform duration-200 lg:static lg:z-auto lg:w-[220px] lg:translate-x-0", "fixed inset-y-0 left-0 z-50", open ? "translate-x-0" : "-translate-x-full")}>
         <div className="mb-6 flex items-center gap-2.5 px-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-brand"><Aperture className="size-5" aria-hidden /></span>
-          <span className="text-xl font-extrabold tracking-tight">AlbumPro</span>
+          <BrandLogo size={38} />
+          <span className="text-[15px] font-extrabold leading-tight tracking-tight">{APP_NAME}</span>
           <button type="button" onClick={onClose} aria-label="Close menu" className="ml-auto grid size-11 place-items-center rounded-lg hover:bg-side-hover lg:hidden"><X className="size-5" /></button>
         </div>
         <nav className="app-nav scroll-thin flex flex-1 flex-col gap-1 overflow-y-auto" aria-label="Primary">
@@ -264,7 +266,7 @@ function Topbar({ openPalette, onMenu, menuOpen }: { openPalette: () => void; on
                   {[["⌘/Ctrl + K", "Command palette"], ["↑ ↓ / Enter", "Move / run in palette"], ["n", "New order"], ["g d", "Go to Dashboard"], ["g o", "Go to Orders"], ["g c", "Go to Customers"], ["g p", "Go to Payments"], ["g r", "Go to Reports"], ["Esc", "Close palette, menus, popovers"], ["?", "Toggle this help"]].map(([k, d]) => <li key={k} className="flex items-center justify-between gap-3"><span className="text-sub">{d}</span><kbd className="whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold">{k}</kbd></li>)}
                 </ul>
                 <div className="mt-3 border-t border-line pt-3">
-                  <a href="mailto:support@albumpro.com?subject=AlbumPro%20help" className="font-bold text-brand hover:underline">Contact support</a>
+                  <a href="mailto:support@albumpro.com?subject=Innovative%20Photo%20Designers%20help" className="font-bold text-brand hover:underline">Contact support</a>
                 </div>
               </div>
             </>
@@ -296,7 +298,7 @@ const GO: Record<string, string> = { d: "/", o: "/orders", c: "/customers", p: "
 function titleFor(path: string) {
   if (path.startsWith("/orders/")) return `Order ${path.split("/")[2]}`;
   if (path.startsWith("/designing/")) return `Designing ${path.split("/")[2]}`;
-  return NAV.find((n) => (n.to === "/" ? path === "/" : path === n.to || path.startsWith(n.to + "/")))?.label ?? "AlbumPro";
+  return NAV.find((n) => (n.to === "/" ? path === "/" : path === n.to || path.startsWith(n.to + "/")))?.label ?? APP_NAME;
 }
 
 export default function Shell() {
@@ -314,7 +316,7 @@ export default function Shell() {
   const gMode = useRef(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]);
   useEffect(() => { if (desktop) setDrawer(false); }, [desktop]);
-  useEffect(() => { document.title = `${titleFor(loc.pathname)} · AlbumPro`; }, [loc.pathname]);
+  useEffect(() => { document.title = `${titleFor(loc.pathname)} · ${APP_NAME}`; }, [loc.pathname]);
   useEffect(() => {
     const allowed = role ? navOf(role) : [];
     const h = (e: KeyboardEvent) => {
@@ -342,7 +344,7 @@ export default function Shell() {
       <Sidebar open={drawer} desktop={desktop} onClose={() => setDrawer(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar openPalette={() => setPalette(true)} onMenu={() => setDrawer(true)} menuOpen={drawer} />
-        <main id="main" tabIndex={-1} className="app-main scroll-thin relative min-w-0 flex-1 overflow-y-auto px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><DutyBar /><Outlet /></main>
+        <main id="main" tabIndex={-1} className="app-main scroll-thin relative min-w-0 flex-1 overflow-y-auto px-3 pb-8 pt-4 outline-none sm:px-7 sm:pt-5"><DutyBar /><Outlet /><footer className="no-print mt-10 border-t border-line pt-4 text-center text-sub"><DevCredit /></footer></main>
       </div>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <A11yLayer />

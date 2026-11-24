@@ -36,7 +36,7 @@ export const waNumber = (c?: Pick<Customer, "mobile" | "whatsapp">) => { const d
 
 export const DEFAULT_ORDER_TEMPLATE = "Hello {name}, this is a friendly reminder from {business}: {amount} is pending for order {order} ({event}){due}. Please pay at your earliest convenience. Thank you!";
 export const DEFAULT_BALANCE_TEMPLATE = "Hello {name}, this is a reminder from {business}: your outstanding balance is {amount} across {count} order(s):\n{lines}\nPlease clear the balance at your earliest convenience. Thank you!";
-const business = () => String(loadSettings().name || "AlbumPro");
+const business = () => String(loadSettings().name || "Innovative Photo Designers");
 const fill = (t: string, v: Record<string, string>) => t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
 
 export function orderReminderText(o: Order): string {

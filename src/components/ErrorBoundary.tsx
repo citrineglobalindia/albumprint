@@ -24,7 +24,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, { 
       <main className="grid min-h-screen place-items-center bg-slate-50 p-6">
         <div role="alert" className="w-full max-w-md rounded-2xl border border-line bg-white p-7 text-center shadow-xl">
           <h1 className="text-xl font-extrabold">Something went wrong</h1>
-          <p className="mt-2 text-sm text-sub">{STALE.test(String(this.state.err.message)) ? "AlbumPro was just updated. Reload to get the latest version." : "This page could not be shown. Reloading usually fixes it."}</p>
+          <p className="mt-2 text-sm text-sub">{STALE.test(String(this.state.err.message)) ? "The app was just updated. Reload to get the latest version." : "This page could not be shown. Reloading usually fixes it."}</p>
           <button onClick={() => location.reload()} className="mt-5 h-11 rounded-xl bg-brand px-6 text-sm font-bold text-white hover:bg-brand-dark">Reload</button>
           <p className="mt-3 break-words text-[11px] text-sub/70">{String(this.state.err.message).slice(0, 160)}</p>
         </div>
