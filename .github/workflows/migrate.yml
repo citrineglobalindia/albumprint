@@ -80,9 +80,11 @@ jobs:
           end $$;
           delete from auth.identities; delete from auth.users;
           SQL
-          # triggers off while loading (no audit rows, no profile creation, no notifications): the copies are exact
-          PGOPTIONS='-c session_replication_role=replica' psql "$NEW_URL" -v ON_ERROR_STOP=1 -q --single-transaction -f out/auth.sql
-          PGOPTIONS='-c session_replication_role=replica' pg_restore --data-only --no-owner --no-privileges --single-transaction --exit-on-error -d "$NEW_URL" out/public.dump
+          # Triggers off while loading (no audit rows, no profile creation, no notifications) so the copies are exact.
+          # Set inside the session: the Supabase pooler drops PGOPTIONS. Logins and data load in one transaction.
+          pg_restore --data-only --no-owner --no-privileges -f out/public.sql out/public.dump
+          { echo "set session_replication_role = replica;"; cat out/auth.sql out/public.sql; } \
+            | psql "$NEW_URL" -v ON_ERROR_STOP=1 -q --single-transaction
       - name: Compare old and new (written to ops.migration_report in the new project)
         run: |
           set -euo pipefail
