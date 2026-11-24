@@ -4,8 +4,7 @@ import { Eye, EyeOff, Lock, Mail, ArrowLeft, ShieldAlert } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import MfaChallenge from "./MfaChallenge";
 import { cx, inputCls } from "../components/ui";
-import { APP_NAME } from "../lib/brand";
-import { BrandLogo, DevCredit } from "../components/BrandMark";
+import { BrandWordmark, DevCredit } from "../components/BrandMark";
 
 type Mode = "signin" | "signup" | "forgot" | "info";
 
@@ -52,7 +51,7 @@ export default function BackendLogin() {
   return (
     <div className="grid min-h-full lg:grid-cols-[1.05fr_1fr]">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-side p-12 text-white lg:flex">
-        <div className="flex items-center gap-3"><BrandLogo size={48} /><span className="text-2xl font-extrabold">{APP_NAME}</span></div>
+        <BrandWordmark height={84} className="self-start" />
         <div>
           <h1 className="max-w-md text-4xl font-extrabold leading-tight">Every album, traced from order to doorstep.</h1>
           <p className="mt-4 max-w-md text-slate-300">Colour grading, design, client proofing, printing, QC and delivery — one workflow with a full audit trail.</p>
@@ -62,6 +61,7 @@ export default function BackendLogin() {
       </div>
 
       <main className="grid place-items-center bg-page p-6" id="main">
+        <BrandWordmark onLight height={64} className="mb-6 lg:hidden" />
         <form className="w-full max-w-md rounded-2xl border border-line bg-white p-8 shadow-sm" onSubmit={(e) => { e.preventDefault(); void go(); }}>
           {mode === "info" ? (
             <div className="text-center">

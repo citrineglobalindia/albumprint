@@ -15,6 +15,7 @@ import { backendOn } from "../lib/supabase";
 import { loadSettings, saveSettings } from "../lib/localState";
 import { getSlaRules } from "../lib/sla";
 import { AutoAssignSettings } from "../components/AutoAssignSettings";
+import { LOGO_FULL_LIGHT_BG_URL } from "../lib/brand";
 
 type Val = string | boolean;
 type Fld =
@@ -486,7 +487,7 @@ function General({ v, set, errs, show }: { v: Record<string, Val>; set: (k: stri
         <div className="rounded-xl border border-line p-4 text-center">
           <div className="mb-2 text-left text-[13px] font-bold">Company Logo</div>
           <div className="grid h-36 place-items-center rounded-lg bg-slate-50 text-sub">
-            {logo ? <img src={logo} alt="Logo" className="max-h-32 max-w-full object-contain" /> : <div><Camera className="mx-auto size-10 text-slate-400" /><div className="mt-2 text-xs font-semibold text-ink">Upload Company Logo</div><div className="text-[11px]">PNG, JPG or WebP (Max 2MB)</div></div>}
+            {logo || LOGO_FULL_LIGHT_BG_URL ? <img src={logo || LOGO_FULL_LIGHT_BG_URL} alt="Logo" className="max-h-32 max-w-full object-contain" /> : <div><Camera className="mx-auto size-10 text-slate-400" /><div className="mt-2 text-xs font-semibold text-ink">Upload Company Logo</div><div className="text-[11px]">PNG, JPG or WebP (Max 2MB)</div></div>}
           </div>
           <label className="mt-3 block cursor-pointer rounded-lg border border-line py-2 text-sm font-bold text-brand hover:bg-brand-soft">
             Change Logo

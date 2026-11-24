@@ -5,8 +5,7 @@ import { useAuth, ROLES, type RoleKey } from "../lib/auth";
 import { cx, inputCls } from "../components/ui";
 import { isUserActive } from "../lib/users";
 import BackendLogin from "./BackendLogin";
-import { APP_NAME } from "../lib/brand";
-import { BrandLogo, DevCredit } from "../components/BrandMark";
+import { BrandWordmark, DevCredit } from "../components/BrandMark";
 
 type Step = "credentials" | "otp" | "forgot" | "sent";
 
@@ -67,7 +66,7 @@ function DemoLogin() {
   return (
     <div className="grid min-h-full lg:grid-cols-[1.05fr_1fr]">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-side p-12 text-white lg:flex">
-        <div className="flex items-center gap-3"><BrandLogo size={48} /><span className="text-2xl font-extrabold">{APP_NAME}</span></div>
+        <BrandWordmark height={84} className="self-start" />
         <div>
           <h1 className="max-w-md text-4xl font-extrabold leading-tight">Every album, traced from order to doorstep.</h1>
           <p className="mt-4 max-w-md text-slate-300">Colour grading, design, client proofing, printing, QC and delivery — one workflow with a full audit trail.</p>
@@ -77,6 +76,7 @@ function DemoLogin() {
       </div>
 
       <div className="grid place-items-center bg-page p-6">
+        <BrandWordmark onLight height={64} className="mb-6 lg:hidden" />
         <div className="w-full max-w-md rounded-2xl border border-line bg-white p-8 shadow-sm">
           {step === "credentials" && (
             <>

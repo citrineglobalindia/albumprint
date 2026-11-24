@@ -1,5 +1,6 @@
 import type { InvoiceSnapshot } from "./orders2";
 import { SCOPE_LABEL } from "./catalog2";
+import { logoDataUrl } from "./brand";
 
 // The invoice PDF, drawn only from the stored snapshot (so a re-download years later shows exactly what was issued).
 // The PDF fonts have no ₹ glyph, so amounts are written "Rs. 1,234.50".
@@ -8,25 +9,27 @@ const ORDER_TYPE: Record<string, string> = { design_printing: "Design + Printing
 const fmtDate = (iso?: string) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 export async function invoicePdf(s: InvoiceSnapshot, opts: { preview?: boolean; paid?: number } = {}): Promise<Blob> {
-  const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const [{ jsPDF }, { default: autoTable }, logo] = await Promise.all([import("jspdf"), import("jspdf-autotable"), logoDataUrl()]);
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth(), L = 40, Rx = W - 40;
   const after = () => (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 0;
   const b = s.business ?? {};
 
-  // header: business (left), invoice identity (right)
+  // header: logo + business (left), invoice identity (right)
+  let top = 0;
+  if (logo) { try { doc.addImage(logo, "JPEG", L, 24, 150, 39); top = 44; } catch { /* draw without the logo */ } }
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(15, 27, 76);
-  if (s.showBusinessName !== false) doc.text(b.name || "Innovative Photo Designers", L, 48);              // the company name can be hidden per invoice
+  if (s.showBusinessName !== false) doc.text(b.name || "Innovative Photo Designers", L, 48 + top);              // the company name can be hidden per invoice
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90);
   const bl = [b.legal, b.address, [b.phone, b.email].filter(Boolean).join("  ·  "), b.website, b.gstin ? `GSTIN ${b.gstin}` : "", b.pan ? `PAN ${b.pan}` : ""].filter(Boolean) as string[];
-  doc.text(bl, L, 64, { maxWidth: 300 });
+  doc.text(bl, L, 64 + top, { maxWidth: 300 });
   doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(63, 79, 224); doc.text(opts.preview ? "INVOICE PREVIEW" : s.taxEnabled ? "TAX INVOICE" : "INVOICE", Rx, 48, { align: "right" });
   doc.setFontSize(10); doc.setTextColor(20); doc.setFont("helvetica", "normal");
   const idLines = opts.preview ? ["Not yet issued — the number is assigned when the order is finalized"] : [`Invoice no. ${s.invoiceNumber ?? "—"}`, `Date ${fmtDate(s.invoiceDate)}`, s.revision && s.revision > 1 ? `Revision ${s.revision}` : ""].filter(Boolean);
   doc.text(idLines, Rx, 66, { align: "right", maxWidth: 230 });
 
   // bill to + order
-  let y = Math.max(64 + bl.length * 12, 100) + 14;
+  let y = Math.max(64 + top + bl.length * 12, 100) + 14;
   doc.setDrawColor(225); doc.line(L, y - 8, Rx, y - 8);
   doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text("BILL TO", L, y + 4); doc.text("ORDER & EVENT", W / 2 + 10, y + 4);
   doc.setFont("helvetica", "normal"); doc.setTextColor(20); doc.setFontSize(10);

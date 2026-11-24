@@ -17,7 +17,7 @@ import { DutyBar } from "./DutyBar";
 import { useToast } from "./Toast";
 import { onDbError } from "../lib/db/core";
 import { APP_NAME } from "../lib/brand";
-import { BrandLogo, DevCredit } from "./BrandMark";
+import { BrandWordmark, DevCredit } from "./BrandMark";
 
 type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; sub?: boolean };   // sub: shown indented under the item above
 export const NAV = [
@@ -85,8 +85,7 @@ function Sidebar({ open, desktop, onClose }: { open: boolean; desktop: boolean; 
       <aside id="app-sidebar" ref={ref} aria-label="Main navigation" {...(!desktop && open ? { role: "dialog", "aria-modal": true } : {})} inert={hidden}
         className={cx("app-sidebar no-print flex w-[260px] shrink-0 flex-col bg-side px-3 py-5 text-white transition-transform duration-200 lg:static lg:z-auto lg:w-[220px] lg:translate-x-0", "fixed inset-y-0 left-0 z-50", open ? "translate-x-0" : "-translate-x-full")}>
         <div className="mb-6 flex items-center gap-2.5 px-3">
-          <BrandLogo size={38} />
-          <span className="text-[15px] font-extrabold leading-tight tracking-tight">{APP_NAME}</span>
+          <BrandWordmark height={46} className="min-w-0" />
           <button type="button" onClick={onClose} aria-label="Close menu" className="ml-auto grid size-11 place-items-center rounded-lg hover:bg-side-hover lg:hidden"><X className="size-5" /></button>
         </div>
         <nav className="app-nav scroll-thin flex flex-1 flex-col gap-1 overflow-y-auto" aria-label="Primary">

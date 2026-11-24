@@ -79,9 +79,12 @@ test("admin on a phone: every module fits the screen with no sideways scrolling"
   expect(errs).toEqual([]);
 });
 
-test("login page shows the business name, logo slot and the Stepstones credit", async ({ page }) => {
+test("login page shows the logo, the tab icon and the Stepstones credit", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByText("Innovative Photo Designers").first()).toBeVisible();
+  const logo = page.getByRole("img", { name: "Innovative Photo Designers" }).first();
+  await expect(logo).toBeVisible();
+  await expect.poll(() => logo.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(100);   // the image really loaded
+  for (const f of ["/favicon.ico", "/favicon-32.png", "/apple-touch-icon.png", "/logo.png", "/logo-full.png", "/logo-invoice.jpg"]) expect((await page.request.get(f)).status(), f).toBe(200);
   await expect(page.getByText("Developed by:")).toBeVisible();
   await expect(page.getByText("Stepstones")).toBeVisible();
   await expect(page).toHaveTitle(/Innovative Photo Designers/);
