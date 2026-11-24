@@ -165,7 +165,7 @@ export async function businessProfile(): Promise<Business> {
 function localBusiness(): Business {
   const s = loadSettings();
   const str = (k: string) => (typeof s[k] === "string" && (s[k] as string).trim() ? (s[k] as string).trim() : undefined);
-  return { name: str("name") ?? "AlbumPro Studio", legal: str("legal"), address: str("caddr") ?? str("address"), phone: str("phone"), email: str("email"), website: str("website"), gstin: str("gstin"), pan: str("pan"), state: str("state") };
+  return { name: str("name") ?? "Innovative Photo Designers", legal: str("legal"), address: str("caddr") ?? str("address"), phone: str("phone"), email: str("email"), website: str("website"), gstin: str("gstin"), pan: str("pan"), state: str("state") };
 }
 /** The invoice as it would look now (preview: no invoice number yet). */
 /** Who may choose, per order, whether the invoice shows the company name: admins and the roles the admin allows (Tax & defaults). */

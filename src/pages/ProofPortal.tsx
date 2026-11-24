@@ -10,7 +10,7 @@ import { moveStage } from "../lib/workflow";
 import { flushAll } from "../lib/persist";
 import { fmtDate } from "../lib/format";
 
-const STUDIO = "AlbumPro Studio";
+const STUDIO = "Innovative Photo Designers";
 const art = (seed: number, mirror?: boolean) => (
   <div className="relative h-full w-full overflow-hidden bg-[#fbf7f0]">
     <div className={cx("absolute inset-1.5 grid gap-1.5 sm:inset-2 sm:gap-2", mirror ? "grid-cols-[1.4fr_1fr]" : "grid-cols-1")}>

@@ -21,7 +21,7 @@ export default function MfaChallenge() {
       <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className="w-full max-w-sm rounded-2xl border border-line bg-white p-7 shadow-xl" aria-label="Two-step verification">
         <div className="mb-4 grid size-12 place-items-center rounded-xl bg-brand-soft text-brand"><ShieldCheck className="size-6" /></div>
         <h1 className="text-2xl font-extrabold">Verify it&apos;s you</h1>
-        <p className="mb-5 mt-1 text-sm text-sub">Open your authenticator app and enter the 6-digit code for AlbumPro.</p>
+        <p className="mb-5 mt-1 text-sm text-sub">Open your authenticator app and enter the 6-digit code for Innovative Photo Designers.</p>
         <label className="block text-[13px] font-semibold">6-digit code
           <input aria-label="6-digit code" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} className={`${inputCls} mt-1.5 text-center text-xl tracking-[0.5em]`} value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setErr(""); }} />
         </label>

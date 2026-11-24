@@ -255,7 +255,7 @@ export default function Reports() {
   };
   const exportAs = async (format: ExportFormat) => { try { await downloadRows(format, `report-${tab.toLowerCase().replace(/\s+/g, "-")}`, csvFor(tab), `${tab} report`, label); show(`${tab} report exported as ${format} (${label})`); } catch (e) { show(`Export failed: ${String((e as Error).message ?? e)}`); } };
   const exportCsv = () => void exportAs("CSV");
-  const printIt = () => { const t = document.title; document.title = `AlbumPro ${tab} report - ${label}`; window.print(); document.title = t; };
+  const printIt = () => { const t = document.title; document.title = `Innovative Photo Designers ${tab} report - ${label}`; window.print(); document.title = t; };
   const exportDrill = () => { if (!drill) return; downloadCsv("drill-orders.csv", [["Order", "Customer", "Event", "Stage", "Total", "Paid"], ...drill.orders.map((o) => [o.id, o.customer, o.event, stageLabel(o.stage), o.total, o.paid])]); show(`Exported ${drill.orders.length} orders`); };
 
   // ---- custom report actions ----
@@ -276,7 +276,7 @@ export default function Reports() {
     const e = await addSchedule({ name: rname.trim(), freq: sf.freq, day: sf.freq === "Daily" ? "" : sf.day, time: sf.time, to: list.join(", "), format: sf.format, metrics, groupBy, filters: cf });
     if (e) { setSErr({ to: e }); return; }
     setSchedOpen(false); setSErr({});
-    show(`"${rname.trim()}" scheduled ${sf.freq.toLowerCase()} at ${sf.time}. Recipients are notified in AlbumPro when it is due`);
+    show(`"${rname.trim()}" scheduled ${sf.freq.toLowerCase()} at ${sf.time}. Recipients are notified in the app when it is due`);
   };
   const runSched = async (r: (typeof SCHEDULES)[number]) => {
     const t = customTable(filterOrders(orders, r.filters), r.metrics, r.groupBy);
@@ -502,7 +502,7 @@ export default function Reports() {
         <button onClick={() => setSchedOpen(false)} className="h-11 px-5 text-sm font-bold">Cancel</button>
         <button onClick={saveSched} className="h-11 rounded-xl bg-brand px-5 text-sm font-bold text-white">Save schedule</button>
       </>}>
-        <p className="mb-4 text-sm text-sub">Run "{rname}" ({metrics.join(", ")} by {groupBy}) on a schedule (SRS 19.3). When it comes due, the recipients who have an AlbumPro login get a notification with a link to download it; email delivery follows once a messaging provider is connected.</p>
+        <p className="mb-4 text-sm text-sub">Run "{rname}" ({metrics.join(", ")} by {groupBy}) on a schedule (SRS 19.3). When it comes due, the recipients who have a login get a notification with a link to download it; email delivery follows once a messaging provider is connected.</p>
         <Field label="Frequency"><Combobox options={["Daily", "Weekly", "Monthly"].map((x) => ({ value: x, label: x }))} value={sf.freq} onChange={(v) => setSf({ ...sf, freq: v, day: v === "Weekly" ? "Monday" : "1st" })} /></Field>
         {sf.freq !== "Daily" && <Field label={sf.freq === "Weekly" ? "Day of week" : "Day of month"}><Combobox options={(sf.freq === "Weekly" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ["1st", "5th", "10th", "15th", "Last day"]).map((x) => ({ value: x, label: x }))} value={sf.day} onChange={(v) => setSf({ ...sf, day: v })} /></Field>}
         <Field label="Time"><input type="time" className={inputCls} value={sf.time} onChange={(e) => setSf({ ...sf, time: e.target.value })} /></Field>

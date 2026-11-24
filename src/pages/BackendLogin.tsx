@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Aperture, Eye, EyeOff, Lock, Mail, ArrowLeft, ShieldAlert } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, ArrowLeft, ShieldAlert } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import MfaChallenge from "./MfaChallenge";
 import { cx, inputCls } from "../components/ui";
+import { APP_NAME } from "../lib/brand";
+import { BrandLogo, DevCredit } from "../components/BrandMark";
 
 type Mode = "signin" | "signup" | "forgot" | "info";
 
@@ -50,12 +52,12 @@ export default function BackendLogin() {
   return (
     <div className="grid min-h-full lg:grid-cols-[1.05fr_1fr]">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-side p-12 text-white lg:flex">
-        <div className="flex items-center gap-3"><span className="grid size-11 place-items-center rounded-xl bg-brand"><Aperture className="size-6" /></span><span className="text-2xl font-extrabold">AlbumPro</span></div>
+        <div className="flex items-center gap-3"><BrandLogo size={48} /><span className="text-2xl font-extrabold">{APP_NAME}</span></div>
         <div>
           <h1 className="max-w-md text-4xl font-extrabold leading-tight">Every album, traced from order to doorstep.</h1>
           <p className="mt-4 max-w-md text-slate-300">Colour grading, design, client proofing, printing, QC and delivery — one workflow with a full audit trail.</p>
         </div>
-        <p className="text-xs text-slate-400">Album Operations CRM • Confidential</p>
+        <div className="text-xs text-slate-400"><p>Album Operations CRM • Confidential</p><DevCredit className="mt-1" /></div>
         <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-brand/30 blur-3xl" />
       </div>
 
@@ -99,6 +101,7 @@ export default function BackendLogin() {
             </>
           )}
         </form>
+        <DevCredit className="mt-4 text-center text-sub lg:hidden" />
       </main>
       {loading && <span className="sr-only" role="status">Checking session…</span>}
     </div>

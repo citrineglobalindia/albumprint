@@ -28,7 +28,7 @@ export default function Account() {
   const start = async () => {
     if (!supabase) return;
     setBusy(true); setErr("");
-    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "AlbumPro", friendlyName: `Authenticator ${new Date().toISOString().slice(0, 16).replace("T", " ")}` });
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Innovative Photo Designers", friendlyName: `Authenticator ${new Date().toISOString().slice(0, 16).replace("T", " ")}` });
     setBusy(false);
     if (error || !data) { setErr(error?.message ?? "Could not start set-up"); return; }
     setEnrol({ id: data.id, qr: data.totp.qr_code, secret: data.totp.secret }); setCode("");

@@ -583,7 +583,7 @@ function DataStorage({ show }: { show: (m: string) => void }) {
     let data: { app?: string; keys?: Record<string, unknown> };
     try { data = JSON.parse(await file.text()); } catch { show("That file is not valid JSON"); return; }
     const entries = Object.entries(data.keys ?? {}).filter(([k, v]) => k.startsWith("albumpro.") && !SKIP_KEYS.includes(k) && typeof v === "string");
-    if (data.app !== "albumpro" || !entries.length) { show("Not an AlbumPro backup file"); return; }
+    if (data.app !== "albumpro" || !entries.length) { show("Not a backup file from this app"); return; }
     confirm({ title: "Restore backup", message: `Replace the current saved data with ${entries.length} key${entries.length === 1 ? "" : "s"} from ${file.name}? The page will reload.`, confirmLabel: "Restore", danger: true }, () => {
       flushAll();   // make memory == storage so the unload flush cannot overwrite what we restore
       try { backupKeys().forEach((k) => localStorage.removeItem(k)); entries.forEach(([k, v]) => localStorage.setItem(k, v as string)); } catch { show("Browser storage is unavailable"); return; }
