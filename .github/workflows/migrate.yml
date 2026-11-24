@@ -1,0 +1,83 @@
+# One-time move of AlbumPro to a new Supabase project (and the final re-sync just before switching over).
+# Secrets: OLD_DB_URL (or the backup's SUPABASE_DB_URL) = the current project, NEW_DB_URL = the new project
+# (Supabase → Connect → "Session pooler" string with the database password filled in). Nothing is changed in the old project.
+# Runs only when .github/migrate/RUN is pushed on the working branch, or by hand (Actions → Move to new Supabase → Run workflow).
+#   RUN = "fresh"  : new project must be empty → build the schema (every migration, in order), copy logins and data, compare counts
+#   RUN = "resync" : schema already there → empty the new project's data and logins, copy them again, compare counts
+name: Move to new Supabase
+on:
+  push:
+    branches: [claude/nice-cray-k1w5eu]
+    paths: [".github/migrate/RUN"]
+  workflow_dispatch:
+    inputs:
+      mode: { description: "fresh or resync", required: true, default: "fresh" }
+permissions:
+  contents: read
+concurrency: { group: move-supabase, cancel-in-progress: false }
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OLD: "${{ secrets.OLD_DB_URL || secrets.SUPABASE_DB_URL }}"
+      NEW: "${{ secrets.NEW_DB_URL }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the secrets and the mode
+        run: |
+          set -euo pipefail
+          if [ -z "$OLD" ]; then echo "::error::Add the repository secret OLD_DB_URL (the current Supabase project)"; exit 1; fi
+          if [ -z "$NEW" ]; then echo "::error::Add the repository secret NEW_DB_URL (the new Supabase project)"; exit 1; fi
+          if [ "$OLD" = "$NEW" ]; then echo "::error::OLD_DB_URL and NEW_DB_URL are the same database"; exit 1; fi
+          MODE="${{ github.event.inputs.mode }}"; [ -n "$MODE" ] || MODE="$(tr -d ' \n\r' < .github/migrate/RUN)"
+          case "$MODE" in fresh|resync) ;; *) echo "::error::Mode must be fresh or resync (got '$MODE')"; exit 1;; esac
+          echo "MODE=$MODE" >> "$GITHUB_ENV"; echo "Mode: $MODE"
+      - name: Install the Postgres 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsS -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Build the schema in the new project (fresh only)
+        if: env.MODE == 'fresh'
+        run: |
+          set -euo pipefail
+          n=$(psql "$NEW" -tAc "select count(*) from information_schema.tables where table_schema='public'")
+          if [ "$n" != "0" ]; then echo "::error::The new project already has $n tables in public — use mode resync, or start from an empty project"; exit 1; fi
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "::group::$f"; psql "$NEW" -v ON_ERROR_STOP=1 -q -f "$f"; echo "::endgroup::"
+          done
+      - name: Copy the logins and the data
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          pg_dump "$OLD" --no-owner --no-privileges --data-only --schema=public --format=custom --file=out/public.dump
+          pg_dump "$OLD" --no-owner --no-privileges --data-only --column-inserts --table=auth.users --table=auth.identities --file=out/auth.sql
+          # empty what the schema seeded (settings, rules, counters…) and any earlier copy; the old project's rows replace them
+          psql "$NEW" -v ON_ERROR_STOP=1 -q <<'SQL'
+          do $$ declare t text; begin
+            execute (select 'truncate ' || string_agg(format('public.%I', tablename), ', ') || ' restart identity cascade' from pg_tables where schemaname = 'public');
+          end $$;
+          delete from auth.identities; delete from auth.users;
+          SQL
+          # triggers off while loading (no audit rows, no profile creation, no notifications): the copies are exact
+          PGOPTIONS='-c session_replication_role=replica' psql "$NEW" -v ON_ERROR_STOP=1 -q --single-transaction -f out/auth.sql
+          PGOPTIONS='-c session_replication_role=replica' pg_restore --data-only --no-owner --no-privileges --single-transaction --exit-on-error -d "$NEW" out/public.dump
+      - name: Compare old and new (written to ops.migration_report in the new project)
+        run: |
+          set -euo pipefail
+          psql "$OLD" -tA -F, -c "select 'public.' || tablename from pg_tables where schemaname='public' union all select 'auth.users' union all select 'auth.identities' order by 1" > tables.txt
+          psql "$NEW" -v ON_ERROR_STOP=1 -q -c "create schema if not exists ops; create table if not exists ops.migration_report(run text, tbl text, old_rows bigint, new_rows bigint, ok boolean, at timestamptz default now()); revoke all on schema ops from anon, authenticated;"
+          bad=0
+          while read -r t; do
+            o=$(psql "$OLD" -tAc "select count(*) from $t"); n=$(psql "$NEW" -tAc "select count(*) from $t" 2>/dev/null || echo -1)
+            ok=$([ "$o" = "$n" ] && echo true || echo false); [ "$ok" = true ] || { bad=$((bad+1)); echo "::warning::$t old $o new $n"; }
+            psql "$NEW" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '$t', $o, $n, $ok)"
+            printf '%-40s %8s %8s %s\n' "$t" "$o" "$n" "$ok"
+          done < tables.txt
+          fo=$(psql "$OLD" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
+          fn=$(psql "$NEW" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
+          psql "$NEW" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '(functions)', $fo, $fn, $fo = $fn)"
+          echo "functions: old $fo new $fn"
+          if [ "$bad" != "0" ]; then echo "::error::$bad table(s) differ"; exit 1; fi
