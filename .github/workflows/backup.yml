@@ -1,4 +1,4 @@
-# Nightly off-site backup of the AlbumPro database (Supabase, Postgres 17). Needs one repository secret: SUPABASE_DB_URL
+# Nightly off-site backup of the AlbumPro database (Supabase, Postgres 17). Uses the repository secret NEW_DB_URL (or SUPABASE_DB_URL if set)
 # (Supabase dashboard → Connect → "Session pooler" connection string, with your database password filled in).
 # The dump is stored as a workflow artifact for 30 days. Keep this repository PRIVATE: the dump contains customer data.
 name: Nightly database backup
@@ -13,9 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check the secret is set
-        env: { DB_URL: "${{ secrets.SUPABASE_DB_URL }}" }
+        env: { RAW: "${{ secrets.SUPABASE_DB_URL || secrets.NEW_DB_URL }}" }
         run: |
-          if [ -z "$DB_URL" ]; then echo "::error::Add the repository secret SUPABASE_DB_URL (see supabase/BACKUP.md)"; exit 1; fi
+          set -euo pipefail
+          if [ -z "$RAW" ]; then echo "::error::Add the repository secret NEW_DB_URL (see supabase/BACKUP.md)"; exit 1; fi
+          # drop [ ] left around the password and encode characters such as @ # / ? in it
+          u=$(python3 - "$RAW" <<'PY'
+          import sys, urllib.parse as up
+          scheme, rest = sys.argv[1].strip().split("://", 1)
+          cut = len(rest)
+          for ch in "/?":
+              i = rest.find(ch, rest.rfind("@") + 1)
+              if i != -1: cut = min(cut, i)
+          netloc, tail = rest[:cut], rest[cut:]
+          userinfo, host = netloc.rsplit("@", 1)
+          user, _, pw = userinfo.partition(":")
+          if pw.startswith("[") and pw.endswith("]"): pw = pw[1:-1]
+          print(f"{scheme}://{user}:{up.quote(pw, safe='')}@{host}{tail}")
+          PY
+          )
+          echo "::add-mask::$u"; echo "DB_URL=$u" >> "$GITHUB_ENV"
       - name: Install the Postgres 17 client
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -23,7 +40,6 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
       - name: Dump
-        env: { DB_URL: "${{ secrets.SUPABASE_DB_URL }}" }
         run: |
           set -euo pipefail
           mkdir out
