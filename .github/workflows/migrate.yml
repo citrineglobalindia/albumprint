@@ -30,6 +30,25 @@ jobs:
           if [ -z "$OLD" ]; then echo "::error::Add the repository secret OLD_DB_URL (the current Supabase project)"; exit 1; fi
           if [ -z "$NEW" ]; then echo "::error::Add the repository secret NEW_DB_URL (the new Supabase project)"; exit 1; fi
           if [ "$OLD" = "$NEW" ]; then echo "::error::OLD_DB_URL and NEW_DB_URL are the same database"; exit 1; fi
+          # Tidy the connection strings: drop [ ] left around the password and encode characters such as @ # / ? in it
+          for v in OLD NEW; do
+            u=$(python3 - "${!v}" <<'PY'
+          import sys, urllib.parse as up
+          u = sys.argv[1].strip()
+          scheme, rest = u.split("://", 1)
+          cut = len(rest)
+          for ch in "/?":
+              i = rest.find(ch, rest.rfind("@") + 1)
+              if i != -1: cut = min(cut, i)
+          netloc, tail = rest[:cut], rest[cut:]
+          userinfo, host = netloc.rsplit("@", 1)
+          user, _, pw = userinfo.partition(":")
+          if pw.startswith("[") and pw.endswith("]"): pw = pw[1:-1]
+          print(f"{scheme}://{user}:{up.quote(pw, safe='')}@{host}{tail}")
+          PY
+            )
+            echo "::add-mask::$u"; echo "${v}_URL=$u" >> "$GITHUB_ENV"
+          done
           MODE="${{ github.event.inputs.mode }}"; [ -n "$MODE" ] || MODE="$(tr -d ' \n\r' < .github/migrate/RUN)"
           case "$MODE" in fresh|resync) ;; *) echo "::error::Mode must be fresh or resync (got '$MODE')"; exit 1;; esac
           echo "MODE=$MODE" >> "$GITHUB_ENV"; echo "Mode: $MODE"
@@ -43,41 +62,41 @@ jobs:
         if: env.MODE == 'fresh'
         run: |
           set -euo pipefail
-          n=$(psql "$NEW" -tAc "select count(*) from information_schema.tables where table_schema='public'")
+          n=$(psql "$NEW_URL" -tAc "select count(*) from information_schema.tables where table_schema='public'")
           if [ "$n" != "0" ]; then echo "::error::The new project already has $n tables in public — use mode resync, or start from an empty project"; exit 1; fi
           for f in $(ls supabase/migrations/*.sql | sort); do
-            echo "::group::$f"; psql "$NEW" -v ON_ERROR_STOP=1 -q -f "$f"; echo "::endgroup::"
+            echo "::group::$f"; psql "$NEW_URL" -v ON_ERROR_STOP=1 -q -f "$f"; echo "::endgroup::"
           done
       - name: Copy the logins and the data
         run: |
           set -euo pipefail
           mkdir -p out
-          pg_dump "$OLD" --no-owner --no-privileges --data-only --schema=public --format=custom --file=out/public.dump
-          pg_dump "$OLD" --no-owner --no-privileges --data-only --column-inserts --table=auth.users --table=auth.identities --file=out/auth.sql
+          pg_dump "$OLD_URL" --no-owner --no-privileges --data-only --schema=public --format=custom --file=out/public.dump
+          pg_dump "$OLD_URL" --no-owner --no-privileges --data-only --column-inserts --table=auth.users --table=auth.identities --file=out/auth.sql
           # empty what the schema seeded (settings, rules, counters…) and any earlier copy; the old project's rows replace them
-          psql "$NEW" -v ON_ERROR_STOP=1 -q <<'SQL'
+          psql "$NEW_URL" -v ON_ERROR_STOP=1 -q <<'SQL'
           do $$ declare t text; begin
             execute (select 'truncate ' || string_agg(format('public.%I', tablename), ', ') || ' restart identity cascade' from pg_tables where schemaname = 'public');
           end $$;
           delete from auth.identities; delete from auth.users;
           SQL
           # triggers off while loading (no audit rows, no profile creation, no notifications): the copies are exact
-          PGOPTIONS='-c session_replication_role=replica' psql "$NEW" -v ON_ERROR_STOP=1 -q --single-transaction -f out/auth.sql
-          PGOPTIONS='-c session_replication_role=replica' pg_restore --data-only --no-owner --no-privileges --single-transaction --exit-on-error -d "$NEW" out/public.dump
+          PGOPTIONS='-c session_replication_role=replica' psql "$NEW_URL" -v ON_ERROR_STOP=1 -q --single-transaction -f out/auth.sql
+          PGOPTIONS='-c session_replication_role=replica' pg_restore --data-only --no-owner --no-privileges --single-transaction --exit-on-error -d "$NEW_URL" out/public.dump
       - name: Compare old and new (written to ops.migration_report in the new project)
         run: |
           set -euo pipefail
-          psql "$OLD" -tA -F, -c "select 'public.' || tablename from pg_tables where schemaname='public' union all select 'auth.users' union all select 'auth.identities' order by 1" > tables.txt
-          psql "$NEW" -v ON_ERROR_STOP=1 -q -c "create schema if not exists ops; create table if not exists ops.migration_report(run text, tbl text, old_rows bigint, new_rows bigint, ok boolean, at timestamptz default now()); revoke all on schema ops from anon, authenticated;"
+          psql "$OLD_URL" -tA -F, -c "select 'public.' || tablename from pg_tables where schemaname='public' union all select 'auth.users' union all select 'auth.identities' order by 1" > tables.txt
+          psql "$NEW_URL" -v ON_ERROR_STOP=1 -q -c "create schema if not exists ops; create table if not exists ops.migration_report(run text, tbl text, old_rows bigint, new_rows bigint, ok boolean, at timestamptz default now()); revoke all on schema ops from anon, authenticated;"
           bad=0
           while read -r t; do
-            o=$(psql "$OLD" -tAc "select count(*) from $t"); n=$(psql "$NEW" -tAc "select count(*) from $t" 2>/dev/null || echo -1)
+            o=$(psql "$OLD_URL" -tAc "select count(*) from $t"); n=$(psql "$NEW_URL" -tAc "select count(*) from $t" 2>/dev/null || echo -1)
             ok=$([ "$o" = "$n" ] && echo true || echo false); [ "$ok" = true ] || { bad=$((bad+1)); echo "::warning::$t old $o new $n"; }
-            psql "$NEW" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '$t', $o, $n, $ok)"
+            psql "$NEW_URL" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '$t', $o, $n, $ok)"
             printf '%-40s %8s %8s %s\n' "$t" "$o" "$n" "$ok"
           done < tables.txt
-          fo=$(psql "$OLD" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
-          fn=$(psql "$NEW" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
-          psql "$NEW" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '(functions)', $fo, $fn, $fo = $fn)"
+          fo=$(psql "$OLD_URL" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
+          fn=$(psql "$NEW_URL" -tAc "select count(*) from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public'")
+          psql "$NEW_URL" -q -c "insert into ops.migration_report(run, tbl, old_rows, new_rows, ok) values ('${{ github.run_id }}', '(functions)', $fo, $fn, $fo = $fn)"
           echo "functions: old $fo new $fn"
           if [ "$bad" != "0" ]; then echo "::error::$bad table(s) differ"; exit 1; fi
