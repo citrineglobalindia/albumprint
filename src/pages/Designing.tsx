@@ -711,7 +711,7 @@ function DesignWorkspace({ order }: { order: Order }) {
       </div>
       <div id="album-preview"><AlbumPreviewPanel o={order} className="mt-4" onDone={(m, ok) => flash(ok ? m : <span className="text-rose-300">{m}</span>)} /></div>
       {albumView && <PreviewModal p={albumView} onClose={() => setAlbumView(null)} />}
-      <Panel className="mt-4" title="Design files" subtitle="The graded photos to design with, and the album pages you make: upload each spread as an image or the whole album as a PDF.">
+      <Panel className="mt-4" title="Design files" action={FILES.some((f) => f.orderId === order.id && f.category === "Design Draft" && !f.archived && !f.pending) ? <button type="button" onClick={() => { document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }); flash("Click “Make preview from design files” to get the client link"); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark">Generate client link ↑</button> : undefined} subtitle="The graded photos to design with, and the album pages you make: upload each spread as an image or the whole album as a PDF.">
         <WorkFiles orderId={order.id}
           inputs={[{ category: "Graded", label: "Graded photos (from Colour Grading)" }, { category: "Source Photos", label: "Original photos (from the customer)" }]}
           output={{ category: "Design Draft", label: "Album design pages" }}

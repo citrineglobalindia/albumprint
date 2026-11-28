@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, Check, Copy, Eye, MessageCircle, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Eye, Link2, MessageCircle, RotateCcw, Share2, Trash2, Upload, X } from "lucide-react";
 import { Panel, Pill, cx } from "./ui";
 import { AlbumFlipbook } from "./AlbumFlipbook";
 import { useStore } from "../lib/store";
@@ -82,6 +82,8 @@ function AlbumBlock({ o, album, title, onDone, onView }: { o: Order; album: numb
         </div>
       )}
 
+      {cur && <ShareBox p={cur} onDone={onDone} />}
+
       {cur && cur.feedback.length > 0 && (
         <div className="mt-2 rounded-lg bg-amber-50/60 p-2" data-testid="preview-feedback">
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-800">Client feedback{open ? ` · ${open} to do` : ""}</div>
@@ -119,6 +121,29 @@ function AlbumBlock({ o, album, title, onDone, onView }: { o: Order; album: numb
             </li>))}</ul>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The client link of an uploaded album, shown in full, with Copy / Open / WhatsApp / Share (the phone's share menu). */
+function ShareBox({ p, onDone }: { p: Preview; onDone: (msg: string, ok: boolean) => void }) {
+  const url = linkOf(p);
+  const copy = () => { void (navigator.clipboard?.writeText(url) ?? Promise.reject()).then(() => onDone("Album link copied — paste it in WhatsApp, SMS or email", true), () => onDone("Select the link and copy it", false)); };
+  const share = () => {
+    if (navigator.share) void navigator.share({ title: p.title, text: `Your album "${p.title}" is ready to preview`, url }).catch(() => undefined);
+    else copy();
+  };
+  const b = "inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold";
+  return (
+    <div className="mt-2 rounded-lg border border-brand/30 bg-brand-soft/40 p-2" data-testid="share-box">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand"><Link2 className="size-3.5" />Client link · v{p.version}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input readOnly aria-label="Album link" value={url} onFocus={(e) => e.currentTarget.select()} className="h-8 min-w-[200px] flex-1 rounded-lg border border-line bg-white px-2 font-mono text-[11px]" />
+        <button type="button" onClick={copy} className={cx(b, "bg-brand text-white hover:bg-brand-dark")}><Copy className="size-3.5" />Copy</button>
+        <a href={url} target="_blank" rel="noreferrer" className={cx(b, "border border-line bg-white hover:bg-slate-50")}><ExternalLink className="size-3.5" />Open</a>
+        <button type="button" onClick={() => { const e = shareOnWhatsApp(p); onDone(e ?? "WhatsApp opened with the album link", !e); }} className={cx(b, "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}><MessageCircle className="size-3.5" />WhatsApp</button>
+        <button type="button" onClick={share} className={cx(b, "border border-line bg-white hover:bg-slate-50")}><Share2 className="size-3.5" />Share…</button>
+      </div>
     </div>
   );
 }

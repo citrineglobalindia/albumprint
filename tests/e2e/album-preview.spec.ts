@@ -20,6 +20,9 @@ test("album preview: upload, flip, share on WhatsApp, client changes and approva
   await expect(page.getByText(/Wedding album v1 uploaded — 3 spreads/).first()).toBeVisible({ timeout: 20_000 });
   await expect(box.getByTestId("preview-status")).toContainText("Shared");
 
+  // the link is shown right away with copy / open / WhatsApp / share
+  await expect(box.getByTestId("share-box").getByLabel("Album link")).toHaveValue(/\/album\/[0-9a-f]+$/);
+  await expect(box.getByTestId("share-box").getByRole("link", { name: "Open" })).toHaveAttribute("href", /\/album\/[0-9a-f]+$/);
   // the page-turning preview
   await box.getByRole("button", { name: "Preview" }).click();
   const book = page.getByTestId("flipbook");
