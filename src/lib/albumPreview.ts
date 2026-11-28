@@ -92,7 +92,7 @@ export async function createPreview(orderId: string, album: number, title: strin
     id = String(data.id); token = String(data.token); folder = String(data.folder);
     for (const [i, pg] of pages.entries()) {
       onStep(`Uploading page ${i + 1} of ${pages.length}…`, Math.round(((i + 1) / pages.length) * 100));
-      const up = await sb().storage.from(BUCKET).upload(`${folder}/${i + 1}.jpg`, pg.blob, { upsert: true, contentType: "image/jpeg", cacheControl: "31536000" });
+      const up = await sb().storage.from(BUCKET).upload(`${folder}/${i + 1}.jpg`, pg.blob, { upsert: false, contentType: "image/jpeg", cacheControl: "31536000" });
       if (up.error) { await sb().from("album_previews").delete().eq("id", id); return { ok: false, msg: `Upload failed on page ${i + 1}: ${up.error.message}` }; }
     }
     const { error: e2 } = await sb().from("album_previews").update({ pages: pages.length }).eq("id", id);
