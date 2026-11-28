@@ -368,7 +368,7 @@ export default function Customers() {
         <Field label="Customer / Studio Name" required><input aria-label="Studio name" className={cx(inputCls, errs.studio && "border-rose-400")} value={f.studio} onChange={(e) => setF({ ...f, studio: e.target.value })} /><Err>{errs.studio}</Err></Field>
         <Field label="Contact Person"><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Mobile Number" required>
-          <input aria-label="Mobile number" inputMode="numeric" maxLength={10} className={cx(inputCls, (errs.mobile || dup) && "border-rose-400")} value={f.mobile} onChange={(e) => setF({ ...f, mobile: cleanMobile(e.target.value) })} placeholder="98765 43210" />
+          <input aria-label="Mobile number" inputMode="tel" className={cx(inputCls, (errs.mobile || dup) && "border-rose-400")} value={f.mobile} onChange={(e) => setF({ ...f, mobile: cleanMobile(e.target.value) })} placeholder="98765 43210" />
           {dup && (
             <p data-testid="dup-warning" className="mt-1.5 flex flex-wrap items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800">
               <AlertCircle className="size-3.5" />A customer with this mobile exists — <button type="button" className="font-extrabold text-brand underline" onClick={() => { setActiveId(dup.id); setDtab("history"); setTab("all"); reset(); closeForm(); }}>open {dup.studio}</button>

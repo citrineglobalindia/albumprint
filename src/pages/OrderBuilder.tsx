@@ -334,7 +334,7 @@ function CustomerStep({ d, set }: { d: OrderDraft; set: (p: Partial<OrderDraft>)
       ) : (
         <div className="grid gap-x-4 md:grid-cols-2">
           <Field label="Customer name" required><input aria-label="Customer name" className={inputCls} value={nc.name} maxLength={150} onChange={(e) => set({ newCustomer: { ...nc, name: e.target.value } })} /></Field>
-          <Field label="Phone number" required hint={nc.phone ? mobileError(nc.phone) ?? undefined : "10 digits, starting with 6, 7, 8 or 9"}><input aria-label="Phone number" inputMode="numeric" maxLength={10} className={inputCls} value={nc.phone} onChange={(e) => set({ newCustomer: { ...nc, phone: cleanMobile(e.target.value) } })} /></Field>
+          <Field label="Phone number" required hint={nc.phone ? mobileError(nc.phone) ?? undefined : "10 digits, starting with 6, 7, 8 or 9"}><input aria-label="Phone number" inputMode="tel" className={inputCls} value={nc.phone} onChange={(e) => set({ newCustomer: { ...nc, phone: cleanMobile(e.target.value) } })} /></Field>
           <Field label="Email (optional)"><input aria-label="Email" type="email" className={inputCls} value={nc.email} onChange={(e) => set({ newCustomer: { ...nc, email: e.target.value } })} /></Field>
           <Field label="Address"><input aria-label="Address" className={inputCls} value={nc.address} onChange={(e) => set({ newCustomer: { ...nc, address: e.target.value } })} /></Field>
           {dup && <p className="md:col-span-2 text-sm font-semibold text-amber-700">{dup.studio} already uses this number — <button className="underline" onClick={() => set({ newCustomer: null, customerId: dup.uid ?? dup.id })}>select them instead</button></p>}
