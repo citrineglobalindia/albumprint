@@ -7,6 +7,23 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- link previews (WhatsApp, etc.): the studio logo, not the app icon -->
+    <meta name="description" content="Innovative Photo Designers — view your album, leave notes and approve it." />
+    <meta property="og:site_name" content="Innovative Photo Designers" />
+    <meta property="og:title" content="Innovative Photo Designers" />
+    <meta property="og:description" content="View your album, leave notes and approve it." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://innovativephotodesigners.in/og-image.png" />
+    <meta property="og:image:secure_url" content="https://innovativephotodesigners.in/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Innovative Photo Designers logo" />
+    <meta property="og:image" content="https://innovativephotodesigners.in/og-square.png" />
+    <meta property="og:image:width" content="600" />
+    <meta property="og:image:height" content="600" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://innovativephotodesigners.in/og-image.png" />
     <meta name="theme-color" content="#ff7a10" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -27,6 +44,7 @@
       .ipd-bar { position: relative; width: 180px; height: 4px; overflow: hidden; border-radius: 9px; background: rgba(15,27,76,.08); }
       .ipd-bar::before { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 9px; background: linear-gradient(90deg, #ff7a10, #ffb46b); animation: ipd-slide 1.3s cubic-bezier(.65,0,.35,1) infinite; }
       .ipd-text::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: ipd-dots 1.2s steps(4) infinite; }
+      .ipd-client { background: #fff } .ipd-client .ipd-mark, .ipd-client .ipd-bar { display: none } .ipd-client .ipd-word { height: 64px; max-width: 86vw; object-fit: contain; opacity: 1; animation: none } .ipd-client .ipd-text::after { content: none; animation: none }
       .ipd-loader.ipd-now { animation: none } .ipd-now .ipd-word { opacity: 1; animation: none }
       @keyframes ipd-in { from { opacity: 0 } to { opacity: 1 } }
       @keyframes ipd-spin { to { transform: rotate(360deg) } }
@@ -49,6 +67,10 @@
         </div>
       </div>
     </div>
+    <script>
+      // client links (album preview, design proof): just the studio logo while the page opens — no app loader
+      if (/^\/(album|proof)\//.test(location.pathname)) { var l = document.querySelector(".ipd-loader"); if (l) { l.classList.add("ipd-client"); l.setAttribute("aria-label", "Opening your album"); var t = l.querySelector(".ipd-text"); if (t) t.textContent = location.pathname.indexOf("/album/") === 0 ? "Opening your album" : "Opening your design"; } }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
