@@ -12,6 +12,7 @@ test("design page: Preview in the toolbar opens the album as a page-turning book
   const code = (await buildOrder(page, { albums: [{ name: "Wedding album", sheets: 10 }], finalize: true }))!;
   await page.goto(`/designing/${code}`);
   // nothing uploaded yet: Preview points to the panel
+  await expect(page.getByTestId("no-album-yet")).toBeVisible();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText(/Upload the album below/).first()).toBeVisible();
 
@@ -19,6 +20,14 @@ test("design page: Preview in the toolbar opens the album as a page-turning book
   await box.getByLabel(/^Upload album pages for/).setInputFiles(fx("album.pdf"));
   await expect(box.getByTestId("preview-status")).toContainText("Shared", { timeout: 30_000 });
 
+  // the canvas shows the uploaded album and the page list its pages; a thumbnail turns to that spread
+  await expect(page.getByTestId("album-canvas").getByTestId("flipbook")).toBeVisible();
+  await expect(page.getByTestId("album-strip").getByRole("button")).toHaveCount(2);
+  await page.getByRole("button", { name: "Go to spread 2" }).click();
+  await expect(page.getByTestId("album-canvas").getByTestId("flip-position")).toHaveText("Spread 2 of 2", { timeout: 5000 });
+  await page.getByRole("button", { name: "Layout editor" }).click();
+  await expect(page.getByTestId("canvas")).toBeVisible();
+  await page.getByRole("button", { name: /^Uploaded album/ }).click();
   await page.getByRole("button", { name: "Preview", exact: true }).first().click();      // the toolbar's
   const book = page.getByRole("dialog", { name: /Preview of Wedding album/ }).getByTestId("flipbook");
   await expect(book).toBeVisible();

@@ -7,6 +7,8 @@ declare module "page-flip" {
     flipNext(corner?: "top" | "bottom"): void;
     flipPrev(corner?: "top" | "bottom"): void;
     getCurrentPageIndex(): number;
+    turnToPage(page: number): void;
+    flip(page: number, corner?: "top" | "bottom"): void;
     getPageCount(): number;
     destroy(): void;
   }

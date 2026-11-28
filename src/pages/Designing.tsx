@@ -24,7 +24,8 @@ import { addCorrection as addDesignCorrection, correctionsFor, metaFor, persistM
 import { ORDERS, STAFF, type Order } from "../lib/data";
 import { fmtDate } from "../lib/format";
 import { AlbumPreviewPanel, PreviewModal } from "../components/AlbumPreviewPanel";
-import { previewsOf, type Preview } from "../lib/albumPreview";
+import { STATUS_LABEL, pageUrls, previewsOf, type Preview } from "../lib/albumPreview";
+import { AlbumFlipbook } from "../components/AlbumFlipbook";
 
 type DStatus = "Not Started" | "In Designing" | "Pending Admin Review" | "Ready to Send" | "With Client" | "Corrections Requested" | "Client Approved" | "Locked for Print" | "In Production";
 const STATUS_PROGRESS: Record<DStatus, number> = { "Not Started": 0, "In Designing": 40, "Pending Admin Review": 55, "Ready to Send": 65, "With Client": 75, "Corrections Requested": 50, "Client Approved": 90, "Locked for Print": 95, "In Production": 100 };
@@ -130,6 +131,9 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [editOv, setEditOv] = useState<number | null>(null);
   const [tplTab, setTplTab] = useState("Design Templates");
   const [albumView, setAlbumView] = useState<Preview | null>(null);
+  const [mode, setMode] = useState<"album" | "editor">("album");
+  const [jump, setJump] = useState<{ image: number; n: number }>({ image: 1, n: 0 });
+  const [albumAt, setAlbumAt] = useState(1);
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
   const [comments, setComments] = useState(COMMENTS0);
   const [cDraft, setCDraft] = useState("");
@@ -374,6 +378,8 @@ function DesignWorkspace({ order }: { order: Order }) {
     setCrText(""); setCorrOpen(false); log(`Correction added on page ${pg}, assigned to ${crAssignee}`); flash(`Correction assigned to ${crAssignee}`);
   };
 
+  const latest = previewsOf(order.id)[0];
+  const showAlbum = !!latest && mode === "album";
   const tools: { I: typeof Type; l: string; run: () => void }[] = [
     { I: Type, l: "Add Text", run: () => addOverlay("text") },
     { I: ImageIcon, l: "Add Image", run: () => addOverlay("image") },
@@ -422,11 +428,22 @@ function DesignWorkspace({ order }: { order: Order }) {
       <div className="grid grid-cols-1 lg:grid-cols-[170px_minmax(0,1fr)_340px] gap-4">
         <Panel className="flex max-h-[760px] flex-col" bodyClassName="flex min-h-0 flex-1 flex-col p-3">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-[15px] font-extrabold">Pages ({order.pages})</h3>
+            <h3 className="text-[15px] font-extrabold">Pages ({showAlbum ? latest!.pages : order.pages})</h3>
             <button onClick={addSpread} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-bold text-brand"><Plus className="size-3" />Add</button>
           </div>
           <p className="mb-2 text-[10px] text-sub">Drag spreads to reorder</p>
-          <div data-testid="page-strip" className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+          {showAlbum && (
+            <div data-testid="album-strip" className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+              {pageUrls(latest!).map((src, i) => (
+                <button key={src} type="button" onClick={() => setJump({ image: i + 1, n: jump.n + 1 })} aria-label={`Go to ${latest!.spreads ? "spread" : "page"} ${i + 1}`}
+                  className={cx("w-full rounded-xl border-2 p-1.5 text-left transition", albumAt === i + 1 ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line")}>
+                  <img src={src} alt="" loading="lazy" className="h-[64px] w-full rounded-md bg-white object-contain" />
+                  <div className="mt-1 text-[11px]"><b>{i + 1}</b> <span className="text-sub">{latest!.spreads ? (i === 0 ? "Spread 1" : `Spread ${i + 1}`) : i === 0 ? "Cover" : `Page ${i + 1}`}</span></div>
+                </button>
+              ))}
+            </div>
+          )}
+          <div data-testid="page-strip" className={cx("scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1", showAlbum && "hidden")}>
             {spreadIdxs.map((i) => {
               const s = spreads[i]!;
               return (
@@ -484,7 +501,18 @@ function DesignWorkspace({ order }: { order: Order }) {
                 <button onClick={() => setBg(undefined)} className="ml-auto text-xs font-bold text-brand">Reset</button>
               </div>
             )}
-            <div ref={stageRef} className="grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70">
+            {latest && (
+              <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="canvas-mode">
+                <div className="inline-flex rounded-lg border border-line p-0.5 text-xs font-bold">
+                  <button type="button" onClick={() => setMode("album")} className={cx("rounded-md px-3 py-1.5", mode === "album" ? "bg-brand text-white" : "text-sub hover:bg-slate-100")}>Uploaded album · v{latest.version}</button>
+                  <button type="button" onClick={() => setMode("editor")} className={cx("rounded-md px-3 py-1.5", mode === "editor" ? "bg-brand text-white" : "text-sub hover:bg-slate-100")}>Layout editor</button>
+                </div>
+                {showAlbum && <span className="text-[11px] text-sub">{latest.pages} {latest.spreads ? "spreads" : "pages"} · {STATUS_LABEL[latest.status]}</span>}
+              </div>
+            )}
+            {!latest && <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="no-album-yet">Upload the album in “Album preview for the client” below (or make it from the design files) to see the real pages here.</p>}
+            {showAlbum && <div data-testid="album-canvas"><AlbumFlipbook compact pages={pageUrls(latest!)} spreads={latest!.spreads} goTo={jump} onPage={setAlbumAt} /></div>}
+            <div ref={stageRef} className={cx("grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70", showAlbum && "hidden")}>
               <div ref={canvasRef} data-testid="canvas" onPointerDown={(e) => { if (!(e.target as HTMLElement).closest("[data-ov]")) { setSelOv(null); setEditOv(null); } }}
                 className="relative flex aspect-[2/1] w-[88%] max-w-[760px] origin-center touch-none select-none overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / ZFIT})`, background: cur.bg }}>
                 <div className="relative flex-1 border-r border-black/10">
