@@ -13,7 +13,7 @@ import type { PricedLine } from "./orderPricing";
 export interface Lab { id: string; name: string; contact?: string; phone?: string; notes?: string; active: boolean }
 export type LabStatus = "not_sent" | "sent" | "received";
 export interface AlbumLab { orderId: string; position: number; labId?: string; status: LabStatus; sentAt?: string; sentBy?: string; receivedAt?: string; receivedBy?: string; note?: string }
-export interface Purchase { orderId: string; position: number; amount: number }
+export interface Purchase { orderId: string; position: number; amount: number; billNo?: string; billDate?: string }
 
 export const LABS: Lab[] = persistArray<Lab>("labs", []);
 export const ALBUM_LABS: AlbumLab[] = persistArray<AlbumLab>("album_labs", []);
@@ -22,14 +22,19 @@ export const PURCHASES: Purchase[] = persistArray<Purchase>("album_purchases", [
 export interface LabRate { labId: string; itemId: string; rate: number }
 export const LAB_RATES: LabRate[] = persistArray<LabRate>("lab_item_rates", []);
 export const labRate = (labId: string | undefined, itemId: string | null | undefined) => (labId && itemId ? LAB_RATES.find((r) => r.labId === labId && r.itemId === itemId)?.rate : undefined);
+/** The standard purchase cost list (any lab): kept with the lab rates under this id; database table item_purchase_costs (migration 0072). */
+export const STD_COST = "standard";
+/** What an item costs us at a lab: the lab's own rate, else the item's standard purchase cost. */
+export const costRate = (labId: string | undefined, itemId: string | null | undefined) => labRate(labId, itemId) ?? labRate(STD_COST, itemId);
 export const LAB_STATUS_LABEL: Record<LabStatus, string> = { not_sent: "Not sent", sent: "At lab", received: "Received" };
 
 export const canSeeCost = () => { const r = currentActor().role; return r === "admin" || r === "accounts"; };
 export const canManageLabs = () => currentActor().role === "admin";
 export const canMoveLabWork = () => ["admin", "reception", "printing"].includes(currentActor().role) || hasModule("printing");
-export const labName = (id?: string) => LABS.find((l) => l.id === id)?.name ?? "";
+export const labName = (id?: string) => (id === STD_COST ? "Standard cost" : LABS.find((l) => l.id === id)?.name ?? "");
 export const albumLab = (orderId: string, position: number) => ALBUM_LABS.find((a) => a.orderId === orderId && a.position === position);
 export const purchaseOf = (orderId: string, position: number) => PURCHASES.find((p) => p.orderId === orderId && p.position === position)?.amount;
+export const purchaseRec = (orderId: string, position: number) => PURCHASES.find((p) => p.orderId === orderId && p.position === position);
 export const albumsOf = (o: Order) => (o.albums?.length ? o.albums.map((a, i) => ({ position: i + 1, title: a.title || `Album ${i + 1}` })) : [{ position: 1, title: "Album 1" }]);
 
 /** The purchase cost of an album's lines at a lab's rates: each catalog item line × the quantity billed to the customer
@@ -40,16 +45,17 @@ export function labCostOf(lines: PricedLine[], copies: number, labId: string | u
   for (const l of lines) {
     if (l.kind !== "item" || !l.itemId) continue;
     items++;
-    const r = labRate(labId, l.itemId);
+    const r = costRate(labId, l.itemId);
     if (r === undefined) { missing.push(l.name); continue; }
     const units = l.scope === "copy" ? l.qty * copies : l.method === "per_sheet" ? l.qty : 1;
     amount += Math.round(r * units * 100) / 100;
   }
   return { amount: Math.round(amount * 100) / 100, items, missing };
 }
-/** An album's purchase cost worked out from its lab's item rates (finalized orders only), or undefined when it can't be. */
+/** An album's purchase cost worked out from its lab's item rates and the standard purchase costs (finalized orders only),
+ *  or undefined when it can't be. Works before a lab is chosen (standard costs only). */
 export function estimatedPurchase(o: Order, position: number) {
-  const lab = albumLab(o.id, position)?.labId; if (!lab) return undefined;
+  const lab = albumLab(o.id, position)?.labId;
   const a = pricingOf(o.id)?.snapshot?.albums?.[position - 1]; if (!a) return undefined;
   const c = labCostOf(a.lines, a.copies, lab);
   return c.items > c.missing.length ? c : undefined;                                      // at least one item has a rate at this lab
@@ -81,13 +87,14 @@ export async function hydrateLabs() {
   if (!backendOn) return;
   const c = await db();
   const none = Promise.resolve({ data: [] as Row[], error: null });
-  const [l, a, p, lr] = await Promise.all([c.from("labs").select("*").order("name"), c.from("album_labs").select("*"), canSeeCost() ? c.from("album_purchases").select("*") : none, canSeeCost() ? c.from("lab_item_rates").select("lab_id,item_id,rate") : none]);
+  const [l, a, p, lr, std] = await Promise.all([c.from("labs").select("*").order("name"), c.from("album_labs").select("*"), canSeeCost() ? c.from("album_purchases").select("*") : none, canSeeCost() ? c.from("lab_item_rates").select("lab_id,item_id,rate") : none, canSeeCost() ? c.from("item_purchase_costs").select("item_id,rate") : none]);
   if (l.error || a.error) throw new Error((l.error ?? a.error)!.message);
   const { staffName } = await import("./db/production");
   LABS.splice(0, LABS.length, ...((l.data ?? []) as Row[]).map((r) => ({ id: r.id, name: r.name, contact: r.contact ?? undefined, phone: r.phone ?? undefined, notes: r.notes ?? undefined, active: r.active })));
   ALBUM_LABS.splice(0, ALBUM_LABS.length, ...((a.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, labId: r.lab_id ?? undefined, status: r.status as LabStatus, sentAt: r.sent_at ?? undefined, sentBy: staffName(r.sent_by) ?? undefined, receivedAt: r.received_at ?? undefined, receivedBy: staffName(r.received_by) ?? undefined, note: r.note ?? undefined }] : []; }));
-  if (!lr.error) LAB_RATES.splice(0, LAB_RATES.length, ...((lr.data ?? []) as Row[]).map((r) => ({ labId: r.lab_id, itemId: r.item_id, rate: Number(r.rate) })));
-  PURCHASES.splice(0, PURCHASES.length, ...((p.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, amount: Number(r.amount) }] : []; }));
+  if (!lr.error) LAB_RATES.splice(0, LAB_RATES.length, ...((lr.data ?? []) as Row[]).map((r) => ({ labId: r.lab_id, itemId: r.item_id, rate: Number(r.rate) })),
+    ...(std.error ? LAB_RATES.filter((x) => x.labId === STD_COST) : ((std.data ?? []) as Row[]).map((r) => ({ labId: STD_COST, itemId: r.item_id, rate: Number(r.rate) }))));
+  PURCHASES.splice(0, PURCHASES.length, ...((p.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, amount: Number(r.amount), billNo: r.bill_no ?? undefined, billDate: r.bill_date ?? undefined }] : []; }));
   notify();
 }
 
@@ -140,18 +147,22 @@ export async function setLabStatus(orderId: string, position: number, status: La
   if (r.ok && !backendOn) logAudit({ entity: "order", entityId: orderId, action: "lab_" + status, detail: `Album ${position} · ${labName(next.labId)}` });
   return r.ok ? { ok: true, msg: status === "sent" ? `Album ${position} sent to ${labName(next.labId)}` : status === "received" ? `Album ${position} received from ${labName(next.labId)}` : `Album ${position}: back to not sent` } : r;
 }
-export async function setPurchase(orderId: string, position: number, amount: number | null): Promise<Res> {
+/** Save an album's purchase: the amount the lab / supplier billed, with their bill number and date (null amount clears it). */
+export async function setPurchase(orderId: string, position: number, amount: number | null, bill?: { billNo?: string; billDate?: string }): Promise<Res> {
   if (!canSeeCost()) return { ok: false, msg: "Only admin and accounts enter purchase amounts" };
   if (amount !== null && (!Number.isFinite(amount) || amount < 0)) return { ok: false, msg: "Enter a purchase amount of 0 or more" };
+  const cur = purchaseRec(orderId, position);
+  const billNo = (bill?.billNo ?? cur?.billNo ?? "").trim() || undefined, billDate = (bill?.billDate ?? cur?.billDate ?? "") || undefined;
+  if (amount === null && bill && (billNo || billDate)) return { ok: false, msg: "Enter the purchase amount for this bill" };
   if (backendOn) {
     const order_id = uidOf(orderId); if (!order_id) return { ok: false, msg: "Order not found" };
     const c = await db();
-    const r = amount === null ? await c.from("album_purchases").delete().eq("order_id", order_id).eq("position", position) : await c.from("album_purchases").upsert({ order_id, position, amount }, { onConflict: "order_id,position" });
+    const r = amount === null ? await c.from("album_purchases").delete().eq("order_id", order_id).eq("position", position) : await c.from("album_purchases").upsert({ order_id, position, amount, bill_no: billNo ?? null, bill_date: billDate ?? null }, { onConflict: "order_id,position" });
     if (r.error) return { ok: false, msg: r.error.message };
-  } else logAudit({ entity: "order", entityId: orderId, action: "purchase_amount", detail: `Album ${position}: ${amount ?? "cleared"}` });
+  } else logAudit({ entity: "order", entityId: orderId, action: "purchase_amount", detail: `Album ${position}: ${amount ?? "cleared"}${billNo ? ` · bill ${billNo}` : ""}` });
   const i = PURCHASES.findIndex((p) => p.orderId === orderId && p.position === position);
-  if (amount === null) { if (i >= 0) PURCHASES.splice(i, 1); } else if (i >= 0) PURCHASES[i]!.amount = amount; else PURCHASES.push({ orderId, position, amount });
-  notify(); return { ok: true, msg: "Purchase amount saved" };
+  if (amount === null) { if (i >= 0) PURCHASES.splice(i, 1); } else if (i >= 0) Object.assign(PURCHASES[i]!, { amount, billNo, billDate }); else PURCHASES.push({ orderId, position, amount, billNo, billDate });
+  notify(); return { ok: true, msg: amount === null ? "Purchase cleared" : `Purchase saved${billNo ? ` · bill ${billNo}` : ""}` };
 }
 
 /** After an order is finalized: save the lab and purchase amount chosen for each album in the order builder. */
@@ -168,17 +179,21 @@ export async function applyAlbumLabs(code: string, albums: { labId?: string; pur
 /** Admin / accounts: save a lab's purchase rates (null clears a rate). */
 export async function saveLabRates(labId: string, rows: { itemId: string; rate: number | null }[]): Promise<string | null> {
   if (!canSeeCost()) return "Only admin and accounts enter purchase rates";
-  if (!LABS.some((l) => l.id === labId)) return "Choose a lab";
+  if (labId !== STD_COST && !LABS.some((l) => l.id === labId)) return "Choose a lab";
   for (const r of rows) if (r.rate !== null && (!Number.isFinite(r.rate) || r.rate < 0)) return "Enter purchase rates of 0 or more";
   const up = rows.filter((r) => r.rate !== null), del = rows.filter((r) => r.rate === null).map((r) => r.itemId);
   if (backendOn) {
     const c = await db();
+    const std = labId === STD_COST;
     for (let i = 0; i < up.length; i += 500) {
-      const { error } = await c.from("lab_item_rates").upsert(up.slice(i, i + 500).map((r) => ({ lab_id: labId, item_id: r.itemId, rate: r.rate })), { onConflict: "lab_id,item_id" });
+      const chunk = up.slice(i, i + 500);
+      const { error } = std ? await c.from("item_purchase_costs").upsert(chunk.map((r) => ({ item_id: r.itemId, rate: r.rate })), { onConflict: "item_id" })
+        : await c.from("lab_item_rates").upsert(chunk.map((r) => ({ lab_id: labId, item_id: r.itemId, rate: r.rate })), { onConflict: "lab_id,item_id" });
       if (error) return error.message;
     }
     for (let i = 0; i < del.length; i += 200) {
-      const { error } = await c.from("lab_item_rates").delete().eq("lab_id", labId).in("item_id", del.slice(i, i + 200));
+      const { error } = std ? await c.from("item_purchase_costs").delete().in("item_id", del.slice(i, i + 200))
+        : await c.from("lab_item_rates").delete().eq("lab_id", labId).in("item_id", del.slice(i, i + 200));
       if (error) return error.message;
     }
   } else logAudit({ entity: "lab", entityId: labId, action: "purchase_rates", detail: `${labName(labId)}: ${up.length} rate(s) set, ${del.length} cleared` });

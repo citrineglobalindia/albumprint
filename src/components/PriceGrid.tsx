@@ -7,7 +7,7 @@ import { Panel, Pill, Td, Th, Toggle, cx, inputCls, tableCls, trCls } from "./ui
 import { useStore } from "../lib/store";
 import { ITEMS, childrenOf, deleteItem, importPricesCsv, pathOf, pricesCsv, savePrices, type PriceRow, type PricingMethod } from "../lib/catalog2";
 import { downloadBlob } from "../lib/invoicePdf";
-import { LABS, canSeeCost, labRate, saveLabRates } from "../lib/labs";
+import { LABS, STD_COST, canSeeCost, labName, labRate, saveLabRates } from "../lib/labs";
 
 type Edit = { rate: string; method: PricingMethod; unit: string };
 const rateText = (n: number | null) => (n == null ? "" : String(n));
@@ -74,7 +74,7 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
     setBusy(false);
     if (err || err2) { setMsg((err ?? err2)!); return; }
     setEdits({}); setBuy({});
-    show([out.length ? `${out.length} price(s)` : "", buys.length ? `${buys.length} purchase rate(s) for ${LABS.find((l) => l.id === lab)?.name}` : ""].filter(Boolean).join(" and ") + " saved");
+    show([out.length ? `${out.length} price(s)` : "", buys.length ? `${buys.length} purchase rate(s) for ${labName(lab)}` : ""].filter(Boolean).join(" and ") + " saved");
   };
   const applyFill = () => {
     const t = fill.replace(/[₹,\s]/g, ""); if (t === "" || !Number.isFinite(Number(t))) { setMsg("Type the rate to apply, then press Apply"); return; }
@@ -104,7 +104,7 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
         </select>
         <label className="flex h-10 items-center gap-2 text-sm font-semibold"><Toggle label="Only unpriced" on={unpriced} onChange={setUnpriced} />Only unpriced</label>
         {cost && <select aria-label="Purchase rates of lab" data-testid="purchase-lab" className={cx(inputCls, "w-56", lab && "border-violet-400 bg-violet-50")} value={lab} onChange={(e) => { setLab(e.target.value); setBuy({}); }}>
-          <option value="">Purchase rates: choose a lab…</option>{LABS.filter((l) => l.active).map((l) => <option key={l.id} value={l.id}>Purchase rates · {l.name}</option>)}
+          <option value="">Purchase cost: choose…</option><option value={STD_COST}>Purchase cost · Standard (any lab)</option>{LABS.filter((l) => l.active).map((l) => <option key={l.id} value={l.id}>Purchase cost · {l.name} only</option>)}
         </select>}
         <div className="ml-auto flex items-center gap-2">
           <input aria-label="Rate for all shown" inputMode="decimal" className={cx(inputCls, "w-28")} placeholder="₹ rate" value={fill} onChange={(e) => setFill(e.target.value)} />
@@ -114,7 +114,7 @@ export function PriceGrid({ show }: { show: (m: string) => void }) {
       </div>
       <div className="max-h-[62vh] overflow-auto scroll-thin">
         <table className={tableCls} data-testid="price-grid">
-          <thead className="sticky top-0 z-10 bg-slate-50"><tr><Th className="w-8"><input type="checkbox" aria-label="Select all shown" checked={allShown} onChange={() => setPicked((p) => { const n = new Set(p); shown.forEach(({ i }) => (allShown ? n.delete(i.id) : n.add(i.id))); return n; })} /></Th><Th>Category</Th><Th>Item</Th><Th>Pricing</Th><Th>Unit</Th><Th className="text-right">{lab ? "Sales rate (₹)" : "Rate (₹)"}</Th>{lab && <><Th className="text-right">Purchase (₹) · {LABS.find((l) => l.id === lab)?.name}</Th><Th className="text-right">Margin</Th></>}<Th /></tr></thead>
+          <thead className="sticky top-0 z-10 bg-slate-50"><tr><Th className="w-8"><input type="checkbox" aria-label="Select all shown" checked={allShown} onChange={() => setPicked((p) => { const n = new Set(p); shown.forEach(({ i }) => (allShown ? n.delete(i.id) : n.add(i.id))); return n; })} /></Th><Th>Category</Th><Th>Item</Th><Th>Pricing</Th><Th>Unit</Th><Th className="text-right">{lab ? "Sales rate (₹)" : "Rate (₹)"}</Th>{lab && <><Th className="text-right">Purchase cost (₹) · {labName(lab)}</Th><Th className="text-right">Margin</Th></>}<Th /></tr></thead>
           <tbody>{shown.map(({ i, path }) => {
             const e = cur(i.id), dirty = changed.includes(i.id);
             return (

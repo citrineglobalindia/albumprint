@@ -8,7 +8,8 @@ import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { ORDERS } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
-import { ALBUM_LABS, LABS, LAB_STATUS_LABEL, albumPurchase, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, profitOf, purchaseOf, saveLab, setLabStatus, type Lab, type LabStatus } from "../lib/labs";
+import { ALBUM_LABS, LABS, LAB_STATUS_LABEL, albumPurchase, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, purchaseOf, saveLab, setLabStatus, type Lab, type LabStatus } from "../lib/labs";
+import { ProfitPanel } from "../components/ProfitPanel";
 
 // Labs: the printing labs we use, and every album's work at a lab — waiting to be sent, at the lab, received back.
 type Tab = LabStatus | "all";
@@ -70,22 +71,7 @@ export default function Labs() {
         </div>
       </Panel>
 
-      {cost && (() => {
-        const withP = ORDERS.filter((o) => o.hold !== "Cancelled" && profitOf(o).entered);
-        const sell = withP.reduce((s, o) => s + o.total, 0), pur = withP.reduce((s, o) => s + profitOf(o).purchase, 0);
-        return (
-          <Panel className="mt-5" title="Profit" action={<ExportBtn aria="Export profit" onClick={() => downloadCsv("profit.csv", [["Order", "Customer", "Event", "Order date", "Selling", "Purchase", "Profit", "Margin %", "Complete"], ...withP.map((o) => { const p = profitOf(o); return [o.id, o.customer, o.event, o.pendingAt, p.selling, p.purchase, p.profit, Number(p.margin.toFixed(1)), p.complete ? "yes" : "partial"]; })])} />} subtitle={`${withP.length} order(s) with purchase amounts · selling ${inr(sell)} · purchase ${inr(pur)} · profit ${inr(sell - pur)}${sell ? ` (${(((sell - pur) / sell) * 100).toFixed(1)}%)` : ""}`} bodyClassName="p-0">
-            <div className="overflow-x-auto"><table className={tableCls} data-testid="profit-table">
-              <thead><tr><Th>Order</Th><Th>Customer</Th><Th className="text-right">Selling</Th><Th className="text-right">Purchase</Th><Th className="text-right">Profit</Th><Th className="text-right">Margin</Th></tr></thead>
-              <tbody>{withP.map((o) => { const p = profitOf(o); return (
-                <tr key={o.id} className={trCls}><Td><Link to={`/orders/${o.id}`} className="font-bold text-brand hover:underline">{o.id}</Link>{!p.complete && <span className="ml-1 text-[11px] text-amber-700">(partial)</span>}{p.estimated && <span className="ml-1 text-[11px] text-violet-800">(lab rates)</span>}</Td><Td>{o.customer}</Td>
-                  <Td className="text-right">{inr(p.selling)}</Td><Td className="text-right">{inr(p.purchase)}</Td><Td className={cx("text-right font-bold", p.profit < 0 ? "text-rose-600" : "text-emerald-700")}>{inr(p.profit)}</Td><Td className="text-right">{p.margin.toFixed(1)}%</Td></tr>); })}
-                {withP.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-sm text-sub">Choose the lab on each album and enter the labs' purchase rates (Catalog › Prices), or type purchase amounts on the order page, to see profit here.</td></tr>}
-              </tbody>
-            </table></div>
-          </Panel>
-        );
-      })()}
+      {cost && <ProfitPanel className="mt-5" orders={ORDERS} title="Profit" />}
 
       <Panel className="mt-5" title="Our labs" subtitle="The labs that print for us" action={canManageLabs() ? <button type="button" onClick={() => setEdit({ name: "", contact: "", phone: "", notes: "", active: true })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark"><Plus className="size-4" />Add lab</button> : undefined}>
         {edit && (

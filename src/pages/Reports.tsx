@@ -14,6 +14,8 @@ import { SCHEDULES, addSchedule, removeSchedule } from "../lib/schedules";
 import { useStore } from "../lib/store";
 import { useLive } from "../lib/useLive";
 import { inr } from "../lib/format";
+import { ProfitPanel } from "../components/ProfitPanel";
+import { canSeeCost } from "../lib/labs";
 
 const TABS = ["Overview", "Orders", "Production", "Team Performance", "Financial", "Delivery", "Customer", "Custom Report"] as const;
 type Tab = (typeof TABS)[number];
@@ -398,6 +400,7 @@ export default function Reports() {
           <Panel title="Revenue vs Collections" subtitle="Click a bar" action={trendPanelAction}><Chart><BarChart data={series} onClick={(s) => drillRow(fromChart(s))}><CartesianGrid {...gridProps} /><XAxis dataKey="label" {...axis} /><YAxis {...axis} tickFormatter={(v: number) => `${Math.round(v / 1000)}K`} /><Tooltip formatter={(v) => inr(Number(v))} /><Legend wrapperStyle={{ cursor: "pointer" }} onClick={legend} formatter={lf} /><Bar dataKey="revenue" name="Billed" hide={hidden.has("revenue")} fill="#8b8cf0" radius={[3, 3, 0, 0]} /><Bar dataKey="collections" name="Collections" hide={hidden.has("collections")} fill="#7dc4f7" radius={[3, 3, 0, 0]} />{cmp && <Bar dataKey="prevCollections" name="Collections (prev)" hide={hidden.has("prevCollections")} fill="#7dc4f7" fillOpacity={0.08} stroke="#7dc4f7" strokeDasharray="4 3" radius={[3, 3, 0, 0]} />}</BarChart></Chart></Panel>
           <Panel title="Orders by Payment Status" subtitle="Click a slice"><Donut data={byPay} center="Orders" onSlice={(n) => openDrill(`${n} orders`, orders.filter((o) => o.pay === n))} /></Panel>
         </div>
+        {canSeeCost() && <ProfitPanel className="mt-5" orders={orders} title={`Profit & expense · ${label}`} />}
       </>)}
 
       {tab === "Delivery" && (

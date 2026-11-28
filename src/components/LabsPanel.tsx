@@ -6,7 +6,8 @@ import { useStore } from "../lib/store";
 import { advanceAfter } from "../lib/albumFlow";
 import { inr, fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
-import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, purchaseOf, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
+import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, purchaseRec, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
+import { TODAY_STR } from "../lib/finance";
 
 const TONE: Record<LabStatus, "slate" | "amber" | "green"> = { not_sent: "slate", sent: "amber", received: "green" };
 
@@ -14,16 +15,19 @@ const TONE: Record<LabStatus, "slate" | "amber" | "green"> = { not_sent: "slate"
 export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: boolean) => void }) {
   useStore();
   const cost = canSeeCost(), move = canMoveLabWork();
-  const [amt, setAmt] = useState<Record<number, string>>({});
+  const [edit, setEdit] = useState<Record<number, { amount: string; billNo: string; billDate: string }>>({});
   const run = (p: Promise<{ ok: boolean; msg: string }>) => void p.then((r) => { onDone(r.msg, r.ok); const a = r.ok ? advanceAfter(o.id, "printing") : null; if (a) onDone(a.msg, a.ok); });
   const labs = LABS.filter((l) => l.active);
   const pr = profitOf(o);
   return (
-    <Panel title="Printing lab" subtitle={cost ? "Which lab prints each album, its progress there, the purchase amount and the profit" : "Which lab prints each album and its progress there"}>
+    <Panel title={cost ? "Lab, purchase & profit" : "Printing lab"} subtitle={cost ? "Which lab prints each album, the purchase bill (amount, bill no., date) and the order's profit" : "Which lab prints each album and its progress there"}>
       {LABS.length === 0 && <p className="mb-2 text-xs text-sub">No labs yet.{canManageLabs() ? <> Add them in <Link to="/labs" className="font-bold text-brand underline">Labs</Link>.</> : " An admin adds them in Labs."}</p>}
       <ul className="space-y-2.5" data-testid="labs-panel">
         {albumsOf(o).map((a) => {
-          const al = albumLab(o.id, a.position), st: LabStatus = al?.status ?? "not_sent", p = purchaseOf(o.id, a.position);
+          const al = albumLab(o.id, a.position), st: LabStatus = al?.status ?? "not_sent", rec = purchaseRec(o.id, a.position), p = rec?.amount;
+          const f = edit[a.position] ?? { amount: p !== undefined ? String(p) : "", billNo: rec?.billNo ?? "", billDate: rec?.billDate ?? "" };
+          const dirty = !!edit[a.position] && (f.amount !== (p !== undefined ? String(p) : "") || f.billNo !== (rec?.billNo ?? "") || f.billDate !== (rec?.billDate ?? ""));
+          const set = (k: "amount" | "billNo" | "billDate", v: string) => setEdit({ ...edit, [a.position]: { ...f, [k]: v } });
           return (
             <li key={a.position} className="rounded-xl border border-line p-3 text-[13px]" data-testid={`lab-album-${a.position}`}>
               <div className="flex flex-wrap items-center gap-2">
@@ -42,14 +46,17 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
               </div>
               {(al?.sentAt || al?.receivedAt) && <div className="mt-1.5 text-xs text-sub">{al?.sentAt && <>Sent {fmtDate(al.sentAt)}{al.sentBy ? ` by ${al.sentBy}` : ""}</>}{al?.receivedAt && <> · received {fmtDate(al.receivedAt)}{al.receivedBy ? ` by ${al.receivedBy}` : ""}</>}</div>}
               {cost && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <label className="text-xs font-semibold text-sub" htmlFor={`pa-${o.id}-${a.position}`}>Purchase amount (₹)</label>
-                  <input id={`pa-${o.id}-${a.position}`} aria-label={`Purchase amount for ${a.title}`} type="number" min={0} step="0.01" className={cx(inputCls, "h-9 w-36 text-sm")} placeholder="What the lab charges"
-                    value={amt[a.position] ?? (p !== undefined ? String(p) : "")} onChange={(e) => setAmt({ ...amt, [a.position]: e.target.value })}
-                    onBlur={() => { const v = amt[a.position]; if (v === undefined) return; const n = v.trim() === "" ? null : Number(v); if (n === (p ?? null)) return; run(setPurchase(o.id, a.position, n)); }} />
-                  {(() => { const e = estimatedPurchase(o, a.position); if (!e) return al?.labId ? <span className="text-[11px] text-sub">No purchase rates for {labName(al.labId)} on these items yet (Catalog › Prices)</span> : null; return (
-                    <span className={cx("text-[11px]", p === undefined ? "font-semibold text-violet-800" : "text-sub")} data-testid={`lab-estimate-${a.position}`}>
-                      {p === undefined ? "Using" : "From"} {labName(al?.labId)} rates: {inr(e.amount)}{e.missing.length ? ` · no rate for ${e.missing.join(", ")}` : ""}{p !== undefined ? " (the amount typed is used)" : ""}
+                <div className="mt-2 rounded-lg bg-slate-50 p-2.5" data-testid={`purchase-${a.position}`}>
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-sub">Purchase bill</div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="text-xs font-semibold text-sub">Purchase amount (₹)<input id={`pa-${o.id}-${a.position}`} aria-label={`Purchase amount for ${a.title}`} type="number" min={0} step="0.01" className={cx(inputCls, "mt-1 h-9 w-36 text-sm")} placeholder="What we paid" value={f.amount} onChange={(e) => set("amount", e.target.value)} /></label>
+                    <label className="text-xs font-semibold text-sub">Bill no.<input aria-label={`Bill number for ${a.title}`} className={cx(inputCls, "mt-1 h-9 w-36 text-sm")} placeholder="Supplier bill no." value={f.billNo} onChange={(e) => set("billNo", e.target.value)} /></label>
+                    <label className="text-xs font-semibold text-sub">Bill date<input aria-label={`Bill date for ${a.title}`} type="date" max={TODAY_STR} className={cx(inputCls, "mt-1 h-9 w-40 text-sm")} value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></label>
+                    <button type="button" disabled={!dirty} onClick={() => { const n = f.amount.trim() === "" ? null : Number(f.amount); void setPurchase(o.id, a.position, n, { billNo: f.billNo, billDate: f.billDate }).then((r) => { onDone(r.msg, r.ok); if (r.ok) { const e2 = { ...edit }; delete e2[a.position]; setEdit(e2); } }); }} className="inline-flex h-9 items-center rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-40">Save purchase</button>
+                  </div>
+                  {(() => { const e = estimatedPurchase(o, a.position); if (!e) return p !== undefined ? null : <span className="mt-1 block text-[11px] text-sub">No purchase cost on these items yet{al?.labId ? ` for ${labName(al.labId)}` : ""} — add it in Catalog › Prices (Purchase cost · Standard)</span>; return (
+                    <span className={cx("mt-1 block text-[11px]", p === undefined ? "font-semibold text-violet-800" : "text-sub")} data-testid={`lab-estimate-${a.position}`}>
+                      {p === undefined ? "Estimated from" : "From"} {al?.labId ? `${labName(al.labId)} / standard` : "standard"} purchase costs: {inr(e.amount)}{e.missing.length ? ` · no rate for ${e.missing.join(", ")}` : ""}{p !== undefined ? " (the amount typed is used)" : ""}
                     </span>); })()}
                 </div>
               )}
@@ -59,12 +66,12 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
       </ul>
       {cost && (
         <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center" data-testid="profit">
-          <div><div className="text-[11px] text-sub">Selling</div><div className="font-extrabold">{inr(pr.selling)}</div></div>
-          <div><div className="text-[11px] text-sub">Purchase</div><div className="font-extrabold">{pr.entered ? inr(pr.purchase) : "—"}</div>{pr.estimated && <div className="text-[10px] font-semibold text-violet-800">incl. lab rates</div>}</div>
+          <div><div className="text-[11px] text-sub">Customer billing</div><div className="font-extrabold">{inr(pr.selling)}</div></div>
+          <div><div className="text-[11px] text-sub">Purchase (expense)</div><div className="font-extrabold">{pr.entered ? inr(pr.purchase) : "—"}</div>{pr.estimated && <div className="text-[10px] font-semibold text-violet-800">incl. estimated costs</div>}</div>
           <div><div className="flex items-center justify-center gap-1 text-[11px] text-sub"><TrendingUp className="size-3" />Profit</div>
             <div className={cx("font-extrabold", pr.profit < 0 ? "text-rose-600" : "text-emerald-700")} data-testid="profit-value">{pr.entered ? `${inr(pr.profit)} (${pr.margin.toFixed(1)}%)` : "—"}</div></div>
           {pr.entered && !pr.complete && <p className="col-span-3 text-[11px] text-amber-700">Some albums have no purchase amount yet — the profit counts only those entered.</p>}
-          {pr.missingRates && <p className="col-span-3 text-[11px] text-amber-700">Some items have no purchase rate at the chosen lab — add them in Catalog › Prices (choose the lab) for an exact profit.</p>}
+          {pr.missingRates && <p className="col-span-3 text-[11px] text-amber-700">Some items have no purchase cost yet — add them in Catalog › Prices (Purchase cost · Standard, or a lab) for an exact profit.</p>}
         </div>
       )}
     </Panel>
