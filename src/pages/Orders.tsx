@@ -11,7 +11,7 @@ import {
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
 } from "../components/ui";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
-import { SizePicker } from "../components/SizePicker";
+import { OrderEditPanel } from "../components/OrderEditPanel";
 import { sizeOptions } from "../lib/sizes";
 import { ExportBtn } from "../components/listKit";
 import { downloadCsv } from "../lib/csv";
@@ -90,8 +90,6 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const [fOpen, setFOpen] = useState(false);
   const [drawer, setDrawer] = useState<string | null>(null);
   const [editing, setEditing] = useState<Order | null>(null);
-  const [ef, setEf] = useState({ size: "12x36", due: "" });
-  const [eerr, setEerr] = useState("");
   const searchWrap = useRef<HTMLDivElement>(null);
   useSlashFocus(searchWrap);
 
@@ -170,12 +168,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const cancelOne = (o: Order) => askReason({ title: `Cancel ${o.id}`, message: "This cannot be undone from the pipeline; history is preserved.", confirmLabel: "Cancel order", danger: true }, (reason) => { const r = cancelOrder(o.id, reason); r.ok ? show(`${o.id} cancelled`) : fail(r.error); });
   const resumeOneToast = (o: Order) => { const r = resumeOne(o); r.ok ? show(`${o.id} resumed`) : fail(r.error); };
   const bulkEdit = (patch: Partial<Order>, action: string, msg: string) => { const n = sel.size; [...sel].forEach((id) => editOrder(id, patch, action)); setSel(new Set()); show(`${msg} (${n} orders)`); };
-  const openEdit = (o: Order) => { setEf({ due: o.due, size: o.size }); setEerr(""); setEditing(o); };
-  const saveEdit = () => {
-    if (!ef.due) { setEerr("Due date is required."); return; }
-    const o = editing!; if (o.closed) { fail(`${o.id} is closed and read-only — reopen it first`); return; }
-    editOrder(o.id, ef, "update", "Due date / album size edited"); show(`Order ${o.id} updated`); setEditing(null);
-  };
+  const openEdit = (o: Order) => setEditing(o);
 
   const chips = [
     ...(range.preset !== "All Time" ? [{ label: `Date: ${range.preset === "Custom" ? `${fmtShort(range.from)} – ${fmtShort(range.to)}` : range.preset}`, onRemove: () => setRange(presetRange("All Time")) }] : []),
@@ -350,19 +343,14 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
               </div>
               <div className="flex gap-2">
                 {d.hold === "On Hold" ? <OutlineButton icon={PlayCircle} onClick={() => resumeOneToast(d)}>Resume</OutlineButton> : !d.hold ? <OutlineButton icon={PauseCircle} onClick={() => holdOne(d)}>Put on hold</OutlineButton> : null}
-                <OutlineButton onClick={() => openEdit(d)}>Edit dates / size</OutlineButton>
+                <OutlineButton onClick={() => openEdit(d)}>Edit order</OutlineButton>
               </div>
             </div>
           </div>
         )}
       </SlideOver>
 
-      <SlideOver open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.id ?? ""}`} width={420}
-        footer={<><OutlineButton onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Check} onClick={saveEdit}>Save changes</PrimaryButton></>}>
-        {eerr && <div className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-600">{eerr}</div>}
-        <Field label="Album size"><SizePicker label="Album size" value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} /></Field>
-        <Field label="Due date" required><input type="date" className={inputCls} value={ef.due} onChange={(e) => setEf({ ...ef, due: e.target.value })} /></Field>
-      </SlideOver>
+      <OrderEditPanel o={editing} onClose={() => setEditing(null)} show={show} />
       {reasonDlg}
       {toast}
     </div>

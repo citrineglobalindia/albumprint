@@ -58,6 +58,8 @@ export function orderFromRow(r: Row, cust: Map<string, Customer>, staff: Map<str
   if (oi?.length) o.items = [...oi].sort((a, b) => a.position - b.position).map((i): OrderItem => ({ itemId: i.item_id ?? undefined, name: i.name, unit: i.unit, qty: Number(i.qty), price: Number(i.sell_price), remarks: i.remarks ?? undefined }));
   const al: Row[] | undefined = r.order_albums;
   if (al?.length) o.albums = [...al].sort((a, b) => a.position - b.position).map(albumFromRow);
+  if (o.albums?.length && !o.size) o.size = [...new Set(o.albums.map((a) => a.size).filter(Boolean))].join(", ");   // orders made in the order builder keep sizes per album
+  if (o.albums?.length && !o.pages) o.pages = o.albums[0]!.sheets || 0;
   if (r.sla_paused_at) { o.slaPausedAt = r.sla_paused_at; o.slaPauseReason = r.sla_pause_reason ?? undefined; }
   if (r.stage === "closed") { o.closed = true; }
   if (r.stage === "cancelled") { o.hold = "Cancelled"; o.cancelReason = r.cancel_reason ?? undefined; o.progress = 0; }

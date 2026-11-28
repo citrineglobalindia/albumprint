@@ -32,6 +32,18 @@ export function dbEditOrder(orderUid: string | undefined, patch: Record<string, 
   writeThrough("Saving order changes", () => sb().from("orders").update(row).eq("id", orderUid) as never, revert);
   return null;
 }
+/** One album's name / size / orientation / event date (order_albums.position is 1-based). */
+export function dbEditAlbum(orderUid: string | undefined, position: number, a: { title?: string; size?: string; orientation?: string; eventDate?: string }, revert: () => void) {
+  if (!backendOn || !orderUid) return;
+  const row: Record<string, unknown> = {};
+  if (a.title !== undefined) row.title = a.title.trim() || null;
+  if (a.size !== undefined) row.album_size = a.size;
+  if (a.orientation !== undefined) row.orientation = a.orientation.toLowerCase();
+  if (a.eventDate !== undefined) row.event_date = a.eventDate || null;
+  if (!Object.keys(row).length) return;
+  writeThrough("Saving album changes", () => sb().from("order_albums").update(row).eq("order_id", orderUid).eq("position", position) as never, revert);
+  if (position === 1 && a.size !== undefined) writeThrough("Saving album size", () => sb().from("order_specs").update({ album_size: a.size }).eq("order_id", orderUid) as never, () => undefined);
+}
 export function dbSetAssignee(orderUid: string | undefined, name: string, revert: () => void): boolean {
   if (!backendOn || !orderUid) return true;
   const id = staffId(name);
