@@ -29,10 +29,13 @@ test("album viewer: cover + spreads, single / double, zoom, note on a page", asy
   const sheet = await page.locator(".ipd-page.--left").first().boundingBox();
   expect(Math.round(book!.width / sheet!.width)).toBe(2);
 
-  await fb.getByRole("button", { name: "Single" }).click();
-  await expect(pos).toHaveText(/Spread 2 of 3 · (left|right)/, { timeout: 5000 });
-  await fb.getByRole("button", { name: "Double" }).click();
+  await expect(fb.getByRole("button", { name: "Single" })).toHaveCount(0);            // the client link: Double and Scroll only
+  // a phone shows the whole spread too (both sheets), not one sheet
+  await page.setViewportSize({ width: 390, height: 700 });
   await expect(pos).toHaveText("Spread 2 of 3", { timeout: 5000 });
+  const sb = await page.locator(".stf__block").boundingBox(), sh = await page.locator(".ipd-page.--left").first().boundingBox();
+  expect(Math.round(sb!.width / sh!.width)).toBe(2);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await fb.getByRole("button", { name: "Zoom" }).click();
   const zoom = page.getByTestId("zoom-view");

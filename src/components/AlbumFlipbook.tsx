@@ -7,7 +7,7 @@ type Sheet = { src: string; side: "left" | "right" | "full" | "blank"; img: numb
  *  spread and is split into its left and right sheets (the open book shows the whole spread), a portrait image (the cover,
  *  a back cover) is a single sheet. Double = the open book (two sheets side by side); Single = one sheet at a time.
  *  The book is sized to fit the space there is (width and height) and re-fits on resize / full screen. */
-export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteFor?: (image: number, kind: "Cover" | "Page" | "Spread") => void; noteCount?: (image: number) => number; onPage?: (image: number, kind: "Cover" | "Page" | "Spread") => void; goTo?: { image: number; n: number }; compact?: boolean }) {
+export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noSingle?: boolean; noteFor?: (image: number, kind: "Cover" | "Page" | "Spread") => void; noteCount?: (image: number) => number; onPage?: (image: number, kind: "Cover" | "Page" | "Spread") => void; goTo?: { image: number; n: number }; compact?: boolean }) {
   const { goTo, compact } = props;
   const key = props.pages.join("\n");
   const pages = useMemo(() => props.pages, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -26,6 +26,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
   const [zoomed, setZoomed] = useState<string | null>(null);
   const [scrollAt, setScrollAt] = useState(0);                // scroll view: the image in view
   const scroller = useRef<HTMLDivElement>(null);
+  const nested = !!compact || full;          // the design page / full screen scroll in a box; the client link scrolls the page itself
   const kindOf = (i: number): "Cover" | "Page" | "Spread" => { const d = dims?.[i]; const wide = d ? d.w / d.h > 1.3 : true; return wide ? "Spread" : i === 0 ? "Cover" : "Page"; };
   const scrollTo = (i: number) => { const el = scroller.current?.querySelector<HTMLElement>(`[data-img="${i}"]`); el?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   // scroll view: follow the image in view
@@ -34,13 +35,13 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
     const io = new IntersectionObserver((es) => {
       const best = es.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
       if (best) { const i = Number((best.target as HTMLElement).dataset.img); setScrollAt(i); onPage(i + 1, kindOf(i)); }
-    }, { root, threshold: [0.35, 0.6, 0.9] });
+    }, { root: nested ? root : null, threshold: [0.35, 0.6, 0.9] });
     root.querySelectorAll("[data-img]").forEach((n) => io.observe(n));
     return () => io.disconnect();
   }, [mode, key, dims]); // eslint-disable-line react-hooks/exhaustive-deps
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1200 : window.innerWidth));
   const atRef = useRef(0);
-  useEffect(() => { let t = 0; const r = () => { clearTimeout(t); t = window.setTimeout(() => setVw(window.innerWidth + window.innerHeight / 10000), 150); }; window.addEventListener("resize", r); return () => { window.removeEventListener("resize", r); clearTimeout(t); }; }, []);
+  useEffect(() => { let t = 0; const r = () => { clearTimeout(t); t = window.setTimeout(() => setVw((w) => (Math.abs(window.innerWidth - w) > 2 ? window.innerWidth : w)), 150); }; window.addEventListener("resize", r); return () => { window.removeEventListener("resize", r); clearTimeout(t); }; }, []);
 
   // the size of every image: wide ones are spreads, the others single sheets
   useEffect(() => {
@@ -75,7 +76,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
 
       // fit the book in the space there is; never taller than the box
       const W = Math.max(200, el.clientWidth), H = Math.max(280, full ? window.innerHeight - 110 : compact ? Math.min(window.innerHeight * 0.62, window.innerHeight - 260) : Math.min(window.innerHeight * 0.68, window.innerHeight - 230));
-      const double = mode === "double" && W >= 520; setDbl(double);
+      const double = mode === "double"; setDbl(double);
       const ph = Math.floor(Math.min(H, double ? W / (2 * a) : W / a)), pw = Math.floor(ph * a);
       const book = document.createElement("div"); book.style.margin = "0 auto"; book.style.width = `${double ? pw * 2 : pw}px`; book.style.transition = "transform .5s ease"; book.style.boxShadow = full ? "none" : "0 18px 40px -12px rgba(20,20,40,.45)"; el.appendChild(book);
       // a sheet shown alone (the cover, a last single sheet) sits in the middle instead of on one half
@@ -93,7 +94,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
         face.setAttribute("data-page", String(i + 1));
         d.appendChild(face); book.appendChild(d); return d;
       });
-      const pf = new PageFlip(book, { width: pw, height: ph, size: "fixed", showCover: cover, maxShadowOpacity: 0.5, mobileScrollSupport: true, usePortrait: !double, autoSize: false, drawShadow: true, flippingTime: 800 });
+      const pf = new PageFlip(book, { width: pw, height: ph, size: "fixed", showCover: cover, maxShadowOpacity: 0.5, mobileScrollSupport: true, swipeDistance: 40, usePortrait: !double, autoSize: false, drawShadow: true, flippingTime: 800 });
       pf.loadFromHTML(nodes);
       pf.on("flip", (e: { data: unknown }) => { const i = Number(e.data); atRef.current = i; setAt(i); centre(i, pf.getPageCount()); const sh = sheets[i]?.side === "blank" ? sheets[i + 1] : sheets[i]; const im = sh?.img ?? 0; onPage?.(im + 1, sh?.side === "full" ? (im === 0 ? "Cover" : "Page") : "Spread"); });
       flip.current = pf as never;
@@ -130,10 +131,10 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
       <div className={full ? "mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 items-center" : "mx-auto w-full"}>
         <div ref={host} className={mode === "scroll" ? "hidden" : "w-full"} aria-label="Album pages — use the arrows or swipe to turn" />
         {mode === "scroll" && (
-          <div ref={scroller} data-testid="album-scroll" className="scroll-thin mx-auto w-full snap-y snap-proximity space-y-4 overflow-y-auto scroll-smooth overscroll-contain pr-1"
-            style={{ maxHeight: full ? "calc(100vh - 110px)" : compact ? "min(62vh, calc(100vh - 260px))" : "min(68vh, calc(100vh - 230px))" }}>
+          <div ref={scroller} data-testid="album-scroll" className={nested ? "scroll-thin mx-auto w-full space-y-4 overflow-y-auto overscroll-contain pr-1" : "mx-auto w-full space-y-4"}
+            style={nested ? { maxHeight: full ? "calc(100vh - 110px)" : "min(62vh, calc(100vh - 260px))" } : undefined}>
             {pages.map((src, i) => (
-              <figure key={src} data-img={i} className="mx-auto snap-start" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
+              <figure key={src} data-img={i} className="mx-auto scroll-mt-20" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
                 <img src={src} alt={`${kindOf(i)} ${i + 1}`} loading="lazy" decoding="async" className="w-full rounded-md bg-white shadow-xl" style={{ aspectRatio: dims?.[i] ? `${dims[i]!.w} / ${dims[i]!.h}` : undefined }} />
                 <figcaption className={`mt-1 flex items-center justify-center gap-2 text-[11px] ${full ? "text-white/60" : "text-sub"}`}>
                   <span>{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}{props.noteCount?.(i + 1) ? ` · ${props.noteCount(i + 1)} note${props.noteCount(i + 1) === 1 ? "" : "s"}` : ""}</span>
@@ -149,7 +150,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteF
         <span className="min-w-[150px] text-center text-sm font-semibold" data-testid="flip-position">{label}</span>
         <button type="button" aria-label="Next page" onClick={() => (mode === "scroll" ? scrollTo(Math.min(pages.length - 1, scrollAt + 1)) : flip.current?.flipNext())} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronRight className="size-5" /></button>
         <div className="ml-1 inline-flex rounded-lg bg-white/10 p-0.5" role="group" aria-label="Sheets shown">
-          <button type="button" aria-pressed={mode === "single"} onClick={() => setMode("single")} className={`${seg} ${mode === "single" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><RectangleVertical className="size-3.5" />Single</button>
+          {!props.noSingle && <button type="button" aria-pressed={mode === "single"} onClick={() => setMode("single")} className={`${seg} ${mode === "single" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><RectangleVertical className="size-3.5" />Single</button>}
           <button type="button" aria-pressed={mode === "scroll"} onClick={() => { atRef.current = Math.max(0, sheets.findIndex((x) => x.img === img)); setMode("scroll"); window.setTimeout(() => scrollTo(img), 60); }} className={`${seg} ${mode === "scroll" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><ScrollText className="size-3.5" />Scroll</button>
           <button type="button" aria-pressed={mode === "double"} onClick={() => setMode("double")} className={`${seg} ${mode === "double" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><BookOpen className="size-3.5" />Double</button>
         </div>

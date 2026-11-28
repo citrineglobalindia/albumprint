@@ -51,7 +51,7 @@ export default function AlbumPortal() {
             : view.status === "changes" ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800" data-testid="client-status">Changes requested — the studio is on it</span> : null}
         </div>
 
-        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }}
+        <AlbumFlipbook noSingle pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }}
           noteFor={approved ? undefined : (n, k) => openNote(n, k)} noteCount={(n) => view.feedback.filter((f) => f.page === n && f.kind !== "approve").length} />
 
         {/* a note on the page that is open */}
