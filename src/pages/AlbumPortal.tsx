@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { CheckCircle2, MessageSquarePlus, PenLine, ThumbsUp } from "lucide-react";
+import { Download, CheckCircle2, MessageSquarePlus, PenLine, ThumbsUp } from "lucide-react";
 import { AlbumFlipbook } from "../components/AlbumFlipbook";
 import { BrandWordmark, DevCredit } from "../components/BrandMark";
 import { cx } from "../components/ui";
-import { publicFeedback, publicGet, type PublicView } from "../lib/albumPreview";
+import { downloadAlbumPdf, publicFeedback, publicGet, type PublicView } from "../lib/albumPreview";
 import { fmtDate } from "../lib/format";
 
 /** The client's album link (no login): turn the pages, request changes (on a page or in general), or approve the album. */
@@ -17,6 +17,7 @@ export default function AlbumPortal() {
   const [msg, setMsg] = useState(""); const [onPage, setOnPage] = useState(true);
   const [busy, setBusy] = useState(false); const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [pageNote, setPageNote] = useState<string | null>(null);
+  const [pdfStep, setPdfStep] = useState<string | null>(null);
   const [pageKind, setPageKind] = useState<"Cover" | "Page" | "Spread">("Spread");
   const [side, setSide] = useState<"left" | "right" | "whole">("whole");          // which page of an open spread the note is about
   const openNote = (n?: number, k?: "Cover" | "Page" | "Spread", sd: "left" | "right" | "whole" = "whole") => {
@@ -49,6 +50,8 @@ export default function AlbumPortal() {
           <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">{view.title}</h1><p className="text-xs text-sub">{view.customer} · order {view.orderCode} · version {view.version}</p></div>
           {approved ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800" data-testid="client-status"><CheckCircle2 className="size-4" />Approved{view.approvedBy ? ` by ${view.approvedBy}` : ""}</span>
             : view.status === "changes" ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800" data-testid="client-status">Changes requested — the studio is on it</span> : null}
+          <button type="button" disabled={!!pdfStep} onClick={() => void (async () => { const r = await downloadAlbumPdf(view.pages, `${view.title} - ${view.orderCode} v${view.version}`, setPdfStep); setPdfStep(null); setNote({ ok: r.ok, text: r.msg }); })()}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-bold hover:bg-slate-50 disabled:opacity-60"><Download className="size-4" />{pdfStep ?? "Download PDF"}</button>
         </div>
 
         <AlbumFlipbook noSingle pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }}

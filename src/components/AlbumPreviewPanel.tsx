@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, Check, Copy, ExternalLink, Eye, Link2, MessageCircle, RotateCcw, Share2, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, Check, Copy, Download, ExternalLink, Eye, Link2, MessageCircle, RotateCcw, Share2, Trash2, Upload, X } from "lucide-react";
 import { Panel, Pill, cx } from "./ui";
 import { AlbumFlipbook } from "./AlbumFlipbook";
 import { useStore } from "../lib/store";
@@ -7,7 +7,7 @@ import { fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
 import { albumsOf } from "../lib/labs";
 import { FILES, previewUrl } from "../lib/files";
-import { STATUS_LABEL, canUpload, createPreview, deletePreview, linkOf, pageUrls, previewsOf, setResolved, shareOnWhatsApp, type Preview } from "../lib/albumPreview";
+import { STATUS_LABEL, canUpload, downloadAlbumPdf, createPreview, deletePreview, linkOf, pageUrls, previewsOf, setResolved, shareOnWhatsApp, type Preview } from "../lib/albumPreview";
 
 const TONE = { shared: "blue", approved: "green", changes: "amber" } as const;
 type Res = { ok: boolean; msg: string };
@@ -128,6 +128,7 @@ function AlbumBlock({ o, album, title, onDone, onView }: { o: Order; album: numb
 /** The client link of an uploaded album, shown in full, with Copy / Open / WhatsApp / Share (the phone's share menu). */
 function ShareBox({ p, onDone }: { p: Preview; onDone: (msg: string, ok: boolean) => void }) {
   const url = linkOf(p);
+  const [pdf, setPdf] = useState<string | null>(null);
   const copy = () => { void (navigator.clipboard?.writeText(url) ?? Promise.reject()).then(() => onDone("Album link copied — paste it in WhatsApp, SMS or email", true), () => onDone("Select the link and copy it", false)); };
   const share = () => {
     if (navigator.share) void navigator.share({ title: p.title, text: `Your album "${p.title}" is ready to preview`, url }).catch(() => undefined);
@@ -143,6 +144,7 @@ function ShareBox({ p, onDone }: { p: Preview; onDone: (msg: string, ok: boolean
         <a href={url} target="_blank" rel="noreferrer" className={cx(b, "border border-line bg-white hover:bg-slate-50")}><ExternalLink className="size-3.5" />Open</a>
         <button type="button" onClick={() => { const e = shareOnWhatsApp(p); onDone(e ?? "WhatsApp opened with the album link", !e); }} className={cx(b, "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}><MessageCircle className="size-3.5" />WhatsApp</button>
         <button type="button" onClick={share} className={cx(b, "border border-line bg-white hover:bg-slate-50")}><Share2 className="size-3.5" />Share…</button>
+        <button type="button" disabled={!!pdf} onClick={() => void (async () => { const r = await downloadAlbumPdf(pageUrls(p), `${p.title} - ${p.orderId} v${p.version}`, setPdf); setPdf(null); onDone(r.msg, r.ok); })()} className={cx(b, "border border-line bg-white hover:bg-slate-50 disabled:opacity-60")}><Download className="size-3.5" />{pdf ?? "Download PDF"}</button>
       </div>
     </div>
   );

@@ -183,3 +183,26 @@ export async function hydratePreviews() {
     status: r.status as PreviewStatus, approvedBy: (r.approved_by as string | null) ?? undefined, at: String(r.created_at), by: staffName(r.created_by as string) ?? undefined, feedback: fb.get(String(r.id)) ?? [] }] : []; }));
   notify();
 }
+
+/** Download the album as one PDF: each page image becomes a PDF page of its own shape (the JPEGs go in as they are). */
+export async function downloadAlbumPdf(pages: string[], fileName: string, onStep: (msg: string) => void): Promise<Res> {
+  if (!pages.length) return { ok: false, msg: "No pages to download" };
+  try {
+    const { jsPDF } = await import("jspdf");
+    let doc: InstanceType<typeof jsPDF> | null = null;
+    for (const [i, src] of pages.entries()) {
+      onStep(`Preparing PDF · page ${i + 1} of ${pages.length}…`);
+      const buf = new Uint8Array(await (await fetch(src)).arrayBuffer());
+      const size = await new Promise<{ w: number; h: number }>((res) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res({ w: 1000, h: 1000 }); im.src = src; });
+      const w = size.w * 0.75, h = size.h * 0.75, o = w >= h ? "landscape" : "portrait";     // px → pt
+      if (!doc) doc = new jsPDF({ unit: "pt", format: [w, h], orientation: o, compress: true });
+      else doc.addPage([w, h], o);
+      doc.addImage(buf, "JPEG", 0, 0, w, h, undefined, "NONE");
+    }
+    onStep("Saving the PDF…");
+    doc!.save(`${fileName.replace(/[^\w\- ]+/g, "").trim() || "album"}.pdf`);
+    return { ok: true, msg: "Album PDF downloaded" };
+  } catch (e) {
+    return { ok: false, msg: `Could not make the PDF: ${String((e as Error).message ?? e)}` };
+  }
+}

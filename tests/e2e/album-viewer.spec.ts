@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { seedRole, buildOrder } from "./helpers";
 
 // An album with a portrait cover and wide spreads: the cover shows alone, each spread fills one open book (two sheets),
@@ -18,6 +19,14 @@ test("album viewer: cover + spreads, single / double, zoom, note on a page", asy
   await box.getByTestId("share-box").getByRole("button", { name: "WhatsApp" }).click();
   const wa = await page.evaluate(() => (window as unknown as { __o: string[] }).__o.at(-1)!);
   await page.goto(decodeURIComponent(wa.split("text=")[1]!).match(/\/album\/[0-9a-f]+/)![0]);
+
+  // download the album as a PDF: one page per image (cover + 2 spreads)
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download PDF" }).click()]);
+  expect(dl.suggestedFilename()).toMatch(/^Wedding album - IDP\d+ v1\.pdf$/);
+  const pdf = readFileSync((await dl.path())!);
+  expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  expect((pdf.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length).toBe(3);
+  await expect(page.getByText("Album PDF downloaded")).toBeVisible();
 
   const fb = page.getByTestId("flipbook"), pos = fb.getByTestId("flip-position");
   await expect(pos).toHaveText("Cover · 1 of 3");
