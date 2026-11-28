@@ -17,6 +17,7 @@ import { GJOBS } from "../lib/production";
 import { djob, sendToClient } from "../lib/designJobs";
 import { WORK_STATUS, photosGiven, progressOf, saveProgress, statusLabel, type WorkStatus } from "../lib/jobProgress";
 import { WORK_STAGE, advanceAfter, albumStatus, startAlbumWork } from "../lib/albumFlow";
+import { MyGradingShares } from "../components/GradingSplit";
 
 // My Jobs: every album this person works on (colour grading and/or designing), one line each, with its own Start / Continue
 // and update box — the order moves on by itself when every album is through the step.
@@ -109,6 +110,7 @@ export default function MyJobs() {
       </div>
       <div data-testid="my-stats"><KpiRow items={stats} cols={stats.length} /></div>
       <div className="mt-3"><KpiRow items={kpis} cols={4} /></div>
+      <div className="mt-4"><MyGradingShares onDone={(m) => show(m)} /></div>
       <Panel className="mt-5" title="My albums" subtitle="The order moves on by itself when every album is through the step" bodyClassName="p-0">
         <div className="px-5 pt-3"><LineTabs className="!border-0" value={tab} onChange={(t) => { setTab(t); setOpen(null); }} tabs={[{ key: "todo", label: "To do", count: todo.length }, { key: "done", label: "Done (this period)", count: doneIn.length }]} /></div>
         <div className="overflow-x-auto">

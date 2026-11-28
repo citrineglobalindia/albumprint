@@ -23,6 +23,8 @@ import { FILES, uploadsRequired } from "../lib/files";
 import { Elapsed, JobTimer } from "../components/JobTimer";
 import { slaState } from "../lib/sla";
 import { GJOBS, COLORISTS, ensureGradingJobs, no, gradedFiles, createGradingJob, startGrading, saveDraft, uploadGraded, submitGrading, approveGrading, rejectGrading, ackRevision, can, fmtDT, type GJob, type GStatus, type Out } from "../lib/production";
+import { GradingSplit } from "../components/GradingSplit";
+import { graderName, sharesOf } from "../lib/gradingShares";
 
 type Tab = "queue" | "progress" | "submitted" | "approved" | "rework";
 const STATUS_TONE: Record<GStatus, Tone> = { New: "blue", "In Progress": "blue", Rework: "red", Submitted: "violet", Approved: "green" };
@@ -30,6 +32,7 @@ const inTab = (j: GJob, t: Tab) => t === "queue" ? ["New", "In Progress", "Rewor
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
 /** The grader of a job: the job's assignee; else the graders assigned to its albums; else whoever started it. */
 const graderOf = (j: GJob): string => {
+  const split = sharesOf(j.orderId); if (split.length) return split.map(graderName).join(", ");   // photos divided between graders
   if (j.colorist && j.colorist !== "Unassigned") return j.colorist;
   const albums = [...new Set(PROGRESS.filter((p) => p.orderId === j.orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.assignee).map((p) => p.assignee!))];
   if (albums.length) return albums.join(", ");
@@ -212,7 +215,7 @@ export default function ColourGrading() {
                     {vis("event") && <Td>{oo.event}</Td>}
                     {vis("files") && <Td><span className="inline-flex items-center gap-1.5"><ImageIcon className="size-3.5 text-sub" />{gradedFiles(j.orderId).length}</span></Td>}
                     {vis("graded") && <Td>{(() => { const g = photosGraded(j.orderId), t = photosGiven(j.orderId); return g == null && t == null ? <span className="text-sub">—</span> : <span data-testid={`graded-${j.orderId}`} className="font-semibold text-emerald-700">{g ?? 0}{t ? <span className="font-normal text-sub"> / {t}</span> : null}</span>; })()}
-                      {work && ordOf(j.orderId).stage === "colour_grading" && ["New", "In Progress", "Rework"].includes(j.status) && !PROGRESS.some((p) => p.orderId === j.orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.count != null)
+                      {work && ordOf(j.orderId).stage === "colour_grading" && ["New", "In Progress", "Rework"].includes(j.status) && !sharesOf(j.orderId).length && !PROGRESS.some((p) => p.orderId === j.orderId && p.dept === "grading" && (p.album ?? 0) > 0 && p.count != null)
                         && <div className="mt-1"><QuickCount orderId={j.orderId} dept="grading" onDone={(m, ok) => (ok ? show(m) : show(m))} prepare={() => { if (j.status !== "New") return null; const r = startGrading(j.orderId); return r.ok || /already/i.test(r.msg) ? null : r.msg; }} /></div>}</Td>}
                     {vis("pending") && <Td>{(() => { const p = photosPending(j.orderId); return <span data-testid={`pending-${j.orderId}`}>{p == null ? <span className="text-sub">—</span> : p === 0 ? <Pill tone="green">All done</Pill> : <Pill tone="amber">{p} pending</Pill>}</span>; })()}</Td>}
                     {vis("colorist") && <Td><span className="inline-flex items-center gap-2" data-testid={`grader-${j.orderId}`}><Avatar name={graderOf(j)} size={24} />{graderOf(j)}</span></Td>}
@@ -260,6 +263,7 @@ export default function ColourGrading() {
               <div><dt className="text-xs text-sub">Rounds</dt><dd className="font-semibold">{cur.rounds}</dd></div>
             </dl>
             <JobProgress orderId={cur.orderId} dept="grading" countLabel="Photos graded" of={photosGiven(cur.orderId)} pathLabel="Graded files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.orderId, "grading") : null; if (a) show(a.msg); }} />
+            <GradingSplit orderId={cur.orderId} onDone={(m) => show(m)} />
             {o && <div className="mt-3"><AlbumProgress o={o} only={["grading"]} onDone={(m) => show(m)} /></div>}
             <JobTimer start={cur.startedAt} end={gradEnd(cur)} label="Grading time" paused={o.hold ? "On hold" : undefined} />
             <div className="mt-3 rounded-xl bg-slate-50 p-3 text-[13px]"><div className="mb-1 text-xs font-bold uppercase text-sub">Grading instructions</div><p data-testid="instructions">{cur.instructions}</p></div>

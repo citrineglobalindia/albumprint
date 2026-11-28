@@ -24,6 +24,7 @@ import { editOrder } from "../lib/orderEdit";
 import { deleteOrder } from "../lib/orderDelete";
 import { useAuth } from "../lib/auth";
 import { useLive } from "../lib/useLive";
+import { GradingSplit } from "../components/GradingSplit";
 
 // Stages skipped for Printing Only orders (SRS §5.2: shown as "Not Required").
 const SKIPPED = ["colour_grading", "admin_approval", "designing", "client_review", "final_approval"];
@@ -163,6 +164,7 @@ export default function OrderDetail() {
           })}
         </div>
         <div className="mt-3 border-t border-line pt-3"><AlbumProgress o={o} onDone={(m, ok) => (ok ? show(m) : fail(m))} /></div>
+        {o.workflow !== "Printing" && <GradingSplit orderId={o.id} onDone={(m, ok) => (ok ? show(m) : fail(m))} />}
         <details className="mt-3 border-t border-line pt-3" open>
           <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-sub">Process · who does each step</summary>
           <div className="mt-2"><ProcessTracker o={o} role={role} tick={tick} /></div>

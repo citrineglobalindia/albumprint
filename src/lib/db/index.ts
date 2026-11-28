@@ -13,3 +13,5 @@ import { hydrateProgress } from "../jobProgress";
 if (onLabs) regLabs("job progress", hydrateProgress);
 import { hydrateOpening } from "../openingBalance";
 if (onLabs) regLabs("old balances", hydrateOpening);
+import { hydrateShares } from "../gradingShares";
+if (onLabs) regLabs("grading shares", hydrateShares);
