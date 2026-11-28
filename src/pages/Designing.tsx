@@ -23,6 +23,8 @@ import { CUSTOMERS } from "../lib/data";
 import { addCorrection as addDesignCorrection, correctionsFor, metaFor, persistMeta, save as saveMeta, setCorrectionStatus } from "../lib/design";
 import { ORDERS, STAFF, type Order } from "../lib/data";
 import { fmtDate } from "../lib/format";
+import { PROGRESS } from "../lib/jobProgress";
+import { people } from "../lib/albumFlow";
 import { AlbumPreviewPanel, PreviewModal } from "../components/AlbumPreviewPanel";
 import { STATUS_LABEL, pageUrls, previewsOf, type Preview } from "../lib/albumPreview";
 import { AlbumFlipbook } from "../components/AlbumFlipbook";
@@ -37,17 +39,14 @@ const TEMPLATES = ["Classic Elegance", "Modern Minimal", "Royal Heritage", "Cine
 const TPL_TABS = ["Design Templates", "Layouts", "Backgrounds", "Stickers", "Frames", "Elements"];
 const ZMIN = 40, ZMAX = 150, ZFIT = 85;
 
-const DESIGNERS = [...new Set([...STAFF.filter((s) => s.role === "Designer").map((s) => s.name.split(" ").slice(0, 2).join(" ")), "Admin"])];
+const designersList = (assigned: string[]) => [...new Set([...assigned, ...people().filter((p) => /^designer/i.test(p.role)).map((p) => p.name), "Admin"])];
 const BG_SWATCHES = ["#fbf7f0", "#ffffff", "#f3e8ff", "#fde68a", "#fecdd3", "#bae6fd", "#bbf7d0", "#1e293b"];
 
 interface Overlay { id: number; kind: "text" | "image"; text: string; x: number; y: number; w: number; h: number }
 interface Spread { id: number; bg?: string; overlays: Overlay[] }
 interface Doc { spreads: Spread[]; tpl: number }
 interface Comment { by: string; when: string; page: number; text: string }
-const COMMENTS0: Comment[] = [
-  { by: "Chidanan da", when: "2 Oct 2026, 06:10 PM", page: 1, text: "Love the cover! Please add both names in gold foil." },
-  { by: "Chidanan da", when: "3 Oct 2026, 09:40 AM", page: 12, text: "Skin tones look slightly dull on this page." },
-];
+const when = (iso: string | Date) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
 
 const fill = "!h-full !w-full";
 const PageArt = ({ seed, mirror }: { seed: number; mirror?: boolean }) => (
@@ -66,7 +65,7 @@ const PageArt = ({ seed, mirror }: { seed: number; mirror?: boolean }) => (
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const typing = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("input,textarea,select,[contenteditable=true]");
-const nowLabel = () => "3 Oct 2026, " + new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+const nowLabel = () => when(new Date());
 
 /** Picks the order to work on (URL param, else the first design order in the design stages) and shows an empty state if none exists. */
 export default function Designing() {
@@ -87,6 +86,13 @@ function DesignWorkspace({ order }: { order: Order }) {
   const needsReview = loadSettings().wf_design_review === true;          // Settings › General: admin reviews designs before the client (off: the designer sends the proof)
   const meta = metaFor(order.id);
   const proof = latestProof(order.id);
+  // who is designing this order: the designer set on its albums (Album Workflow), else the order's own assignee while it is in design
+  const designerNames = [...new Set(PROGRESS.filter((p) => p.orderId === order.id && p.dept === "design" && p.assignee).map((p) => p.assignee!))];
+  const designer = designerNames.length ? designerNames.join(", ")
+    : ["designing", "client_review", "design_review", "admin_approval"].includes(order.stage) && order.assignee && order.assignee !== "—" ? order.assignee : "Not assigned yet";
+  // what the client wrote on the shared album link, plus comments posted here
+  const clientComments: Comment[] = previewsOf(order.id).flatMap((pv) => pv.feedback.filter((f) => f.kind !== "approve" && f.message.trim()).map((f) => ({ by: f.name?.trim() || "Client", when: when(f.at), page: f.page ?? 0, text: f.message, at: f.at })))
+    .sort((a, b) => a.at.localeCompare(b.at)).map(({ at: _at, ...c }) => c); // eslint-disable-line @typescript-eslint/no-unused-vars
   const clientApproved = proofApproved(order.id);
   const lockedFile = FILES.find((f) => f.orderId === order.id && f.category === "Final Print" && f.state === "Locked" && !f.archived);
 
@@ -134,13 +140,15 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [jump, setJump] = useState<{ image: number; n: number }>({ image: 1, n: 0 });
   const [albumAt, setAlbumAt] = useState(1);
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
-  const [comments, setComments] = useState(COMMENTS0);
+  const [posted, setComments] = useState<Comment[]>([]);
+  const comments = [...clientComments, ...posted];
   const [cDraft, setCDraft] = useState("");
   const [cPage, setCPage] = useState("1");
   const [cErr, setCErr] = useState("");
   const [corrOpen, setCorrOpen] = useState(false);
   const [crPage, setCrPage] = useState("1");
   const [crText, setCrText] = useState("");
+  const DESIGNERS = designersList(designerNames);
   const [crAssignee, setCrAssignee] = useState(DESIGNERS[0]!);
   const [crErr, setCrErr] = useState<Record<string, string>>({});
   const notes = meta.notes;
@@ -164,11 +172,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [editNote, setEditNote] = useState<number | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-  const [events, setEvents] = useState([
-    { when: "1 Oct 2026, 10:24 AM", text: "Design started by Ramesh" },
-    { when: "2 Oct 2026, 06:10 PM", text: "Client comment received on page 1" },
-    { when: "3 Oct 2026, 04:15 PM", text: "Last edit saved" },
-  ]);
+  const [events, setEvents] = useState<{ when: string; text: string }[]>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
@@ -178,7 +182,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   const actor = currentActor();
   const corrItems: CorrItem[] = [
     ...correctionsFor(order.id).map((c): CorrItem => ({ key: c.id, source: "Admin", page: c.page, text: c.text, by: c.by, status: c.status, assignee: c.assignee, run: (st) => setCorrectionStatus(c, st) })),
-    ...(proof?.comments ?? []).map((c, i): CorrItem => ({ key: `P${proof!.version}-${i + 1}`, source: "Client", page: c.page, text: c.text, by: `Client (v${proof!.version})`, assignee: "Ramesh Kumar", status: c.resolved ? "Resolved" : c.inProgress ? "In Progress" : "Open",
+    ...(proof?.comments ?? []).map((c, i): CorrItem => ({ key: `P${proof!.version}-${i + 1}`, source: "Client", page: c.page, text: c.text, by: `Client (v${proof!.version})`, assignee: designer, status: c.resolved ? "Resolved" : c.inProgress ? "In Progress" : "Open",
       run: (st) => { setCommentState(proof!, c, { resolved: st === "Resolved", inProgress: st === "In Progress" }, "correction_" + st.toLowerCase().replace(" ", "_")); notify(); } })),
   ];
   const openCorr = corrItems.filter((c) => c.status !== "Resolved").length;
@@ -383,13 +387,12 @@ function DesignWorkspace({ order }: { order: Order }) {
     { I: Upload, l: latest ? "Upload new version" : "Upload album", run: () => document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }) },
   ];
   const details = [
-    { I: Ruler, l: "Album Size", v: `${order.size} (Landscape)` },
-    { I: FileText, l: "Total Pages", v: String(order.pages) },
+    { I: Ruler, l: "Album Size", v: (() => { const a = order.albums?.[0]; const sz = [...new Set((order.albums ?? []).map((x) => x.size).filter(Boolean))].join(", ") || (order.size && order.size !== "—" ? order.size : ""); return sz ? `${sz}${a?.orientation ? ` (${a.orientation})` : ""}` : "Not set"; })() },
+    { I: FileText, l: "Total Pages", v: (() => { const sh = (order.albums ?? []).reduce((t, a) => t + (a.sheets || 0), 0); return order.pages ? String(order.pages) : sh ? `${sh} sheets` : "Not set"; })() },
     { I: BookOpen, l: "Current Page", v: String(pageNo) },
-    { I: Palette, l: "Design Style", v: TEMPLATES[doc.tpl]! },
-    { I: User, l: "Designer", v: "Ramesh" },
-    { I: Clock, l: "Created On", v: "1 Oct 2026, 10:24 AM" },
-    { I: History, l: "Last Updated", v: "3 Oct 2026, 04:15 PM" },
+    { I: User, l: "Designer", v: designer },
+    { I: Clock, l: "Created On", v: order.pendingAt ? fmtDate(order.pendingAt) : "—" },
+    { I: History, l: "Last Updated", v: (() => { const ts = [...previewsOf(order.id).map((p) => p.at), ...FILES.filter((f) => f.orderId === order.id && !f.archived).map((f) => f.at), ...PROGRESS.filter((p) => p.orderId === order.id && p.at).map((p) => p.at!)].filter(Boolean).sort(); return ts.length ? when(ts.at(-1)!) : "—"; })() },
   ];
   const spreadIdxs = useMemo(() => spreads.map((_, i) => i), [spreads]);
 
@@ -486,7 +489,7 @@ function DesignWorkspace({ order }: { order: Order }) {
                 </div>
                 {[...comments].reverse().map((c, i) => (
                   <div key={i} className="rounded-xl border border-line p-3 text-[13px]">
-                    <div className="flex items-center gap-2"><Avatar name={c.by} size={24} /><b>{c.by}</b><Pill tone="indigo" className="ml-auto">Page {c.page}</Pill></div>
+                    <div className="flex items-center gap-2"><Avatar name={c.by} size={24} /><b>{c.by}</b>{c.page > 0 && <Pill tone="indigo" className="ml-auto">Page {c.page}</Pill>}</div>
                     <p className="mt-2">{c.text}</p><div className="mt-1 text-xs text-sub">{c.when}</div>
                   </div>
                 ))}
