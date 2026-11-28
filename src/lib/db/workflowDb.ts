@@ -24,6 +24,8 @@ export function dbEditOrder(orderUid: string | undefined, patch: Record<string, 
   const row: Record<string, unknown> = {};
   if (typeof patch.priority === "string") row.priority = PRI_OF(patch.priority);
   if (typeof patch.due === "string") row.due_date = patch.due;
+  if ("couple" in patch) row.couple_name = String(patch.couple ?? "").trim() || null;
+  if (typeof patch.event === "string") row.event_type = patch.event.trim() || null;
   if (typeof patch.workflow === "string") row.type = patch.workflow === "Printing" ? "printing_only" : "design_printing";
   if (typeof patch.assignee === "string") { const id = staffId(patch.assignee); if (!id) return `${patch.assignee} has no staff account`; row.assignee = id; }
   if (!Object.keys(row).length) return null;

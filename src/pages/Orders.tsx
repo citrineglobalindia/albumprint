@@ -41,7 +41,7 @@ function inTab(o: Order, t: TabKey) {
 }
 const PRIO_RANK: Record<Priority, number> = { Low: 0, Normal: 1, High: 2, Urgent: 3, VIP: 4 };
 const COLS = [
-  { key: "id", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "event", label: "Event" }, { key: "workflow", label: "Workflow Type" },
+  { key: "id", label: "Order ID" }, { key: "customer", label: "Customer" }, { key: "couple", label: "Couple" }, { key: "event", label: "Event" }, { key: "workflow", label: "Workflow Type" },
   { key: "size", label: "Album Size" }, { key: "stage", label: "Current Stage" }, { key: "priority", label: "Priority" }, { key: "pendingAt", label: "Order Date" },
   { key: "assignee", label: "Assigned To" }, { key: "due", label: "Due Date" }, { key: "pay", label: "Payment Status" },
 ];
@@ -250,7 +250,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
             <thead>
               <tr>
                 <Th><input type="checkbox" aria-label="Select page" checked={allSel} onChange={() => setSel((p) => { const n = new Set(p); pageRows.forEach((o) => allSel ? n.delete(o.id) : n.add(o.id)); return n; })} /></Th>
-                {th("id", "Order ID")}{th("customer", "Customer")}{th("event", "Event")}{th("workflow", "Workflow Type")}{th("size", "Album Size")}
+                {th("id", "Order ID")}{th("customer", "Customer")}{th("couple", "Couple")}{th("event", "Event")}{th("workflow", "Workflow Type")}{th("size", "Album Size")}
                 {th("stage", "Current Stage")}{th("priority", "Priority")}{th("pendingAt", "Order Date")}{th("assignee", "Assigned To")}{th("due", "Due Date")}{th("pay", "Payment Status")}{canSeeCost() && show_("profit") && <Th className="text-right">Profit / Loss</Th>}
                 <Th className="text-right">Actions</Th>
               </tr>
@@ -261,6 +261,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
                   <Td><input type="checkbox" aria-label={`Select ${o.id}`} checked={sel.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} /></Td>
                   {show_("id") && <Td className="font-bold">{o.id}</Td>}
                   {show_("customer") && <Td><div className="flex items-center gap-3"><Thumb seed={o.customer} size={36} /><div className="leading-tight"><div className="font-semibold">{o.customer}</div><div className="text-xs text-sub">{o.mobile}</div></div></div></Td>}
+                  {show_("couple") && <Td><span data-testid={`couple-${o.id}`}>{o.couple || <span className="text-sub">—</span>}</span></Td>}
                   {show_("event") && <Td>{o.event}</Td>}
                   {show_("workflow") && <Td>{o.workflow}</Td>}
                   {show_("size") && <Td>{o.size}</Td>}

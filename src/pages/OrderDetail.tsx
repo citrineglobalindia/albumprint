@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Check, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck, Trash2 } from "lucide-react";
+import { Check, Pencil, ChevronRight, FileImage, Lock, Download, Upload, Pause, Play, Repeat, MinusCircle, Phone, CalendarDays, User, History, ArrowRight, Archive, ShieldAlert, Ban, LockOpen, CircleCheck, Trash2 } from "lucide-react";
 import { PageHeader, Panel, Pill, PriorityPill, PayPill, Avatar, ProgressBar, OutlineButton, PrimaryButton, LinkAction, SlideOver, Field, inputCls, cx } from "../components/ui";
 import { OrderReminderButton } from "../components/Reminders";
 import { LabsPanel } from "../components/LabsPanel";
@@ -50,6 +50,7 @@ export default function OrderDetail() {
   const base = ORDERS.find((o) => o.id === id);
   useEffect(() => { if (backendOn && id && base?.uid) void import("../lib/db/orders").then((m) => m.loadOrderDetail(id)); }, [id, base?.uid]);   // albums, items and costing load when the order opens
   const [convert, setConvert] = useState(false);
+  const [editing, setEditing] = useState<{ couple: string; event: string; due: string; priority: string } | null>(null);
   const [reason, setReason] = useState("");
   const [cat, setCat] = useState<FileCategory>("Source Photos");
   const [showArchived, setShowArchived] = useState(false);
@@ -109,7 +110,8 @@ export default function OrderDetail() {
   return (
     <>
       <div className="mb-2 flex items-center gap-1.5 text-xs text-sub"><Link to="/orders" className="hover:underline">Orders</Link><ChevronRight className="size-3" aria-hidden /><b className="text-ink">{o.id}</b></div>
-      <PageHeader title={`${o.id} · ${o.customer}`} subtitle={`${o.event} · ${o.workflow} · due ${fmtDate(o.due)}`}>
+      <PageHeader title={`${o.id} · ${o.customer}`} subtitle={`${o.couple ? `${o.couple} · ` : ""}${o.event} · ${o.workflow} · due ${fmtDate(o.due)}`}>
+        {(role === "admin" || role === "reception") && !o.closed && !cancelled && <OutlineButton icon={Pencil} onClick={() => setEditing({ couple: o.couple ?? "", event: o.event === "—" ? "" : o.event, due: o.due, priority: o.priority })}>Edit order</OutlineButton>}
         {o.closed && <Pill tone="slate" icon={Lock} className="!px-3 !py-1.5 !text-sm">Closed</Pill>}
         <Pill tone={cancelled ? "red" : o.hold ? "pink" : stageTone(o.stage)} dot className="!px-3 !py-1.5 !text-sm" >{cancelled ? "Cancelled" : o.hold ?? stageLabel(o.stage)}</Pill>
         {printingOnly && !locked && <PrimaryButton icon={Repeat} onClick={() => setConvert(true)}>Convert to Design + Printing</PrimaryButton>}
@@ -284,6 +286,26 @@ export default function OrderDetail() {
         </Panel>
       </div>
 
+      <SlideOver open={!!editing} onClose={() => setEditing(null)} title={`Edit ${o.id}`} footer={<><OutlineButton className="!h-11" onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Check} onClick={() => {
+        if (!editing) return;
+        if (!editing.due) { fail("Choose the due date"); return; }
+        const patch: Partial<typeof o> = {};
+        if ((editing.couple.trim() || undefined) !== (o.couple || undefined)) patch.couple = editing.couple.trim() || undefined;
+        if (editing.event.trim() && editing.event.trim() !== o.event) patch.event = editing.event.trim();
+        if (editing.due !== o.due) patch.due = editing.due;
+        if (editing.priority !== o.priority) patch.priority = editing.priority as typeof o.priority;
+        if (!Object.keys(patch).length) { setEditing(null); return; }
+        editOrder(o.id, patch, "update", Object.keys(patch).join(", ")); setEditing(null); show(`${o.id} updated`);
+      }}>Save changes</PrimaryButton></>}>
+        {editing && (
+          <div className="space-y-1" data-testid="edit-order">
+            <Field label="Couple name" hint="e.g. Asha & Ravi"><input aria-label="Couple name" className={inputCls} maxLength={120} value={editing.couple} onChange={(e) => setEditing({ ...editing, couple: e.target.value })} /></Field>
+            <Field label="Event"><input aria-label="Event" className={inputCls} maxLength={80} value={editing.event} onChange={(e) => setEditing({ ...editing, event: e.target.value })} placeholder="e.g. Wedding" /></Field>
+            <Field label="Due date" required><input aria-label="Due date" type="date" className={inputCls} value={editing.due} onChange={(e) => setEditing({ ...editing, due: e.target.value })} /></Field>
+            <Field label="Priority"><select aria-label="Priority" className={inputCls} value={editing.priority} onChange={(e) => setEditing({ ...editing, priority: e.target.value })}>{["Low", "Normal", "High", "Urgent", "VIP"].map((p) => <option key={p}>{p}</option>)}</select></Field>
+          </div>
+        )}
+      </SlideOver>
       <SlideOver open={convert} onClose={() => setConvert(false)} title="Convert to Design + Printing" footer={<><OutlineButton className="!h-11" onClick={() => setConvert(false)}>Cancel</OutlineButton><PrimaryButton icon={Repeat} onClick={() => { if (!reason.trim()) return; editOrder(o.id, { workflow: "Design + Printing" }, "workflow_convert", `Printing Only → Design + Printing. Reason: ${reason.trim()}`); setConvert(false); setReason(""); show("Converted — revised commercial approval required"); }}>Convert</PrimaryButton></>}>
         <p className="mb-4 text-sm text-sub">Colour Grading and Designing will be added to this order. A reason and revised commercial approval are required (SRS ALB-FR-0080).</p>
         <Field label="Reason" required><textarea className={`${inputCls} h-24 py-2`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Customer supplied files need redesign" /></Field>
