@@ -27,6 +27,7 @@ import { useLive } from "../lib/useLive";
 import { GradingSplit } from "../components/GradingSplit";
 import { OrderProfitStrip } from "../components/ProfitPanel";
 import { canSeeCost } from "../lib/labs";
+import { AlbumPreviewPanel } from "../components/AlbumPreviewPanel";
 
 // Stages skipped for Printing Only orders (SRS §5.2: shown as "Not Required").
 const SKIPPED = ["colour_grading", "admin_approval", "designing", "client_review", "final_approval"];
@@ -174,6 +175,8 @@ export default function OrderDetail() {
         </details>
       </Panel>
 
+      {o.workflow !== "Printing" && <AlbumPreviewPanel o={o} onDone={(m, ok) => (ok ? show(m) : fail(m))} />}
+      <div className="mt-5" />
       {pricingOf(o.id) ? <OrderPricingPanel o={o} show={show} /> : <CostingPanel o={o} show={show} fail={fail} />}
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_1fr_340px]">

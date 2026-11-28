@@ -149,3 +149,6 @@ export async function portalRespond(token: string, action: "approve" | "correcti
   const { error } = await portal().rpc("proof_respond", { token, action, comments: comments.map((c) => ({ page: c.page, text: c.text })), name });
   return error ? { error: portalErr(error.message) } : { ok: true };
 }
+
+/** The no-login client, for other public pages (album preview links). */
+export const portalClient = () => portal();

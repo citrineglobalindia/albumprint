@@ -15,3 +15,5 @@ import { hydrateOpening } from "../openingBalance";
 if (onLabs) regLabs("old balances", hydrateOpening);
 import { hydrateShares } from "../gradingShares";
 if (onLabs) regLabs("grading shares", hydrateShares);
+import { hydratePreviews } from "../albumPreview";
+if (onLabs) regLabs("album previews", hydratePreviews);

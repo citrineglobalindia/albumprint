@@ -10,6 +10,7 @@ import { ORDERS } from "../lib/data";
 import { fmtDate, inr } from "../lib/format";
 import { ALBUM_LABS, LABS, LAB_STATUS_LABEL, albumPurchase, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, labName, purchaseOf, saveLab, setLabStatus, type Lab, type LabStatus } from "../lib/labs";
 import { ProfitPanel } from "../components/ProfitPanel";
+import { LabAccounts } from "../components/LabAccounts";
 
 // Labs: the printing labs we use, and every album's work at a lab — waiting to be sent, at the lab, received back.
 type Tab = LabStatus | "all";
@@ -71,6 +72,7 @@ export default function Labs() {
         </div>
       </Panel>
 
+      {cost && <LabAccounts onDone={(m) => show(m)} />}
       {cost && <ProfitPanel className="mt-5" orders={ORDERS} title="Profit" />}
 
       <Panel className="mt-5" title="Our labs" subtitle="The labs that print for us" action={canManageLabs() ? <button type="button" onClick={() => setEdit({ name: "", contact: "", phone: "", notes: "", active: true })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark"><Plus className="size-4" />Add lab</button> : undefined}>

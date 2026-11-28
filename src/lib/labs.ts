@@ -13,7 +13,10 @@ import type { PricedLine } from "./orderPricing";
 export interface Lab { id: string; name: string; contact?: string; phone?: string; notes?: string; active: boolean }
 export type LabStatus = "not_sent" | "sent" | "received";
 export interface AlbumLab { orderId: string; position: number; labId?: string; status: LabStatus; sentAt?: string; sentBy?: string; receivedAt?: string; receivedBy?: string; note?: string }
-export interface Purchase { orderId: string; position: number; amount: number; billNo?: string; billDate?: string }
+export interface Purchase { orderId: string; position: number; amount: number; billNo?: string; billDate?: string; billFile?: string; billFileName?: string }
+/** A payment we made to a lab (migration 0074): a lab's payable = its purchase bills − these. */
+export interface LabPayment { id: string; labId: string; amount: number; date: string; mode: string; ref?: string; note?: string; by?: string }
+export const LAB_PAYMENTS: LabPayment[] = persistArray<LabPayment>("lab_payments", []);
 
 export const LABS: Lab[] = persistArray<Lab>("labs", []);
 export const ALBUM_LABS: AlbumLab[] = persistArray<AlbumLab>("album_labs", []);
@@ -87,14 +90,15 @@ export async function hydrateLabs() {
   if (!backendOn) return;
   const c = await db();
   const none = Promise.resolve({ data: [] as Row[], error: null });
-  const [l, a, p, lr, std] = await Promise.all([c.from("labs").select("*").order("name"), c.from("album_labs").select("*"), canSeeCost() ? c.from("album_purchases").select("*") : none, canSeeCost() ? c.from("lab_item_rates").select("lab_id,item_id,rate") : none, canSeeCost() ? c.from("item_purchase_costs").select("item_id,rate") : none]);
+  const [l, a, p, lr, std, lp] = await Promise.all([c.from("labs").select("*").order("name"), c.from("album_labs").select("*"), canSeeCost() ? c.from("album_purchases").select("*") : none, canSeeCost() ? c.from("lab_item_rates").select("lab_id,item_id,rate") : none, canSeeCost() ? c.from("item_purchase_costs").select("item_id,rate") : none, canSeeCost() ? c.from("lab_payments").select("*").order("paid_on", { ascending: false }) : none]);
   if (l.error || a.error) throw new Error((l.error ?? a.error)!.message);
   const { staffName } = await import("./db/production");
   LABS.splice(0, LABS.length, ...((l.data ?? []) as Row[]).map((r) => ({ id: r.id, name: r.name, contact: r.contact ?? undefined, phone: r.phone ?? undefined, notes: r.notes ?? undefined, active: r.active })));
   ALBUM_LABS.splice(0, ALBUM_LABS.length, ...((a.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, labId: r.lab_id ?? undefined, status: r.status as LabStatus, sentAt: r.sent_at ?? undefined, sentBy: staffName(r.sent_by) ?? undefined, receivedAt: r.received_at ?? undefined, receivedBy: staffName(r.received_by) ?? undefined, note: r.note ?? undefined }] : []; }));
   if (!lr.error) LAB_RATES.splice(0, LAB_RATES.length, ...((lr.data ?? []) as Row[]).map((r) => ({ labId: r.lab_id, itemId: r.item_id, rate: Number(r.rate) })),
     ...(std.error ? LAB_RATES.filter((x) => x.labId === STD_COST) : ((std.data ?? []) as Row[]).map((r) => ({ labId: STD_COST, itemId: r.item_id, rate: Number(r.rate) }))));
-  PURCHASES.splice(0, PURCHASES.length, ...((p.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, amount: Number(r.amount), billNo: r.bill_no ?? undefined, billDate: r.bill_date ?? undefined }] : []; }));
+  PURCHASES.splice(0, PURCHASES.length, ...((p.data ?? []) as Row[]).flatMap((r) => { const id = codeOf(r.order_id); return id ? [{ orderId: id, position: r.position, amount: Number(r.amount), billNo: r.bill_no ?? undefined, billDate: r.bill_date ?? undefined, billFile: r.bill_file ?? undefined, billFileName: r.bill_file_name ?? undefined }] : []; }));
+  if (!lp.error) { const { staffName: sn } = await import("./db/production"); LAB_PAYMENTS.splice(0, LAB_PAYMENTS.length, ...((lp.data ?? []) as Row[]).map((r) => ({ id: r.id, labId: r.lab_id, amount: Number(r.amount), date: r.paid_on, mode: String(r.mode), ref: r.reference ?? undefined, note: r.note ?? undefined, by: sn(r.created_by) ?? undefined }))); }
   notify();
 }
 
@@ -202,4 +206,84 @@ export async function saveLabRates(labId: string, rows: { itemId: string; rate: 
     if (r.rate === null) { if (i >= 0) LAB_RATES.splice(i, 1); } else if (i >= 0) LAB_RATES[i]!.rate = r.rate; else LAB_RATES.push({ labId, itemId: r.itemId, rate: r.rate });
   }
   notify(); return null;
+}
+
+/* ───────── purchase bill files (private bucket purchase-bills, admin / accounts) ───────── */
+export const BILL_BUCKET = "purchase-bills";
+const BILL_EXT = /\.(pdf|jpe?g|png|webp)$/i;
+/** Bill files picked in this browser (demo mode keeps no bytes; also used for an instant preview). */
+export const LOCAL_BILLS = new Map<string, string>();
+const billKey = (orderId: string, position: number) => `${orderId}#${position}`;
+
+/** Attach the supplier's bill (PDF or photo) to an album's purchase. The purchase amount must be saved first. */
+export async function uploadPurchaseBill(orderId: string, position: number, file: File): Promise<Res> {
+  if (!canSeeCost()) return { ok: false, msg: "Only admin and accounts keep purchase bills" };
+  const cur = purchaseRec(orderId, position); if (!cur) return { ok: false, msg: "Save the purchase amount first, then attach its bill" };
+  if (!BILL_EXT.test(file.name)) return { ok: false, msg: "Attach the bill as a PDF or a photo (JPG / PNG)" };
+  if (file.size > 25 * 1024 ** 2) return { ok: false, msg: "The bill file is larger than 25 MB" };
+  let path = `local:${file.name}`;
+  if (backendOn) {
+    const order_id = uidOf(orderId); if (!order_id) return { ok: false, msg: "Order not found" };
+    const c = await db();
+    path = `${orderId}/a${position}-${Date.now()}-${file.name.normalize("NFKD").replace(/[^A-Za-z0-9._()-]+/g, "_")}`;
+    const up = await c.storage.from(BILL_BUCKET).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, msg: up.error.message };
+    const r = await c.from("album_purchases").update({ bill_file: path, bill_file_name: file.name }).eq("order_id", order_id).eq("position", position);
+    if (r.error) return { ok: false, msg: r.error.message };
+    if (cur.billFile && !cur.billFile.startsWith("local:")) void c.storage.from(BILL_BUCKET).remove([cur.billFile]);   // the old bill file is replaced
+  } else logAudit({ entity: "order", entityId: orderId, action: "purchase_bill_file", detail: `Album ${position}: ${file.name}` });
+  try { LOCAL_BILLS.set(billKey(orderId, position), URL.createObjectURL(file)); } catch { /* ignore */ }
+  cur.billFile = path; cur.billFileName = file.name; notify();
+  return { ok: true, msg: `Bill attached: ${file.name}` };
+}
+/** Open an album's purchase bill in a new tab. */
+export async function openPurchaseBill(orderId: string, position: number): Promise<Res> {
+  const cur = purchaseRec(orderId, position); if (!cur?.billFile) return { ok: false, msg: "No bill attached" };
+  const local = LOCAL_BILLS.get(billKey(orderId, position));
+  let url = local;
+  if (!url && backendOn && !cur.billFile.startsWith("local:")) {
+    const { data, error } = await (await db()).storage.from(BILL_BUCKET).createSignedUrl(cur.billFile, 300);
+    if (error || !data) return { ok: false, msg: error?.message ?? "Could not open the bill" };
+    url = data.signedUrl;
+  }
+  if (!url) return { ok: false, msg: "Demo: the bill file is kept only in the browser it was attached in" };
+  window.open(url, "_blank", "noopener"); return { ok: true, msg: `Opened ${cur.billFileName ?? "the bill"}` };
+}
+
+/* ───────── lab-wise purchases, payments and payable ───────── */
+export const NO_LAB = "";
+/** Every purchase entered on an album, with the lab that album is printed at. */
+export function purchaseHistory(labId?: string) {
+  return PURCHASES.map((p) => {
+    const o = ORDERS.find((x) => x.id === p.orderId), lab = albumLab(p.orderId, p.position)?.labId ?? NO_LAB;
+    const title = o ? albumsOf(o).find((a) => a.position === p.position)?.title ?? `Album ${p.position}` : `Album ${p.position}`;
+    return { ...p, labId: lab, customer: o?.customer ?? "", title, date: p.billDate ?? o?.pendingAt ?? "" };
+  }).filter((p) => labId === undefined || p.labId === labId).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+/** A lab's totals: what its bills add up to, what we paid, and what we still owe it. */
+export function labPayable(labId: string) {
+  const purchases = purchaseHistory(labId).reduce((s, p) => s + p.amount, 0), paid = LAB_PAYMENTS.filter((p) => p.labId === labId).reduce((s, p) => s + p.amount, 0);
+  return { purchases: Math.round(purchases * 100) / 100, paid: Math.round(paid * 100) / 100, payable: Math.round((purchases - paid) * 100) / 100 };
+}
+/** Record a payment made to a lab (admin / accounts). */
+export async function addLabPayment(d: { labId: string; amount: number; date: string; mode: string; ref?: string; note?: string }): Promise<Res> {
+  if (!canSeeCost()) return { ok: false, msg: "Only admin and accounts record lab payments" };
+  if (!LABS.some((l) => l.id === d.labId)) return { ok: false, msg: "Choose the lab" };
+  if (!(d.amount > 0) || !Number.isFinite(d.amount)) return { ok: false, msg: "Enter the amount paid" };
+  let id = `LP${Date.now().toString(36)}`;
+  if (backendOn) {
+    const mode = ({ UPI: "upi", Cash: "cash", "Bank Transfer": "bank_transfer", Cheque: "cheque" } as Record<string, string>)[d.mode] ?? "bank_transfer";
+    const { data, error } = await (await db()).from("lab_payments").insert({ lab_id: d.labId, amount: d.amount, paid_on: d.date, mode, reference: d.ref?.trim() || null, note: d.note?.trim() || null }).select("id").single();
+    if (error || !data) return { ok: false, msg: error?.message ?? "Could not save the payment" };
+    id = String(data.id);
+  } else logAudit({ entity: "lab", entityId: d.labId, action: "lab_payment", detail: `${labName(d.labId)}: ₹${d.amount} ${d.mode}` });
+  LAB_PAYMENTS.unshift({ id, labId: d.labId, amount: d.amount, date: d.date, mode: d.mode, ref: d.ref?.trim() || undefined, note: d.note?.trim() || undefined, by: currentActor().name });
+  notify(); return { ok: true, msg: `Payment of ₹${d.amount.toLocaleString("en-IN")} to ${labName(d.labId)} saved · still payable ₹${labPayable(d.labId).payable.toLocaleString("en-IN")}` };
+}
+/** Remove a payment entered by mistake (admin). */
+export async function deleteLabPayment(id: string): Promise<Res> {
+  if (currentActor().role !== "admin") return { ok: false, msg: "Only an admin removes a lab payment" };
+  const i = LAB_PAYMENTS.findIndex((p) => p.id === id); if (i < 0) return { ok: false, msg: "Not found" };
+  if (backendOn) { const { error } = await (await db()).from("lab_payments").delete().eq("id", id); if (error) return { ok: false, msg: error.message }; }
+  const [p] = LAB_PAYMENTS.splice(i, 1); notify(); return { ok: true, msg: `Payment of ₹${p!.amount.toLocaleString("en-IN")} removed` };
 }

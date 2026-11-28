@@ -1,0 +1,79 @@
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { CheckCircle2, MessageSquarePlus, PenLine, ThumbsUp } from "lucide-react";
+import { AlbumFlipbook } from "../components/AlbumFlipbook";
+import { BrandWordmark, DevCredit } from "../components/BrandMark";
+import { cx } from "../components/ui";
+import { publicFeedback, publicGet, type PublicView } from "../lib/albumPreview";
+import { fmtDate } from "../lib/format";
+
+/** The client's album link (no login): turn the pages, request changes (on a page or in general), or approve the album. */
+export default function AlbumPortal() {
+  const { token = "" } = useParams();
+  const [view, setView] = useState<PublicView | null | undefined>(undefined);
+  const [page, setPage] = useState(1);
+  const [mode, setMode] = useState<null | "changes" | "approve">(null);
+  const [name, setName] = useState(() => { try { return localStorage.getItem("albumpro.client.name") ?? ""; } catch { return ""; } });
+  const [msg, setMsg] = useState(""); const [onPage, setOnPage] = useState(true);
+  const [busy, setBusy] = useState(false); const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = () => void publicGet(token).then(setView, () => setView(null));
+  useEffect(load, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const send = async () => {
+    setBusy(true);
+    try { localStorage.setItem("albumpro.client.name", name); } catch { /* ignore */ }
+    const r = await publicFeedback(token, { page: mode === "changes" && onPage ? page : undefined, name, message: msg, kind: mode === "approve" ? "approve" : "changes" });
+    setBusy(false); setNote({ ok: r.ok, text: r.msg });
+    if (r.ok) { setMode(null); setMsg(""); load(); }
+  };
+
+  const header = (
+    <header className="border-b border-line bg-white"><div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3"><BrandWordmark onLight height={40} /><span className="ml-auto text-[11px] text-sub">Album preview</span></div></header>
+  );
+  if (view === undefined) return <div className="min-h-screen bg-page">{header}<p className="p-10 text-center text-sm text-sub">Opening your album…</p></div>;
+  if (view === null) return <div className="min-h-screen bg-page">{header}<div className="mx-auto max-w-md p-10 text-center"><h1 className="text-xl font-extrabold">This album link is not available</h1><p className="mt-2 text-sm text-sub">It may have been replaced by a newer version. Please ask the studio for the latest link.</p></div></div>;
+  const approved = view.status === "approved";
+  return (
+    <div className="min-h-screen bg-page text-ink">
+      {header}
+      <main className="mx-auto max-w-6xl px-3 py-5 sm:px-4">
+        <div className="mb-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-0 flex-1"><h1 className="text-xl font-extrabold sm:text-2xl">{view.title}</h1><p className="text-xs text-sub">{view.customer} · order {view.orderCode} · version {view.version}</p></div>
+          {approved ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800" data-testid="client-status"><CheckCircle2 className="size-4" />Approved{view.approvedBy ? ` by ${view.approvedBy}` : ""}</span>
+            : view.status === "changes" ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800" data-testid="client-status">Changes requested — the studio is on it</span> : null}
+        </div>
+
+        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={setPage} />
+
+        {note && <p role="status" className={cx("mt-3 rounded-xl px-4 py-2 text-sm font-semibold", note.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700")}>{note.text}</p>}
+
+        {!approved && mode === null && (
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            <button type="button" onClick={() => { setMode("changes"); setNote(null); }} className="inline-flex h-11 items-center gap-2 rounded-xl border border-amber-300 bg-white px-5 text-sm font-bold text-amber-800 hover:bg-amber-50"><PenLine className="size-4" />Request changes</button>
+            <button type="button" onClick={() => { setMode("approve"); setNote(null); }} className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white hover:bg-emerald-700"><ThumbsUp className="size-4" />Approve album</button>
+          </div>
+        )}
+        {mode && (
+          <form className="mx-auto mt-4 max-w-xl space-y-3 rounded-2xl border border-line bg-white p-4" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+            <h2 className="text-base font-extrabold">{mode === "approve" ? "Approve this album" : "What would you like changed?"}</h2>
+            <label className="block text-xs font-semibold">Your name<input aria-label="Your name" className="mt-1 h-10 w-full rounded-lg border border-line px-3 text-sm" value={name} onChange={(e) => setName(e.target.value)} /></label>
+            {mode === "changes" && <label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={onPage} onChange={(e) => setOnPage(e.target.checked)} />About {view.spreads ? "spread" : "page"} {page} (the one open now)</label>}
+            <label className="block text-xs font-semibold">{mode === "approve" ? "Message (optional)" : "Your changes"}<textarea aria-label={mode === "approve" ? "Approval message" : "Your changes"} rows={3} className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder={mode === "approve" ? "Looks great!" : "e.g. Replace the photo on the right with the one from the stage"} /></label>
+            <div className="flex gap-2"><button type="submit" disabled={busy} className={cx("h-10 rounded-lg px-4 text-sm font-bold text-white disabled:opacity-50", mode === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700")}>{mode === "approve" ? "Approve album" : "Send changes"}</button><button type="button" onClick={() => setMode(null)} className="h-10 rounded-lg px-4 text-sm font-bold hover:bg-slate-100">Cancel</button></div>
+          </form>
+        )}
+
+        {view.feedback.length > 0 && (
+          <section className="mx-auto mt-6 max-w-xl" aria-label="Your notes">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-extrabold"><MessageSquarePlus className="size-4" />Your notes</h2>
+            <ul className="space-y-2">{view.feedback.map((f, i) => (
+              <li key={i} className="rounded-xl border border-line bg-white p-3 text-sm">
+                <div className="mb-0.5 text-[11px] text-sub">{f.kind === "approve" ? "Approval" : f.page ? `${view.spreads ? "Spread" : "Page"} ${f.page}` : "General"}{f.name ? ` · ${f.name}` : ""} · {fmtDate(f.at)}{f.resolved ? " · ✓ done by the studio" : ""}</div>{f.message}
+              </li>))}</ul>
+          </section>
+        )}
+      </main>
+      <footer className="px-4 py-6 text-center text-[11px] text-sub">Private link for your album — please don't share it. <DevCredit className="mt-1" /></footer>
+    </div>
+  );
+}

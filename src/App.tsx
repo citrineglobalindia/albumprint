@@ -37,6 +37,7 @@ const ControlCenter = lazy(() => import("./pages/ControlCenter"));
 const AuditLog = lazy(() => import("./pages/AuditLog"));
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const ProofPortal = lazy(() => import("./pages/ProofPortal"));
+const AlbumPortal = lazy(() => import("./pages/AlbumPortal"));
 
 function PageSkeleton() {
   return (
@@ -72,6 +73,7 @@ export default function App() {
         <Routes>
           <Route path="login" element={<Login />} />
           <Route path="proof/:token" element={<ProofPortal />} />
+          <Route path="album/:token" element={<AlbumPortal />} />
           <Route element={<Protected />}>
             <Route index element={<Home />} />
             <Route path="orders/:id" element={page(<OrderDetail />)} />

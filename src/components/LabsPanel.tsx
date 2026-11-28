@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { PackageCheck, Send, TrendingUp, Undo2 } from "lucide-react";
+import { FileText, PackageCheck, Paperclip, Send, TrendingUp, Undo2 } from "lucide-react";
 import { Panel, Pill, cx, inputCls } from "./ui";
 import { useStore } from "../lib/store";
 import { advanceAfter } from "../lib/albumFlow";
 import { inr, fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
-import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, purchaseRec, setAlbumLab, setLabStatus, setPurchase, type LabStatus } from "../lib/labs";
+import { LABS, LAB_STATUS_LABEL, albumLab, albumsOf, canManageLabs, canMoveLabWork, canSeeCost, estimatedPurchase, labName, profitOf, openPurchaseBill, purchaseRec, setAlbumLab, setLabStatus, setPurchase, uploadPurchaseBill, type LabStatus } from "../lib/labs";
 import { TODAY_STR } from "../lib/finance";
 
 const TONE: Record<LabStatus, "slate" | "amber" | "green"> = { not_sent: "slate", sent: "amber", received: "green" };
@@ -53,6 +53,14 @@ export function LabsPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: b
                     <label className="text-xs font-semibold text-sub">Bill no.<input aria-label={`Bill number for ${a.title}`} className={cx(inputCls, "mt-1 h-9 w-36 text-sm")} placeholder="Supplier bill no." value={f.billNo} onChange={(e) => set("billNo", e.target.value)} /></label>
                     <label className="text-xs font-semibold text-sub">Bill date<input aria-label={`Bill date for ${a.title}`} type="date" max={TODAY_STR} className={cx(inputCls, "mt-1 h-9 w-40 text-sm")} value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></label>
                     <button type="button" disabled={!dirty} onClick={() => { const n = f.amount.trim() === "" ? null : Number(f.amount); void setPurchase(o.id, a.position, n, { billNo: f.billNo, billDate: f.billDate }).then((r) => { onDone(r.msg, r.ok); if (r.ok) { const e2 = { ...edit }; delete e2[a.position]; setEdit(e2); } }); }} className="inline-flex h-9 items-center rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-40">Save purchase</button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" data-testid={`bill-file-${a.position}`}>
+                    <span className="font-semibold text-sub">Bill file:</span>
+                    {rec?.billFile ? <button type="button" onClick={() => void openPurchaseBill(o.id, a.position).then((r) => onDone(r.msg, r.ok))} className="inline-flex items-center gap-1 font-bold text-brand hover:underline"><FileText className="size-3.5" />{rec.billFileName ?? "View bill"}</button> : <span className="text-sub">none</span>}
+                    <label className={cx("inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg border border-line bg-white px-2.5 font-bold hover:bg-slate-50", !rec && "pointer-events-none opacity-40")} title={rec ? undefined : "Save the purchase amount first"}>
+                      <Paperclip className="size-3.5" />{rec?.billFile ? "Replace bill" : "Attach bill"}
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" aria-label={`Attach purchase bill for ${a.title}`} className="sr-only" disabled={!rec} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadPurchaseBill(o.id, a.position, f).then((r) => onDone(r.msg, r.ok)); }} />
+                    </label>
                   </div>
                   {(() => { const e = estimatedPurchase(o, a.position); if (!e) return p !== undefined ? null : <span className="mt-1 block text-[11px] text-sub">No purchase cost on these items yet{al?.labId ? ` for ${labName(al.labId)}` : ""} — add it in Catalog › Prices (Purchase cost · Standard)</span>; return (
                     <span className={cx("mt-1 block text-[11px]", p === undefined ? "font-semibold text-violet-800" : "text-sub")} data-testid={`lab-estimate-${a.position}`}>

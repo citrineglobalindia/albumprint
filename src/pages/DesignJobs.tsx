@@ -19,6 +19,7 @@ import { currentActor } from "../lib/audit";
 import { advanceAfter, startAlbumWork } from "../lib/albumFlow";
 import { AlbumProgress } from "../components/AlbumProgress";
 import type { Order, Priority } from "../lib/data";
+import { AlbumPreviewPanel } from "../components/AlbumPreviewPanel";
 
 // Album Designing — the designer's queue, like Colour Grading: every design job with its status, designer, files and a running timer;
 // a job card with the photos to design with, the pages uploaded, the client's corrections, an internal note and the history.
@@ -152,6 +153,7 @@ export default function DesignJobs() {
                 ? <JobProgress key={`album-${openAlbum}`} orderId={cur.id} dept="design" album={openAlbum} title={`${cur.albums?.[openAlbum - 1]?.title || `Album ${openAlbum}`} · my update`} countLabel="Sheets designed" of={cur.albums?.[openAlbum - 1]?.sheets || undefined} pathLabel="Design files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.id, "design") : null; if (a) show(a.msg); }} />
                 : <JobProgress orderId={cur.id} dept="design" countLabel="Sheets designed" of={cur.pages || undefined} pathLabel="Design files path / link" onDone={(m, ok) => { show(m); const a = ok ? advanceAfter(cur.id, "design") : null; if (a) show(a.msg); }} />}
               <div className="mt-3"><AlbumProgress o={cur} only={["design"]} onDone={(m) => show(m)} /></div>
+              <AlbumPreviewPanel o={cur} onDone={(m) => show(m)} />
               {s === "Corrections" && p && (
                 <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700" data-testid="client-corrections">
                   <b>Client asked for corrections (v{p.version}):</b>
