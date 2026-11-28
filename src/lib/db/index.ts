@@ -11,3 +11,5 @@ import { hydrateLabs } from "../labs";
 if (onLabs) regLabs("labs", hydrateLabs);
 import { hydrateProgress } from "../jobProgress";
 if (onLabs) regLabs("job progress", hydrateProgress);
+import { hydrateOpening } from "../openingBalance";
+if (onLabs) regLabs("old balances", hydrateOpening);

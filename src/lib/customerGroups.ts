@@ -2,6 +2,7 @@ import { CUSTOMERS, ORDERS, type Customer, type Order } from "./data";
 import { backendOn } from "./supabase";
 import { notify } from "./store";
 import { currentActor, logAudit } from "./audit";
+import { openingDue } from "./openingBalance";
 
 // One customer, one line: records with the same mobile number are the same studio (typed in again as a new customer).
 // The list shows the oldest record with every order of the group; an admin can merge the duplicates into it (merge_customers, 0069).
@@ -23,7 +24,7 @@ export function customerStats(c: Customer) {
   const os = customerOrders(c).filter((o) => o.hold !== "Cancelled");
   const billed = os.reduce((s, o) => s + o.total, 0), paid = os.reduce((s, o) => s + o.paid, 0);
   const dates = os.map((o) => o.pendingAt).filter(Boolean).sort();
-  return { orders: os.length, active: os.filter((o) => !["delivered", "closed"].includes(o.stage) && !o.closed).length, billed, paid, dues: Math.max(0, billed - paid), first: dates[0], last: dates.at(-1) };
+  return { orders: os.length, active: os.filter((o) => !["delivered", "closed"].includes(o.stage) && !o.closed).length, billed, paid, dues: Math.max(0, billed - paid) + openingDue(c), opening: openingDue(c), first: dates[0], last: dates.at(-1) };   // dues include the old balance still owed
 }
 
 /** Admin: merge the duplicates into the customer kept (orders, invoices and messages move; the duplicates are removed). */

@@ -18,6 +18,7 @@ import { albumStatus } from "../lib/albumFlow";
 import { statusLabel } from "../lib/jobProgress";
 import { downloadCsv } from "../lib/csv";
 import { fmtDate, inr } from "../lib/format";
+import { OldBalanceCard } from "../components/OldBalance";
 
 // Customer 360: who they are, every order (with album progress), and their account — billed, received, outstanding, a running ledger,
 // payments and invoices — across every record of the customer (duplicates with the same mobile count as one).
@@ -104,6 +105,8 @@ export default function CustomerProfile() {
           </ResponsiveContainer></div>
         </Panel>
         <Panel title="At a glance">
+          <OldBalanceCard c={c} onDone={(m) => show(m)} />
+          <div className="mt-3" />
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="text-xs text-sub">Invoice pending</dt><dd className="font-bold">{pendingInv} order{pendingInv === 1 ? "" : "s"}</dd></div>
             <div><dt className="text-xs text-sub">Payments</dt><dd className="font-bold">{pays.length}</dd></div>

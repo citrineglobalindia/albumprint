@@ -11,11 +11,12 @@ import { BulkBar, BulkBtn, ExportBtn, SelectTd, SelectTh, Toolbar, rangeChip, us
 import { useToast } from "../components/Toast";
 import { useStore } from "../lib/store";
 import { useAuth } from "../lib/auth";
-import { ORDERS } from "../lib/data";
+import { ORDERS, CUSTOMERS } from "../lib/data";
 import { fmtDate, inr, inrShort, TODAY } from "../lib/format";
 import { downloadCsv } from "../lib/csv";
 import { can, type Out } from "../lib/production";
 import { PAYMENTS, INVOICES, MODES, ensureFinance, position, invTotal, recordPayment, refundPayment, type Mode, type Payment } from "../lib/finance";
+import { OPENING_PAYMENTS, openingDue } from "../lib/openingBalance";
 
 type Tab = "all" | "Unpaid" | "Partial" | "Paid" | "Overdue";
 const ordOf = (id: string) => ORDERS.find((o) => o.id === id)!;
@@ -77,16 +78,17 @@ export default function Payments() {
   const closed = !!cur?.closed;
   const hist = cur ? PAYMENTS.filter((p) => p.orderId === cur.id) : [];
 
-  const collected = PAYMENTS.filter((p) => p.kind === "payment").reduce((a, p) => a + p.amount, 0);
+  const oldDue = CUSTOMERS.reduce((a, c) => a + openingDue(c), 0), oldGot = OPENING_PAYMENTS.reduce((a, p) => a + p.amount, 0);   // old balances from before this system
+  const collected = PAYMENTS.filter((p) => p.kind === "payment").reduce((a, p) => a + p.amount, 0) + oldGot;
   const refunded = PAYMENTS.filter((p) => p.kind === "refund").reduce((a, p) => a + p.amount, 0);
-  const outstanding = ORDERS.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
-  const overdueAmt = ORDERS.filter((o) => position(o).overdue).reduce((a, o) => a + (o.total - o.paid), 0);
+  const outstanding = ORDERS.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0) + oldDue;
+  const overdueAmt = ORDERS.filter((o) => position(o).overdue).reduce((a, o) => a + (o.total - o.paid), 0) + oldDue;
   const kpis: Kpi[] = [
     { label: "Collected", value: inrShort(collected - refunded), icon: IndianRupee, tone: "green" },
     { label: "Outstanding", value: inrShort(outstanding), icon: Wallet, tone: "orange", invert: true },
     { label: "Overdue", value: inrShort(overdueAmt), icon: AlertCircle, tone: "red", invert: true },
     { label: "Refunded", value: inrShort(refunded), icon: RotateCcw, tone: "pink", invert: true },
-    { label: "Receipts issued", value: PAYMENTS.length, icon: Receipt, tone: "blue" },
+    { label: "Receipts issued", value: PAYMENTS.length + OPENING_PAYMENTS.length, icon: Receipt, tone: "blue" },
   ];
 
   /* ───── charts (real finance store) ───── */

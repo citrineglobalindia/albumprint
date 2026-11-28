@@ -4,12 +4,14 @@ import { currentActor, logAudit } from "./audit";
 import { loadSettings } from "./localState";
 import { persistArray } from "./persist";
 import { notify } from "./store";
+import { openingDue } from "./openingBalance";
 
 // Payment reminders on WhatsApp, one tap: opens a WhatsApp chat with the customer and a ready message (what is due, for which orders).
 // Pending payment = the balance of one order; credit balance = everything a customer owes across their orders.
 // Each send is recorded (database: comm_log; demo: this browser) so the team sees who was reminded and when.
 export interface Due { order: Order; balance: number; overdue: boolean }
-export interface CustomerDues { customer: Customer; dues: Due[]; total: number; overdue: number; oldestDue: string }
+/** `opening` = old balance still owed from before this system (already due, so it also counts as overdue). */
+export interface CustomerDues { customer: Customer; dues: Due[]; total: number; overdue: number; oldestDue: string; opening: number }
 
 const today = () => new Date().toISOString().slice(0, 10);
 const open = (o: Order) => o.hold !== "Cancelled" && !o.closed;
@@ -21,9 +23,15 @@ export function duesByCustomer(): CustomerDues[] {
   for (const o of ORDERS) {
     const b = balanceOf(o); if (!open(o) || b <= 0) continue;
     const c: Customer = custOf(o) ?? ({ id: `name:${o.customer}`, name: o.customer, studio: o.customer, mobile: o.mobile, email: "", city: "", state: "", type: "Regular", status: "Active", activeOrders: 0, lifetime: 0, lastOrder: "", since: "", dues: 0, tags: [] } as unknown as Customer);
-    const row = map.get(c.id) ?? { customer: c, dues: [], total: 0, overdue: 0, oldestDue: o.due };
+    const row = map.get(c.id) ?? { customer: c, dues: [], total: 0, overdue: 0, oldestDue: o.due, opening: 0 };
     const overdue = o.due < today();
     row.dues.push({ order: o, balance: b, overdue }); row.total += b; if (overdue) row.overdue += b; if (o.due < row.oldestDue) row.oldestDue = o.due;
+    map.set(c.id, row);
+  }
+  for (const c of CUSTOMERS) {                    // old balances from before this system
+    const ob = openingDue(c); if (ob <= 0) continue;
+    const row = map.get(c.id) ?? { customer: c, dues: [], total: 0, overdue: 0, oldestDue: c.openingOn ?? today(), opening: 0 };
+    row.opening = ob; row.total += ob; row.overdue += ob; if (c.openingOn && c.openingOn < row.oldestDue) row.oldestDue = c.openingOn;
     map.set(c.id, row);
   }
   return [...map.values()].sort((a, b) => b.overdue - a.overdue || b.total - a.total);
@@ -48,8 +56,8 @@ export function orderReminderText(o: Order): string {
 }
 export function balanceReminderText(d: CustomerDues): string {
   return fill(String(loadSettings().tpl_balance_reminder || DEFAULT_BALANCE_TEMPLATE), {
-    name: d.customer.name || d.customer.studio, business: business(), amount: inr(d.total), count: String(d.dues.length),
-    lines: d.dues.map((x) => `• ${x.order.id} (${x.order.event}): ${inr(x.balance)}${x.overdue ? " — overdue" : ""}`).join("\n"),
+    name: d.customer.name || d.customer.studio, business: business(), amount: inr(d.total), count: String(d.dues.length + (d.opening > 0 ? 1 : 0)),
+    lines: [...(d.opening > 0 ? [`• Old balance: ${inr(d.opening)}`] : []), ...d.dues.map((x) => `• ${x.order.id} (${x.order.event}): ${inr(x.balance)}${x.overdue ? " — overdue" : ""}`)].join("\n"),
   });
 }
 

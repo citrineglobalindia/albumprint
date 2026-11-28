@@ -55,6 +55,8 @@ export interface Customer {
   type: "VIP" | "Regular" | "New"; status: "Active" | "Inactive"; activeOrders: number; lifetime: number;
   lastOrder: string; since: string; dues: number; tags: string[];
   gstin?: string; address?: string; pin?: string; whatsapp?: string; notes?: string;
+  /** Old balance: owed before this system (kept elsewhere until now); payments against it are in OPENING_PAYMENTS. */
+  openingBalance?: number; openingNote?: string; openingOn?: string;
 }
 
 const customerSeed: [string, string, string, string, Customer["type"], number, number, string][] = [

@@ -36,7 +36,7 @@ export function PendingDuesPanel({ onDone }: { onDone: (msg: string, ok: boolean
   const total = rows.reduce((a, d) => a + d.total, 0), overdue = rows.reduce((a, d) => a + d.overdue, 0);
   return (
     <Panel className="mb-5" title={`Pending payments · ${rows.length} customer${rows.length === 1 ? "" : "s"}`} subtitle={`${inr(total)} outstanding · ${inr(overdue)} overdue — send a WhatsApp reminder in one tap`}
-      action={<div className="flex flex-wrap items-center gap-2"><ExportBtn aria="Export pending payments" onClick={() => downloadCsv("pending-payments.csv", [["Customer", "Mobile", "Order", "Event", "Order total", "Paid", "Balance", "Due", "Overdue"], ...rows.flatMap((d) => d.dues.map((x) => [d.customer.studio, d.customer.mobile, x.order.id, x.order.event, x.order.total, x.order.paid, x.balance, x.order.due, x.overdue ? "yes" : ""]))])} /><div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs font-bold">{(["all", "overdue"] as const).map((k) => <button key={k} type="button" onClick={() => setOnly(k)} className={cx("rounded-md px-3 py-1", only === k ? "bg-brand text-white" : "text-sub")}>{k === "all" ? "All dues" : "Overdue only"}</button>)}</div></div>}
+      action={<div className="flex flex-wrap items-center gap-2"><ExportBtn aria="Export pending payments" onClick={() => downloadCsv("pending-payments.csv", [["Customer", "Mobile", "Order", "Event", "Order total", "Paid", "Balance", "Due", "Overdue"], ...rows.flatMap((d) => [...(d.opening > 0 ? [[d.customer.studio, d.customer.mobile, "Old balance", d.customer.openingNote ?? "", "", "", d.opening, d.customer.openingOn ?? "", "yes"]] : []), ...d.dues.map((x) => [d.customer.studio, d.customer.mobile, x.order.id, x.order.event, x.order.total, x.order.paid, x.balance, x.order.due, x.overdue ? "yes" : ""])])])} /><div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs font-bold">{(["all", "overdue"] as const).map((k) => <button key={k} type="button" onClick={() => setOnly(k)} className={cx("rounded-md px-3 py-1", only === k ? "bg-brand text-white" : "text-sub")}>{k === "all" ? "All dues" : "Overdue only"}</button>)}</div></div>}
       bodyClassName="p-0">
       <div data-testid="pending-dues" className="divide-y divide-line">
         {rows.map((d) => {
@@ -46,13 +46,20 @@ export function PendingDuesPanel({ onDone }: { onDone: (msg: string, ok: boolean
               <div className="flex flex-wrap items-center gap-3 px-5 py-2.5">
                 <button type="button" aria-label={isOpen ? "Hide orders" : "Show orders"} onClick={() => setOpen({ ...open, [d.customer.id]: !isOpen })} className="text-sub">{isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</button>
                 <Avatar name={d.customer.studio} size={30} />
-                <div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{d.customer.studio}</div><div className="text-xs text-sub">{d.customer.mobile || "no mobile"} · {d.dues.length} order{d.dues.length === 1 ? "" : "s"} · oldest due {fmtDate(d.oldestDue)}</div></div>
+                <div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{d.customer.studio}</div><div className="text-xs text-sub">{d.customer.mobile || "no mobile"} · {d.dues.length} order{d.dues.length === 1 ? "" : "s"}{d.opening > 0 ? ` + old balance ${inr(d.opening)}` : ""} · oldest due {fmtDate(d.oldestDue)}</div></div>
                 <div className="text-right"><div className="text-sm font-extrabold">{inr(d.total)}</div>{d.overdue > 0 && <Pill tone="red">{inr(d.overdue)} overdue</Pill>}</div>
                 <div className="w-36 text-right text-[11px] text-sub">{last ? `reminded ${ago(last.at)}` : "not reminded yet"}</div>
                 <button type="button" disabled={noNum} title={noNum ? "No mobile / WhatsApp number" : undefined} className={waBtn} onClick={() => { const e = remindBalance(d); onDone(e ?? `WhatsApp opened for ${d.customer.studio}: ${inr(d.total)}`, !e); }}><MessageCircle className="size-3.5" />Remind {inr(d.total)}</button>
               </div>
               {isOpen && (
                 <ul className="bg-slate-50/60 px-5 pb-2 pl-16">
+                  {d.opening > 0 && (
+                    <li className="flex flex-wrap items-center gap-3 border-t border-line py-1.5 text-[13px]" data-testid="old-balance-line">
+                      <Link to={`/customers/${d.customer.id}`} className="w-24 font-bold text-amber-700 hover:underline">Old balance</Link>
+                      <span className="min-w-0 flex-1 truncate text-sub">owed before this system{d.customer.openingNote ? ` · ${d.customer.openingNote}` : ""} — receive it on the customer's page</span>
+                      <b className="text-rose-600">{inr(d.opening)}</b>
+                    </li>
+                  )}
                   {d.dues.map((x) => (
                     <li key={x.order.id} className="flex flex-wrap items-center gap-3 border-t border-line py-1.5 text-[13px]">
                       <Link to={`/orders/${x.order.id}`} className="w-24 font-bold text-brand hover:underline">{x.order.id}</Link>

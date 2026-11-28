@@ -9,8 +9,8 @@ import { backendOn, sb, q, registerHydrator, reportDbError, sharedStaff } from "
 // invoice immutability are enforced there too. RLS gives roles without money access empty result sets (handled below).
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-const MODE_FROM: Record<string, Mode> = { upi: "UPI", cash: "Cash", bank_transfer: "Bank Transfer", cheque: "Cheque", card: "UPI", online: "UPI" };
-const MODE_TO: Record<Mode, string> = { UPI: "upi", Cash: "cash", "Bank Transfer": "bank_transfer", Cheque: "cheque" };
+export const MODE_FROM: Record<string, Mode> = { upi: "UPI", cash: "Cash", bank_transfer: "Bank Transfer", cheque: "Cheque", card: "UPI", online: "UPI" };
+export const MODE_TO: Record<Mode, string> = { UPI: "upi", Cash: "cash", "Bank Transfer": "bank_transfer", Cheque: "cheque" };
 const PAY: Record<string, PayStatus> = { unpaid: "Unpaid", partially_paid: "Partial", paid: "Paid", overpaid: "Paid", refunded: "Unpaid", credit: "Paid" };
 const day = (s: string | null | undefined) => (s ?? "").slice(0, 10);
 

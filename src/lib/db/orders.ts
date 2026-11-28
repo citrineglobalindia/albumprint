@@ -18,7 +18,8 @@ type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-exp
 export function customerFromRow(r: Row): Customer {
   return { uid: r.id, id: r.code, name: r.contact_person || r.studio_name, studio: r.studio_name, mobile: r.mobile ?? "", email: r.email ?? "", city: r.city ?? "", state: r.state ?? "",
     type: SEG[r.segment] ?? "Regular", status: r.active ? "Active" : "Inactive", activeOrders: 0, lifetime: 0, lastOrder: "", since: (r.created_at ?? "").slice(0, 10), dues: 0, tags: [],
-    gstin: r.gstin ?? undefined, whatsapp: r.whatsapp ?? undefined };
+    gstin: r.gstin ?? undefined, whatsapp: r.whatsapp ?? undefined,
+    openingBalance: Number(r.opening_balance ?? 0) || undefined, openingNote: r.opening_note ?? undefined, openingOn: r.opening_on ?? undefined };
 }
 
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);

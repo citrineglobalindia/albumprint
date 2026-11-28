@@ -20,16 +20,11 @@ import { dbCreateCustomer, dbUpdateCustomer } from "../lib/db/orders";
 import { CUSTOMERS, ORDERS, stageLabel, stageTone, type Customer } from "../lib/data";
 import { inr, fmtDate, TODAY, cleanMobile, mobileError } from "../lib/format";
 import { useStore, notify, useSlashFocus, packRange, unpackRange } from "../lib/store";
+import { OldBalanceCard } from "../components/OldBalance";
 
 type Tab = "all" | "active" | "vip" | "new" | "inactive";
 
 // Fallback history when a customer has no matching orders in ORDERS.
-const HISTORY: { id: string; title: string; date: string; amt: number }[] = [
-  { id: "ORD100728", title: "Wedding Album - Raj & Priya", date: "2026-10-12", amt: 18500 },
-  { id: "ORD100701", title: "Pre Wedding Album", date: "2026-09-25", amt: 22000 },
-  { id: "ORD100665", title: "Reception Album", date: "2026-08-10", amt: 26300 },
-];
-
 /* ───────────── notes / follow-ups (module-level so they survive navigation) ───────────── */
 interface Follow { id: number; text: string; due: string; done: boolean }
 const NOTES: Record<string, string[]> = {};
@@ -90,7 +85,7 @@ export default function Customers() {
   const [status, setStatus] = useState<string[]>([]);
   const [tagF, setTagF] = useState<string[]>([]);
   const [range, setRange] = useState<DateRange>(() => presetRange("All Time"));
-  const [hidden, setHidden] = useState<string[]>([]);
+  const [hidden, setHidden] = useState<string[]>(["id"]);   // the customer code is hidden by default (Columns menu shows it)
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -312,10 +307,11 @@ export default function Customers() {
               <li className="flex flex-wrap items-center gap-2"><Tag className="size-4 text-sub" />{cur.tags.length ? cur.tags.map((t) => <Pill key={t} tone="blue">{t}</Pill>) : <span className="text-sub">No tags</span>}</li>
             </ul>
             <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-xl border border-line py-3 text-center">
-              <div><div className="text-[11px] text-sub">Total Orders</div><div className="text-lg font-extrabold text-brand">{myOrders.length || cur.activeOrders * 6 || 4}</div></div>
+              <div><div className="text-[11px] text-sub">Total Orders</div><div className="text-lg font-extrabold text-brand">{myOrders.length}</div></div>
               <div><div className="text-[11px] text-sub">Lifetime Value</div><div className="text-lg font-extrabold">{inr(cur.lifetime)}</div></div>
               <div><div className="text-[11px] text-sub">Pending Dues</div><div className={cx("text-lg font-extrabold", cur.dues ? "text-rose-600" : "text-emerald-600")}>{inr(cur.dues)}</div></div>
             </div>
+            <OldBalanceCard c={cur} onDone={(m) => show(m)} />
             <div className="mt-3 flex flex-wrap items-center gap-2"><PrimaryButton icon={Plus} onClick={() => newOrder.open({ customerId: cur.id })}>New Order</PrimaryButton>
               <BalanceReminderButton d={duesByCustomer().find((x) => x.customer.id === cur.id)} onDone={(m) => show(m)} />
               <Link to={`/customers/${cur.id}`} className="inline-flex h-9 items-center rounded-lg border border-line px-3 text-xs font-bold text-brand hover:bg-brand-soft" data-testid="full-profile">Full profile →</Link></div>
@@ -330,13 +326,7 @@ export default function Customers() {
                       <div className="text-sub">{fmtDate(o.pendingAt)}</div><div className="font-bold">{inr(o.total)}</div><Pill tone={stageTone(o.stage)}>{stageLabel(o.stage)}</Pill>
                     </Link>
                   </li>
-                )) : HISTORY.map((h, i) => (
-                  <li key={h.id} className="flex items-center gap-3 text-xs">
-                    <Thumb seed={i + cur.name.length} size={38} />
-                    <div className="min-w-0 flex-1"><div className="font-bold">{h.id}</div><div className="truncate text-sub">{h.title}</div></div>
-                    <div className="text-sub">{fmtDate(h.date)}</div><div className="font-bold">{inr(h.amt)}</div><Pill tone="green">Delivered</Pill>
-                  </li>
-                ))}
+                )) : <li className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-sub">No orders yet</li>}
               </ul>
             )}
             {dtab === "notes" && (
