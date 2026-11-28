@@ -112,7 +112,7 @@ export function LinkAction({ children, onClick }: { children: ReactNode; onClick
   return <button onClick={onClick} className="text-xs font-bold text-brand hover:underline">{children}</button>;
 }
 
-export interface Kpi { label: string; value: string | number; delta?: number; deltaLabel?: string; icon: ComponentType<{ className?: string }>; tone: Tone; invert?: boolean }
+export interface Kpi { label: string; value: string | number; delta?: number; deltaLabel?: string; icon: ComponentType<{ className?: string }>; tone: Tone; invert?: boolean; hint?: string }
 
 /** KPI tile. `invert` = a rise is bad (overdue, dues): arrows colour red when up. */
 export function KpiCard({ k }: { k: Kpi }) {
@@ -127,6 +127,7 @@ export function KpiCard({ k }: { k: Kpi }) {
       <div className="min-w-0">
         <div className="line-clamp-2 text-xs font-medium leading-tight text-sub sm:truncate sm:text-[13px]" title={k.label}>{k.label}</div>
         <div className="truncate text-lg font-extrabold leading-tight text-ink sm:text-2xl">{k.value}</div>
+        {k.hint && <div className="truncate text-[11px] font-medium text-sub" title={k.hint}>{k.hint}</div>}
         {k.delta !== undefined && (
           <div className={cx("flex flex-wrap items-center gap-x-1 text-xs font-bold", good ? "text-emerald-700" : "text-rose-600")}>
             {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}

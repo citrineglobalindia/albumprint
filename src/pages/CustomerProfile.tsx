@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowLeft, BookImage, CalendarDays, ClipboardList, Download, IndianRupee, Mail, MapPin, MessageCircle, Phone, Plus, Receipt, TrendingUp, Wallet } from "lucide-react";
+import { ArrowLeft, BookImage, CalendarDays, ClipboardList, Download, History, IndianRupee, Mail, MapPin, MessageCircle, Phone, Plus, Receipt, TrendingUp, Wallet } from "lucide-react";
 import { KpiRow, LineTabs, PageHeader, Panel, PayPill, Pill, PrimaryButton, Td, Th, cx, tableCls, trCls, type Kpi } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useNewOrder } from "../components/NewOrderWizard";
@@ -17,8 +17,9 @@ import { isInvoicePending } from "../lib/orders2";
 import { albumStatus } from "../lib/albumFlow";
 import { statusLabel } from "../lib/jobProgress";
 import { downloadCsv } from "../lib/csv";
-import { fmtDate, inr } from "../lib/format";
+import { fmtDate, inr, inrShort } from "../lib/format";
 import { OldBalanceCard } from "../components/OldBalance";
+import { openingPaymentsOf } from "../lib/openingBalance";
 
 // Customer 360: who they are, every order (with album progress), and their account — billed, received, outstanding, a running ledger,
 // payments and invoices — across every record of the customer (duplicates with the same mobile count as one).
@@ -46,10 +47,13 @@ export default function CustomerProfile() {
   const pendingInv = live.filter((o) => isInvoicePending(o.id)).length;
   const money = role === "admin" || role === "reception" || role === "accounts";
 
+  const oldTotal = c.openingBalance ?? 0, oldPays = openingPaymentsOf(c), oldGot = oldPays.reduce((a, p) => a + p.amount, 0);
   // ledger: orders billed (debit) and money received (credit), oldest first, with the running balance
   const ledger = [
     ...live.filter((o) => o.total > 0).map((o) => ({ date: o.pendingAt, ref: o.id, what: `Order · ${o.event}`, debit: o.total, credit: 0 })),
     ...PAYMENTS.filter((p) => ids.has(p.orderId)).map((p) => ({ date: p.date, ref: p.receipt || p.orderId, what: `${p.kind === "refund" ? "Refund" : "Payment"} · ${p.mode} · ${p.orderId}`, debit: p.kind === "refund" ? p.amount : 0, credit: p.kind === "refund" ? 0 : p.amount })),
+    ...(oldTotal ? [{ date: c.openingOn ?? st.first ?? c.since, ref: "Old balance", what: `Old balance (before this system)${c.openingNote ? ` · ${c.openingNote}` : ""}`, debit: oldTotal, credit: 0 }] : []),
+    ...oldPays.map((p) => ({ date: p.date, ref: p.receipt, what: `Payment · ${p.mode} · old balance`, debit: 0, credit: p.amount })),
   ].sort((a, b) => a.date.localeCompare(b.date) || b.debit - a.debit);
   let bal = 0; const rows = ledger.map((l) => { bal += l.debit - l.credit; return { ...l, bal }; });
   const statement = () => downloadCsv(`statement-${c.id}.csv`, [["Date", "Reference", "Details", "Billed", "Received", "Balance"], ...rows.map((r) => [r.date, r.ref, r.what, r.debit || "", r.credit || "", r.bal])]);
@@ -67,10 +71,11 @@ export default function CustomerProfile() {
     { label: "Orders", value: `${st.orders} · ${st.active} active`, icon: ClipboardList, tone: "blue" },
     { label: "Albums", value: albums, icon: BookImage, tone: "violet" },
     ...(money ? [
-      { label: "Billed", value: inr(st.billed), icon: Receipt, tone: "indigo" as const },
-      { label: "Received", value: inr(st.paid), icon: Wallet, tone: "green" as const },
-      { label: "Outstanding", value: inr(st.dues), icon: IndianRupee, tone: "red" as const, invert: true },
-      { label: "Avg order value", value: inr(live.filter((o) => o.total > 0).length ? Math.round(st.billed / live.filter((o) => o.total > 0).length) : 0), icon: TrendingUp, tone: "teal" as const },
+      { label: "Billed", value: inrShort(st.billed), icon: Receipt, tone: "indigo" as const, hint: "orders" },
+      { label: "Received", value: inrShort(st.paid + oldGot), icon: Wallet, tone: "green" as const, hint: oldGot ? `incl. ${inr(oldGot)} on old balance` : undefined },
+      { label: "Outstanding", value: inrShort(st.dues), icon: IndianRupee, tone: "red" as const, invert: true, hint: oldTotal ? `incl. ${inr(st.opening)} old balance` : undefined },
+      ...(oldTotal ? [{ label: "Old balance", value: st.opening > 0 ? inrShort(st.opening) : "Cleared", icon: History, tone: "orange" as const, invert: true, hint: `${inr(oldTotal)} added ${c.openingOn ? fmtDate(c.openingOn) : ""}` }]
+        : [{ label: "Avg order value", value: inrShort(live.filter((o) => o.total > 0).length ? Math.round(st.billed / live.filter((o) => o.total > 0).length) : 0), icon: TrendingUp, tone: "teal" as const }]),
     ] : []),
   ];
   const wa = `https://wa.me/91${mobileKey(c.mobile)}`;
@@ -87,6 +92,7 @@ export default function CustomerProfile() {
         {(c.city || c.state) && <span className="inline-flex items-center gap-1.5"><MapPin className="size-4 text-sub" />{[c.city, c.state].filter(Boolean).join(", ")}</span>}
         <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-4 text-sub" />{st.orders} order{st.orders === 1 ? "" : "s"}</span>
         <Pill tone={c.type === "VIP" ? "amber" : c.type === "New" ? "blue" : "slate"}>{st.orders > 1 && c.type === "New" ? "Repeat" : c.type}</Pill>
+        {money && oldTotal > 0 && <span data-testid="old-balance-chip" className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 ring-1 ring-amber-300"><History className="size-3.5" />Old balance {inr(oldTotal)}{c.openingOn ? ` · added ${fmtDate(c.openingOn)}` : ""}{st.opening > 0 ? ` · ${inr(st.opening)} due` : " · cleared"}</span>}
         {money && <span className="ml-auto"><BalanceReminderButton d={duesByCustomer().find((x) => x.customer.id === c.id)} onDone={(m) => show(m)} /></span>}
       </div>
       {(group?.dupes.length ?? 0) > 0 && (

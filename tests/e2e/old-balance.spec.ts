@@ -32,6 +32,8 @@ test("old balance: enter it, it shows in dues and reminders, part payment with a
   await expect(page.getByText("Old balance of ₹25,000 saved for Old Dues Studio").first()).toBeVisible();
   await expect(card.getByTestId("old-balance-due")).toHaveText("₹25,000");
 
+  await expect(card.getByTestId("old-balance-added")).toContainText("Added on");
+
   // more than what is due is refused
   await card.getByRole("button", { name: "Receive payment" }).click();
   await card.getByLabel("Payment amount").fill("30000");
@@ -54,6 +56,16 @@ test("old balance: enter it, it shows in dues and reminders, part payment with a
   await card.getByRole("button", { name: "Save old balance" }).click();
   await expect(page.getByText(/has already been received against the old balance/).first()).toBeVisible();
   await card.getByRole("button", { name: "Cancel" }).click();
+
+  // the full profile shows the old balance, when it was added, and puts it in the account statement
+  await page.getByTestId("full-profile").click();
+  await expect(page).toHaveURL(/\/customers\/IDC/);
+  await expect(page.getByTestId("old-balance-chip")).toContainText(/Old balance ₹25,000 · added .+ · ₹15,000 due/);
+  await expect(page.getByText("Old balance", { exact: true }).first()).toBeVisible();
+  await page.getByRole("tab", { name: /Accounts/ }).click();
+  const ledger = page.getByTestId("customer-ledger");
+  await expect(ledger).toContainText("Old balance (before this system) · as per old ledger");
+  await expect(ledger).toContainText("Payment · UPI · old balance");
 
   // payments: the customer is in the pending list with the old balance; the reminder names it
   await page.goto("/payments");
