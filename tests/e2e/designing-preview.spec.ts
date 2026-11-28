@@ -24,7 +24,7 @@ test("design page: Preview in the toolbar opens the album as a page-turning book
   await expect(page.getByTestId("album-canvas").getByTestId("flipbook")).toBeVisible();
   await expect(page.getByTestId("album-strip").getByRole("button")).toHaveCount(2);
   await page.getByRole("button", { name: "Go to spread 2" }).click();
-  await expect(page.getByTestId("album-canvas").getByTestId("flip-position")).toHaveText("Spread 2 of 2", { timeout: 5000 });
+  await expect(page.getByTestId("album-canvas").getByTestId("flip-position")).toHaveText(/^Spread 2 of 2/, { timeout: 5000 });   // one sheet at a time when the canvas is narrow
   await page.getByRole("button", { name: "Layout editor" }).click();
   await expect(page.getByTestId("canvas")).toBeVisible();
   await page.getByRole("button", { name: /^Uploaded album/ }).click();

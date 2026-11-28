@@ -81,7 +81,7 @@ export async function createPreview(orderId: string, album: number, title: strin
   try { pages = await pagesFrom(files, (m) => onStep(m)); } catch (e) { return { ok: false, msg: String((e as Error).message ?? e) }; }
   if (!pages.length) return { ok: false, msg: "No pages found" };
   if (pages.length > 400) return { ok: false, msg: "An album can have at most 400 pages" };
-  const isSpreads = spreads === "auto" ? pages[0]!.w / pages[0]!.h > 1.3 : spreads;
+  const isSpreads = spreads === "auto" ? pages.filter((p) => p.w / p.h > 1.3).length * 2 >= pages.length : spreads;   // most images wide = an album of spreads (the cover may be portrait)
   const version = Math.max(0, ...previewsOf(orderId, album).map((p) => p.version)) + 1;
   let id = `AP${Date.now().toString(36)}`, token = rand(), folder = rand();
   if (backendOn) {

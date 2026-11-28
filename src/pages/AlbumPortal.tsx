@@ -16,6 +16,8 @@ export default function AlbumPortal() {
   const [name, setName] = useState(() => { try { return localStorage.getItem("albumpro.client.name") ?? ""; } catch { return ""; } });
   const [msg, setMsg] = useState(""); const [onPage, setOnPage] = useState(true);
   const [busy, setBusy] = useState(false); const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pageNote, setPageNote] = useState<string | null>(null);
+  const [pageKind, setPageKind] = useState<"Cover" | "Page" | "Spread">("Spread");
   const load = () => void publicGet(token).then(setView, () => setView(null));
   useEffect(load, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -43,7 +45,37 @@ export default function AlbumPortal() {
             : view.status === "changes" ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800" data-testid="client-status">Changes requested — the studio is on it</span> : null}
         </div>
 
-        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={setPage} />
+        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }} />
+
+        {/* a note on the page that is open */}
+        {(() => {
+          const what = pageKind === "Cover" ? "the cover" : `${pageKind.toLowerCase()} ${page}`;
+          const here = view.feedback.filter((f) => f.page === page && f.kind !== "approve");
+          return (
+            <section className="mt-3 rounded-2xl border border-line bg-white p-3" data-testid="page-notes" aria-label={`Notes on ${what}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <MessageSquarePlus className="size-4 text-amber-700" />
+                <b className="flex-1 text-sm">Notes on {what}{here.length ? ` (${here.length})` : ""}</b>
+                {!approved && pageNote === null && <button type="button" onClick={() => { setPageNote(""); setNote(null); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"><PenLine className="size-3.5" />Add a note on {what}</button>}
+              </div>
+              {here.length > 0 && <ul className="mt-2 space-y-1.5">{here.map((f, i) => <li key={i} className="rounded-lg bg-amber-50 px-3 py-2 text-sm">{f.message}<span className="block text-[11px] text-sub">{f.name ? `${f.name} · ` : ""}{fmtDate(f.at)}{f.resolved ? " · ✓ done by the studio" : ""}</span></li>)}</ul>}
+              {pageNote !== null && (
+                <form className="mt-2 space-y-2" onSubmit={(e) => { e.preventDefault(); void (async () => {
+                  setBusy(true); try { localStorage.setItem("albumpro.client.name", name); } catch { /* ignore */ }
+                  const r = await publicFeedback(token, { page, name, message: pageNote, kind: "changes" });
+                  setBusy(false); setNote({ ok: r.ok, text: r.ok ? `Note added on ${what} — thank you` : r.msg }); if (r.ok) { setPageNote(null); load(); }
+                })(); }}>
+                  <textarea aria-label={`Note on ${what}`} rows={2} autoFocus className="w-full rounded-lg border border-line px-3 py-2 text-sm" value={pageNote} onChange={(e) => setPageNote(e.target.value)} placeholder="e.g. Use a different photo on the left / make this picture bigger" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input aria-label="Your name" className="h-9 min-w-[160px] flex-1 rounded-lg border border-line px-3 text-sm" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+                    <button type="submit" disabled={busy || !pageNote.trim()} className="h-9 rounded-lg bg-amber-600 px-4 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50">Save note</button>
+                    <button type="button" onClick={() => setPageNote(null)} className="h-9 rounded-lg px-3 text-xs font-bold hover:bg-slate-100">Cancel</button>
+                  </div>
+                </form>
+              )}
+            </section>
+          );
+        })()}
 
         {note && <p role="status" className={cx("mt-3 rounded-xl px-4 py-2 text-sm font-semibold", note.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700")}>{note.text}</p>}
 
