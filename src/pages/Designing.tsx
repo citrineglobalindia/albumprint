@@ -420,21 +420,7 @@ function DesignWorkspace({ order }: { order: Order }) {
 
       {toast && <div className="fixed right-6 top-6 z-50 rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white shadow-xl">{toast}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[170px_minmax(0,1fr)_340px] gap-4">
-        <Panel className="flex max-h-[760px] flex-col" bodyClassName="flex min-h-0 flex-1 flex-col p-3">
-          <h3 className="mb-3 text-[15px] font-extrabold">Pages ({latest ? latest.pages : 0})</h3>
-          {latest ? (
-            <div data-testid="album-strip" className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
-              {pageUrls(latest).map((src, i) => (
-                <button key={src} type="button" onClick={() => setJump({ image: i + 1, n: jump.n + 1 })} aria-label={`Go to ${latest.spreads ? "spread" : "page"} ${i + 1}`}
-                  className={cx("w-full rounded-xl border-2 p-1.5 text-left transition", albumAt === i + 1 ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line")}>
-                  <img src={src} alt="" loading="lazy" className="h-[64px] w-full rounded-md bg-white object-contain" />
-                  <div className="mt-1 text-[11px]"><b>{i + 1}</b> <span className="text-sub">{i === 0 ? "Cover" : `${latest.spreads ? "Spread" : "Page"} ${i + 1}`}</span></div>
-                </button>
-              ))}
-            </div>
-          ) : <p className="text-xs text-sub">No album uploaded yet.</p>}
-        </Panel>
+      <div className="space-y-4">
 
         <div className="min-w-0 space-y-4">
           <Panel bodyClassName="p-3">
@@ -445,7 +431,18 @@ function DesignWorkspace({ order }: { order: Order }) {
               ))}
             </div>
             {latest
-              ? <div data-testid="album-canvas"><AlbumFlipbook compact pages={pageUrls(latest)} spreads={latest.spreads} goTo={jump} onPage={setAlbumAt} /></div>
+              ? <>
+                <div data-testid="album-canvas"><AlbumFlipbook compact pages={pageUrls(latest)} spreads={latest.spreads} goTo={jump} onPage={setAlbumAt} /></div>
+                <div data-testid="album-strip" className="scroll-thin mt-3 flex gap-2 overflow-x-auto pb-1" aria-label={`Pages (${latest.pages})`}>
+                  {pageUrls(latest).map((src, i) => (
+                    <button key={src} type="button" onClick={() => setJump({ image: i + 1, n: jump.n + 1 })} aria-label={`Go to ${latest.spreads ? "spread" : "page"} ${i + 1}`}
+                      className={cx("w-[104px] shrink-0 rounded-lg border-2 p-1 text-left transition", albumAt === i + 1 ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line")}>
+                      <img src={src} alt="" loading="lazy" className="h-[54px] w-full rounded bg-white object-contain" />
+                      <div className="mt-0.5 truncate text-[10px]"><b>{i + 1}</b> <span className="text-sub">{i === 0 ? "Cover" : `${latest.spreads ? "Spread" : "Page"} ${i + 1}`}</span></div>
+                    </button>
+                  ))}
+                </div>
+              </>
               : (
                 <div data-testid="no-album-yet" className="grid h-[360px] place-items-center rounded-xl border-2 border-dashed border-line bg-slate-50 text-center">
                   <div className="max-w-sm px-4">
@@ -459,7 +456,7 @@ function DesignWorkspace({ order }: { order: Order }) {
           </Panel>
         </div>
 
-        <div className="min-w-0 space-y-4">
+        <div className="grid min-w-0 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Panel bodyClassName="p-4">
             <LineTabs className="mb-4 gap-4" value={rTab} onChange={setRTab} tabs={[{ key: "details", label: "Design Details" }, { key: "comments", label: "Client Comments", count: comments.length }, { key: "corrections", label: `Corrections (${openCorr})` }]} />
             {rTab === "details" && (

@@ -74,10 +74,10 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
       sheetsRef.current = sheets; setSheets(sheets);
 
       // fit the book in the space there is; never taller than the box
-      const W = Math.max(200, el.clientWidth), H = Math.max(200, full ? window.innerHeight - 120 : Math.min(window.innerHeight * (compact ? 0.62 : 0.72), compact ? 600 : 760));
+      const W = Math.max(200, el.clientWidth), H = Math.max(280, full ? window.innerHeight - 110 : window.innerHeight - (compact ? 190 : 230));   // as big as the screen allows
       const double = mode === "double" && W >= 520; setDbl(double);
       const ph = Math.floor(Math.min(H, double ? W / (2 * a) : W / a)), pw = Math.floor(ph * a);
-      const book = document.createElement("div"); book.style.margin = "0 auto"; book.style.width = `${double ? pw * 2 : pw}px`; book.style.transition = "transform .5s ease"; el.appendChild(book);
+      const book = document.createElement("div"); book.style.margin = "0 auto"; book.style.width = `${double ? pw * 2 : pw}px`; book.style.transition = "transform .5s ease"; book.style.boxShadow = full ? "none" : "0 18px 40px -12px rgba(20,20,40,.45)"; el.appendChild(book);
       // a sheet shown alone (the cover, a last single sheet) sits in the middle instead of on one half
       const centre = (i: number, n: number) => { book.style.transform = !double ? "" : cover && i === 0 ? `translateX(-${pw / 2}px)` : i === n - 1 && isLeft(i) ? `translateX(${pw / 2}px)` : ""; };
       const nodes = sheets.map((s, i) => {
@@ -86,7 +86,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
         d.setAttribute("data-density", s.side === "full" && (i === 0 || i === sheets.length - 1) ? "hard" : "soft");
         // page-flip rewrites the page's own style, so the picture sits on an inner layer
         const face = document.createElement("div");
-        Object.assign(face.style, { position: "absolute", inset: "0", backfaceVisibility: "hidden", transform: "translateZ(0)", willChange: "transform", backgroundColor: s.side === "full" || s.side === "blank" ? "#24201c" : "#fff",
+        Object.assign(face.style, { position: "absolute", inset: "0", backfaceVisibility: "hidden", transform: "translateZ(0)", willChange: "transform", backgroundColor: s.side === "full" || s.side === "blank" ? (full ? "#24201c" : "#eef0f5") : "#fff",
           backgroundImage: s.src ? `url("${s.src}")` : "none", backgroundRepeat: "no-repeat",
           backgroundSize: s.side === "full" ? "contain" : "200% 100%", backgroundPosition: s.side === "left" ? "left center" : s.side === "right" ? "right center" : "center",
           boxShadow: s.side === "left" ? "inset -18px 0 24px -18px rgba(0,0,0,.35)" : s.side === "right" ? "inset 18px 0 24px -18px rgba(0,0,0,.35)" : "none" });
@@ -126,22 +126,22 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
   const label = kind === "Cover" ? `Cover · 1 of ${pages.length}` : `${kind} ${img + 1} of ${pages.length}${!dbl && (s?.side === "left" || s?.side === "right") ? ` · ${s.side}` : ""}`;
   const seg = "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-bold";
   return (
-    <div className={full ? "fixed inset-0 z-[60] flex flex-col bg-[#1d1a17] p-3 sm:p-5" : "rounded-2xl bg-gradient-to-b from-[#2b2622] to-[#1d1a17] p-3 sm:p-5"} data-testid="flipbook">
-      <div className={full ? "mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 items-center" : "mx-auto w-full max-w-[1200px]"}>
+    <div className={full ? "fixed inset-0 z-[60] flex flex-col bg-[#1d1a17] p-3 sm:p-5" : "relative"} data-testid="flipbook">
+      <div className={full ? "mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 items-center" : "mx-auto w-full"}>
         <div ref={host} className={mode === "scroll" ? "hidden" : "w-full"} aria-label="Album pages — use the arrows or swipe to turn" />
         {mode === "scroll" && (
           <div ref={scroller} data-testid="album-scroll" className="scroll-thin mx-auto w-full snap-y snap-proximity space-y-4 overflow-y-auto scroll-smooth overscroll-contain pr-1"
-            style={{ maxHeight: full ? "calc(100vh - 120px)" : compact ? "min(62vh, 600px)" : "min(72vh, 760px)" }}>
+            style={{ maxHeight: full ? "calc(100vh - 110px)" : compact ? "calc(100vh - 190px)" : "calc(100vh - 230px)" }}>
             {pages.map((src, i) => (
               <figure key={src} data-img={i} className="mx-auto snap-start" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
                 <img src={src} alt={`${kindOf(i)} ${i + 1}`} loading="lazy" decoding="async" className="w-full rounded-md bg-white shadow-xl" style={{ aspectRatio: dims?.[i] ? `${dims[i]!.w} / ${dims[i]!.h}` : undefined }} />
-                <figcaption className="mt-1 text-center text-[11px] text-white/60">{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}</figcaption>
+                <figcaption className={`mt-1 text-center text-[11px] ${full ? "text-white/60" : "text-sub"}`}>{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}</figcaption>
               </figure>
             ))}
           </div>
         )}
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-white">
+      <div className="mt-3 flex justify-center"><div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-[#24201c] px-2.5 py-1.5 text-white shadow-lg">
         <button type="button" aria-label="Previous page" onClick={() => (mode === "scroll" ? scrollTo(Math.max(0, scrollAt - 1)) : flip.current?.flipPrev())} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronLeft className="size-5" /></button>
         <span className="min-w-[150px] text-center text-sm font-semibold" data-testid="flip-position">{label}</span>
         <button type="button" aria-label="Next page" onClick={() => (mode === "scroll" ? scrollTo(Math.min(pages.length - 1, scrollAt + 1)) : flip.current?.flipNext())} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronRight className="size-5" /></button>
@@ -152,7 +152,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
         </div>
         <button type="button" aria-label="Zoom" title="Zoom in on this page" onClick={() => setZoomed(pages[img] ?? null)} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ZoomIn className="size-4" /></button>
         <button type="button" aria-label={full ? "Exit full screen" : "Full screen"} onClick={() => setFull(!full)} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20">{full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button>
-      </div>
+      </div></div>
       {zoomed && <ZoomView src={zoomed} title={label} onClose={() => setZoomed(null)} />}
     </div>
   );
