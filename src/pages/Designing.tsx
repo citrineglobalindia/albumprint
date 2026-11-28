@@ -23,6 +23,8 @@ import { CUSTOMERS } from "../lib/data";
 import { addCorrection as addDesignCorrection, correctionsFor, metaFor, persistMeta, save as saveMeta, setCorrectionStatus } from "../lib/design";
 import { ORDERS, STAFF, type Order } from "../lib/data";
 import { fmtDate } from "../lib/format";
+import { AlbumPreviewPanel, PreviewModal } from "../components/AlbumPreviewPanel";
+import { previewsOf, type Preview } from "../lib/albumPreview";
 
 type DStatus = "Not Started" | "In Designing" | "Pending Admin Review" | "Ready to Send" | "With Client" | "Corrections Requested" | "Client Approved" | "Locked for Print" | "In Production";
 const STATUS_PROGRESS: Record<DStatus, number> = { "Not Started": 0, "In Designing": 40, "Pending Admin Review": 55, "Ready to Send": 65, "With Client": 75, "Corrections Requested": 50, "Client Approved": 90, "Locked for Print": 95, "In Production": 100 };
@@ -127,6 +129,7 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [selOv, setSelOv] = useState<number | null>(null);
   const [editOv, setEditOv] = useState<number | null>(null);
   const [tplTab, setTplTab] = useState("Design Templates");
+  const [albumView, setAlbumView] = useState<Preview | null>(null);
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
   const [comments, setComments] = useState(COMMENTS0);
   const [cDraft, setCDraft] = useState("");
@@ -376,6 +379,7 @@ function DesignWorkspace({ order }: { order: Order }) {
     { I: ImageIcon, l: "Add Image", run: () => addOverlay("image") },
     { I: LayoutGrid, l: "Templates", run: () => { setTplTab("Design Templates"); flash("Showing design templates"); } },
     { I: Brush, l: "Background", run: () => setBgOpen((v) => !v) },
+    { I: BookOpen, l: "Preview", run: () => { const p = previewsOf(order.id)[0]; if (p) setAlbumView(p); else { document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }); flash("Upload the album below (or make it from the design files) to preview it"); } } },
   ];
   const details = [
     { I: Ruler, l: "Album Size", v: `${order.size} (Landscape)` },
@@ -705,6 +709,8 @@ function DesignWorkspace({ order }: { order: Order }) {
           </Panel>
         </div>
       </div>
+      <div id="album-preview"><AlbumPreviewPanel o={order} className="mt-4" onDone={(m, ok) => flash(ok ? m : <span className="text-rose-300">{m}</span>)} /></div>
+      {albumView && <PreviewModal p={albumView} onClose={() => setAlbumView(null)} />}
       <Panel className="mt-4" title="Design files" subtitle="The graded photos to design with, and the album pages you make: upload each spread as an image or the whole album as a PDF.">
         <WorkFiles orderId={order.id}
           inputs={[{ category: "Graded", label: "Graded photos (from Colour Grading)" }, { category: "Source Photos", label: "Original photos (from the customer)" }]}

@@ -6,6 +6,7 @@ import { useStore } from "../lib/store";
 import { fmtDate } from "../lib/format";
 import type { Order } from "../lib/data";
 import { albumsOf } from "../lib/labs";
+import { FILES, previewUrl } from "../lib/files";
 import { STATUS_LABEL, canUpload, createPreview, deletePreview, linkOf, pageUrls, previewsOf, setResolved, shareOnWhatsApp, type Preview } from "../lib/albumPreview";
 
 const TONE = { shared: "blue", approved: "green", changes: "amber" } as const;
@@ -13,22 +14,27 @@ type Res = { ok: boolean; msg: string };
 
 /** Order page: upload each album for the client, preview it as a page-turning book, share the link on WhatsApp,
  *  and see the client's changes / approval. */
-export function AlbumPreviewPanel({ o, onDone }: { o: Order; onDone: (msg: string, ok: boolean) => void }) {
+export function AlbumPreviewPanel({ o, onDone, className = "mt-5" }: { o: Order; onDone: (msg: string, ok: boolean) => void; className?: string }) {
   useStore();
   const albums = albumsOf(o);
   const [viewing, setViewing] = useState<Preview | null>(null);
   return (
-    <Panel className="mt-5" title="Album preview for the client" subtitle="Upload the album (PDF or page images), check it as a page-turning book, then share the link on WhatsApp — the client can ask for changes or approve" bodyClassName="space-y-3">
+    <Panel className={className} title="Album preview for the client" subtitle="Upload the album (PDF or page images), check it as a page-turning book, then share the link on WhatsApp — the client can ask for changes or approve" bodyClassName="space-y-3">
       {albums.map((a) => <AlbumBlock key={a.position} o={o} album={a.position} title={a.title} onDone={onDone} onView={setViewing} />)}
-      {viewing && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/70 p-3 sm:p-6" role="dialog" aria-label={`Preview of ${viewing.title}`} onClick={() => setViewing(null)}>
-          <div className="mx-auto flex w-full max-w-6xl flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 flex items-center gap-2 text-white"><BookOpen className="size-5" /><b className="flex-1">{viewing.title} · v{viewing.version}</b><button type="button" aria-label="Close preview" onClick={() => setViewing(null)} className="grid size-9 place-items-center rounded-full bg-white/10 hover:bg-white/20"><X className="size-5" /></button></div>
-            <AlbumFlipbook pages={pageUrls(viewing)} spreads={viewing.spreads} />
-          </div>
-        </div>
-      )}
+      {viewing && <PreviewModal p={viewing} onClose={() => setViewing(null)} />}
     </Panel>
+  );
+}
+
+/** Full-screen page-turning preview of an uploaded album. */
+export function PreviewModal({ p, onClose }: { p: Preview; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/70 p-3 sm:p-6" role="dialog" aria-label={`Preview of ${p.title}`} onClick={onClose}>
+      <div className="mx-auto flex w-full max-w-6xl flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-2 flex items-center gap-2 text-white"><BookOpen className="size-5" /><b className="flex-1">{p.title} · v{p.version} · {STATUS_LABEL[p.status]}</b><button type="button" aria-label="Close preview" onClick={onClose} className="grid size-9 place-items-center rounded-full bg-white/10 hover:bg-white/20"><X className="size-5" /></button></div>
+        <AlbumFlipbook pages={pageUrls(p)} spreads={p.spreads} />
+      </div>
+    </div>
   );
 }
 
@@ -38,6 +44,19 @@ function AlbumBlock({ o, album, title, onDone, onView }: { o: Order; album: numb
   const [spreads, setSpreads] = useState<"auto" | "yes" | "no">("auto");
   const [old, setOld] = useState(false);
   const up = canUpload();
+  const drafts = FILES.filter((f) => f.orderId === o.id && f.category === "Design Draft" && !f.archived && !f.pending && /^(pdf|jpe?g|png|webp)$/i.test(f.ext));
+  const fromDesignFiles = async () => {
+    const pdfs = drafts.filter((f) => /^pdf$/i.test(f.ext)), imgs = drafts.filter((f) => !/^pdf$/i.test(f.ext));
+    const pick = pdfs.length ? [pdfs.sort((a, b) => b.at.localeCompare(a.at))[0]!] : imgs;    // the newest PDF, else all the page images
+    setStep({ msg: "Fetching the design files…" });
+    const files: File[] = [];
+    for (const f of pick) {
+      const url = await previewUrl(f);
+      if (!url) { setStep(null); onDone(`${f.name} is not available in this browser — upload the album here instead`, false); return; }
+      const blob = await (await fetch(url)).blob(); files.push(new File([blob], f.name, { type: blob.type }));
+    }
+    await upload(files);
+  };
   const upload = async (files: File[]) => {
     setStep({ msg: "Reading the album…" });
     const r = await createPreview(o.id, album, title, files, spreads === "auto" ? "auto" : spreads === "yes", (msg, pct) => setStep({ msg, pct }));
@@ -81,6 +100,7 @@ function AlbumBlock({ o, album, title, onDone, onView }: { o: Order; album: numb
             <Upload className="size-3.5" />{cur ? "Upload new version" : "Upload album"}
             <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" aria-label={`Upload album pages for ${title}`} className="sr-only" onChange={(e) => { const fl = Array.from(e.target.files ?? []); e.target.value = ""; if (fl.length) void upload(fl); }} />
           </label>
+          {drafts.length > 0 && <button type="button" disabled={!!step} onClick={() => void fromDesignFiles()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 font-bold text-white hover:bg-brand-dark disabled:opacity-50"><BookOpen className="size-3.5" />Make preview from design files ({drafts.length})</button>}
           <select aria-label="Page layout" className="h-9 rounded-lg border border-line px-2 text-xs" value={spreads} onChange={(e) => setSpreads(e.target.value as typeof spreads)}>
             <option value="auto">Layout: detect</option><option value="yes">Each image is a spread (2 pages)</option><option value="no">Each image is one page</option>
           </select>
