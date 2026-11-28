@@ -25,6 +25,8 @@ import { deleteOrder } from "../lib/orderDelete";
 import { useAuth } from "../lib/auth";
 import { useLive } from "../lib/useLive";
 import { GradingSplit } from "../components/GradingSplit";
+import { OrderProfitStrip } from "../components/ProfitPanel";
+import { canSeeCost } from "../lib/labs";
 
 // Stages skipped for Printing Only orders (SRS §5.2: shown as "Not Required").
 const SKIPPED = ["colour_grading", "admin_approval", "designing", "client_review", "final_approval"];
@@ -119,6 +121,7 @@ export default function OrderDetail() {
         </div>
       )}
 
+      {canSeeCost() && <OrderProfitStrip o={o} />}
       <Panel className="mb-5" title="Next step" subtitle={`Currently ${o.hold === "On Hold" ? "on hold at " : "at "}${stageLabel(o.stage)}`} bodyClassName="space-y-3">
         <div data-testid="next-step-bar" className="flex flex-wrap items-center gap-2">
           {steps.map((n, i) => (

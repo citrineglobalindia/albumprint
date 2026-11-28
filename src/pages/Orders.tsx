@@ -25,6 +25,8 @@ import { editOrder } from "../lib/orderEdit";
 import { deleteOrder } from "../lib/orderDelete";
 import { useAuth } from "../lib/auth";
 import { savedKeys } from "../lib/persist";
+import { ProfitBadge } from "../components/ProfitPanel";
+import { canSeeCost } from "../lib/labs";
 
 type TabKey = "all" | "new" | "progress" | "client" | "print" | "out" | "delivered" | "hold" | "cancelled";
 const GROUP: Record<TabKey, StageKey[] | null> = {
@@ -43,6 +45,7 @@ const COLS = [
   { key: "size", label: "Album Size" }, { key: "stage", label: "Current Stage" }, { key: "priority", label: "Priority" }, { key: "pendingAt", label: "Order Date" },
   { key: "assignee", label: "Assigned To" }, { key: "due", label: "Due Date" }, { key: "pay", label: "Payment Status" },
 ];
+const PL_COL = { key: "profit", label: "Profit / Loss" };   // admin / accounts only
 const PAY = ["Paid", "Partial", "Unpaid", "Overdue"];
 const STAGE_LABELS = STAGES.map((s) => s.label);
 const isLate = (o: Order) => o.stage !== "delivered" && !o.hold && isOverdue(o.due);
@@ -185,7 +188,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
   const f = (set: (v: string[]) => void) => (v: string[]) => { set(v); setPage(1); };
 
   const d = drawer ? ORDERS.find((o) => o.id === drawer) ?? null : null;
-  const visibleCols = COLS.filter((c) => show_(c.key)).length + 2;
+  const visibleCols = COLS.filter((c) => show_(c.key)).length + 2 + (canSeeCost() && show_("profit") ? 1 : 0);
 
   return (
     <div>
@@ -223,7 +226,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
           <button aria-pressed={showAlbums} data-testid="toggle-albums" onClick={() => setShowAlbums(!showAlbums)} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", showAlbums ? "border-brand/50 bg-brand-soft text-brand" : "border-line bg-white")}><Layers className="size-4" />Albums</button>
           <button aria-pressed={ipend} data-testid="filter-invoice-pending" onClick={() => { setIpend(!ipend); setPage(1); }} className={cx("inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold", ipend ? "border-amber-400 bg-amber-50 text-amber-800" : "border-line bg-white")}><FileText className="size-4" />Invoice pending</button>
           <SavedViews<ViewState> storageKey="orders" current={view} onApply={applyView} />
-          <ColumnsMenu columns={COLS} hidden={hidden} onChange={setHidden} />
+          <ColumnsMenu columns={canSeeCost() ? [...COLS, PL_COL] : COLS} hidden={hidden} onChange={setHidden} />
           <ExportBtn aria="Export orders" onClick={() => downloadCsv("orders.csv", [["Order", "Customer", "Mobile", "Event", "Type", "Stage", "Priority", "Order date", "Due", "Total", "Paid", "Balance", "Assigned"], ...filtered.map((o) => [o.id, o.customer, o.mobile, o.event, o.workflow, stageLabel(o.stage), o.priority, o.pendingAt, o.due, o.total, o.paid, o.total - o.paid, o.assignee])])} />
           <button onClick={reset} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand"><RotateCcw className="size-4" />Reset</button>
           </div>
@@ -248,7 +251,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
               <tr>
                 <Th><input type="checkbox" aria-label="Select page" checked={allSel} onChange={() => setSel((p) => { const n = new Set(p); pageRows.forEach((o) => allSel ? n.delete(o.id) : n.add(o.id)); return n; })} /></Th>
                 {th("id", "Order ID")}{th("customer", "Customer")}{th("event", "Event")}{th("workflow", "Workflow Type")}{th("size", "Album Size")}
-                {th("stage", "Current Stage")}{th("priority", "Priority")}{th("pendingAt", "Order Date")}{th("assignee", "Assigned To")}{th("due", "Due Date")}{th("pay", "Payment Status")}
+                {th("stage", "Current Stage")}{th("priority", "Priority")}{th("pendingAt", "Order Date")}{th("assignee", "Assigned To")}{th("due", "Due Date")}{th("pay", "Payment Status")}{canSeeCost() && show_("profit") && <Th className="text-right">Profit / Loss</Th>}
                 <Th className="text-right">Actions</Th>
               </tr>
             </thead>
@@ -281,6 +284,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
                   )}
                   {show_("due") && <Td className={cx("font-medium", isLate(o) && "text-rose-600")}>{fmtDate(o.due)}</Td>}
                   {show_("pay") && <Td>{isInvoicePending(o.id) ? <span data-testid="invoice-pending-badge"><Pill tone="amber" dot>Invoice pending</Pill></span> : <PayPill s={o.pay} />}</Td>}
+                  {canSeeCost() && show_("profit") && <Td className="text-right"><ProfitBadge o={o} /></Td>}
                   <Td className="text-right">
                     <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}><RowViewButton to={`/orders/${o.id}`} />
                       <ActionMenu items={[

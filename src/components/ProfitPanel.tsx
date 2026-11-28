@@ -45,3 +45,30 @@ export function ProfitPanel({ orders, title = "Profit & expense", className }: {
     </div>
   );
 }
+
+/** "₹3,950 profit" (green) / "₹1,200 loss" (red) / "—" when the order has no purchase cost yet. */
+export function ProfitBadge({ o }: { o: Order }) {
+  useStore();
+  const p = profitOf(o);
+  if (!p.entered) return <span className="text-sub" title="No purchase cost yet">—</span>;
+  const loss = p.profit < 0;
+  return <span data-testid={`pl-${o.id}`} className={cx("whitespace-nowrap font-bold", loss ? "text-rose-600" : "text-emerald-700")} title={`Billing ${inr(p.selling)} − purchase ${inr(p.purchase)}${p.estimated ? " (estimated)" : ""}`}>{inr(Math.abs(p.profit))} {loss ? "loss" : "profit"}{p.estimated || !p.complete ? <span className="ml-1 text-[10px] font-semibold text-sub">{p.estimated ? "est." : "partial"}</span> : null}</span>;
+}
+
+/** Order page: profit or loss of this order at a glance (admin / accounts). */
+export function OrderProfitStrip({ o }: { o: Order }) {
+  useStore();
+  const p = profitOf(o), loss = p.entered && p.profit < 0;
+  const bills = billsOf(o);
+  return (
+    <div data-testid="order-pl" className={cx("mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border px-5 py-3", !p.entered ? "border-line bg-white" : loss ? "border-rose-300 bg-rose-50" : "border-emerald-300 bg-emerald-50")}>
+      <div className="flex items-center gap-2"><TrendingUp className={cx("size-5", loss ? "rotate-180 text-rose-600" : "text-emerald-700")} /><span className="text-sm font-extrabold">{!p.entered ? "Profit / Loss" : loss ? "Loss on this order" : "Profit on this order"}</span></div>
+      <div><div className="text-[11px] text-sub">Customer billing</div><div className="font-extrabold">{inr(p.selling)}</div></div>
+      <div><div className="text-[11px] text-sub">Purchase (expense)</div><div className="font-extrabold">{p.entered ? inr(p.purchase) : "—"}</div></div>
+      <div><div className="text-[11px] text-sub">{loss ? "Loss" : "Profit"}</div><div data-testid="order-pl-value" className={cx("text-lg font-extrabold", !p.entered ? "text-sub" : loss ? "text-rose-600" : "text-emerald-700")}>{p.entered ? `${loss ? "−" : ""}${inr(Math.abs(p.profit))} (${p.margin.toFixed(1)}%)` : "—"}</div></div>
+      <div className="min-w-0 flex-1 text-right text-[11px] text-sub">
+        {!p.entered ? "Enter the purchase bill below (Lab, purchase & profit) or purchase costs in Catalog › Prices" : [p.estimated ? "includes estimated costs from the catalog" : "", !p.complete ? "some albums have no purchase yet" : "", bills.length ? `bills: ${bills.join(", ")}` : ""].filter(Boolean).join(" · ")}
+      </div>
+    </div>
+  );
+}

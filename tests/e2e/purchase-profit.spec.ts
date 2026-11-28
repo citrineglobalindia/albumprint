@@ -45,6 +45,22 @@ test("standard purchase cost, purchase bill on the order, profit & expense repor
   await expect(page.getByTestId("lab-album-1").getByLabel(/^Bill number for/)).toHaveValue("SUP-77");
   await expect(page.getByTestId("lab-album-1").getByLabel(/^Purchase amount for/)).toHaveValue("450");
 
+  // the order page shows the profit at the top; the orders list has a Profit / Loss column
+  await expect(page.getByTestId("order-pl")).toContainText("Profit on this order");
+  await expect(page.getByTestId("order-pl-value")).toContainText(`₹${(total - 450).toLocaleString("en-IN")}`);
+  await expect(page.getByTestId("order-pl")).toContainText("bills: SUP-77");
+  await page.goto("/orders");
+  await expect(page.getByTestId(`pl-${id}`)).toContainText(`₹${(total - 450).toLocaleString("en-IN")} profit`);
+  // a purchase above the billing is a loss
+  await page.goto(`/orders/${id}`);
+  await page.getByTestId("lab-album-1").getByLabel(/^Purchase amount for/).fill(String(total + 1200));
+  await page.getByTestId("lab-album-1").getByRole("button", { name: "Save purchase" }).click();
+  await expect(page.getByTestId("order-pl")).toContainText("Loss on this order");
+  await expect(page.getByTestId("order-pl-value")).toContainText("−₹1,200");
+  await page.getByTestId("lab-album-1").getByLabel(/^Purchase amount for/).fill("450");
+  await page.getByTestId("lab-album-1").getByRole("button", { name: "Save purchase" }).click();
+  await expect(page.getByTestId("order-pl")).toContainText("Profit on this order");
+
   // Reports › Financial: profit & expense with the bill number
   await page.goto("/reports");
   await page.getByRole("tab", { name: "Financial" }).click();
@@ -59,4 +75,7 @@ test("standard purchase cost, purchase bill on the order, profit & expense repor
   await expect(page.getByTestId("lab-album-1")).toBeVisible();
   await expect(page.getByTestId("lab-album-1").getByLabel(/^Bill number for/)).toHaveCount(0);
   await expect(page.getByTestId("profit")).toHaveCount(0);
+  await expect(page.getByTestId("order-pl")).toHaveCount(0);
+  await page.goto("/orders");
+  await expect(page.getByTestId(`pl-${id}`)).toHaveCount(0);
 });
