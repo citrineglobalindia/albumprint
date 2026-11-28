@@ -11,13 +11,15 @@ import {
   Pagination, tableCls, Th, Td, trCls, RowViewButton, PriorityPill, PayPill, SlideOver, Field, inputCls, MoreButton, cx, type Kpi,
 } from "../components/ui";
 import { MultiSelect, DateRangePicker, FilterChips, SavedViews, ColumnsMenu, SortTh, sortRows, Combobox, presetRange, inRange, fmtShort, type DateRange, type SortState } from "../components/controls";
+import { SizePicker } from "../components/SizePicker";
+import { sizeOptions } from "../lib/sizes";
 import { ExportBtn } from "../components/listKit";
 import { downloadCsv } from "../lib/csv";
 import { InlinePop } from "../components/InlinePop";
 import { useNewOrder } from "../components/NewOrderWizard";
 import { openDrafts } from "../lib/orders2";
 import { assignees } from "../lib/staffList";
-import { ORDERS, CUSTOMERS, STAGES, EVENTS, ALBUM_SIZES, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority, type WorkflowType } from "../lib/data";
+import { ORDERS, CUSTOMERS, STAGES, EVENTS, PRIORITIES, stageLabel, stageTone, type Order, type StageKey, type Priority, type WorkflowType } from "../lib/data";
 import { fmtDate, inr, isOverdue, TODAY } from "../lib/format";
 import { useStore, useSlashFocus, packRange, unpackRange } from "../lib/store";
 import { setHold as holdOrder, cancelOrder, type Result } from "../lib/workflow";
@@ -217,7 +219,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
           <div id="order-filters" className={cx(fOpen ? "flex flex-wrap items-center gap-2.5" : "hidden", "w-full sm:contents")}>
           <MultiSelect className="w-36" label="Stage" options={STAGE_LABELS} value={stages} onChange={f(setStages)} />
           {!kind && <MultiSelect className="w-40" label="Workflow Type" options={["Design + Printing", "Printing"]} value={wf} onChange={f(setWf)} />}
-          <MultiSelect className="w-32" label="Album Size" options={ALBUM_SIZES} value={size} onChange={f(setSize)} />
+          <MultiSelect className="w-32" label="Album Size" options={sizeOptions()} value={size} onChange={f(setSize)} />
           <MultiSelect className="w-28" label="Priority" options={PRIORITIES} value={prio} onChange={f(setPrio)} />
           <MultiSelect className="w-32" label="Payment" options={PAY} value={pay} onChange={f(setPay)} />
           <MultiSelect className="w-32" label="Assignee" options={assignees()} value={asg} onChange={f(setAsg)} />
@@ -358,7 +360,7 @@ export default function Orders({ kind }: { kind?: WorkflowType } = {}) {
       <SlideOver open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.id ?? ""}`} width={420}
         footer={<><OutlineButton onClick={() => setEditing(null)}>Cancel</OutlineButton><PrimaryButton icon={Check} onClick={saveEdit}>Save changes</PrimaryButton></>}>
         {eerr && <div className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-600">{eerr}</div>}
-        <Field label="Album size"><Combobox options={ALBUM_SIZES.map((s) => ({ value: s, label: s }))} value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} /></Field>
+        <Field label="Album size"><SizePicker label="Album size" value={ef.size} onChange={(v) => setEf({ ...ef, size: v })} /></Field>
         <Field label="Due date" required><input type="date" className={inputCls} value={ef.due} onChange={(e) => setEf({ ...ef, due: e.target.value })} /></Field>
       </SlideOver>
       {reasonDlg}

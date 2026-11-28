@@ -3,7 +3,8 @@ import { backendOn, registerHydrator, sb } from "./core";
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-const eventFrom = (r: Row): AttEvent => ({ id: r.id, userId: r.user_id, kind: r.kind as PunchKind, at: r.at, date: r.work_date, note: r.note ?? undefined, source: r.source, reason: r.reason ?? undefined });
+const eventFrom = (r: Row): AttEvent => ({ id: r.id, userId: r.user_id, kind: r.kind as PunchKind, at: r.at, date: r.work_date, note: r.note ?? undefined, source: r.source, reason: r.reason ?? undefined,
+  selfie: r.selfie_path ?? undefined, lat: r.lat ?? undefined, lng: r.lng ?? undefined, accuracy: r.accuracy_m ?? undefined });
 const leaveFrom = (r: Row): Leave => ({ id: r.id, userId: r.user_id, from: r.from_date, to: r.to_date, kind: r.kind as LeaveKind, reason: r.reason, status: r.status, decisionNote: r.decision_note ?? undefined, createdAt: r.created_at });
 const settingsFrom = (r: Row): AttSettings => ({ shiftStart: String(r.shift_start).slice(0, 5), shiftEnd: String(r.shift_end).slice(0, 5), graceMinutes: r.grace_minutes, halfDayHours: Number(r.half_day_hours), fullDayHours: Number(r.full_day_hours), weeklyOff: r.weekly_off ?? [], holidays: r.holidays ?? [] });
 
@@ -11,7 +12,7 @@ const settingsFrom = (r: Row): AttSettings => ({ shiftStart: String(r.shift_star
 async function allEvents(from: string, to: string): Promise<{ rows: Row[]; error: string | null }> {
   const rows: Row[] = [];
   for (let i = 0; i < 50; i++) {
-    const { data, error } = await sb().from("attendance_events").select("id,user_id,kind,at,work_date,note,source,reason").gte("work_date", from).lte("work_date", to).is("superseded_at", null).order("at").order("seq").range(i * 1000, i * 1000 + 999);
+    const { data, error } = await sb().from("attendance_events").select("id,user_id,kind,at,work_date,note,source,reason,selfie_path,lat,lng,accuracy_m").gte("work_date", from).lte("work_date", to).is("superseded_at", null).order("at").order("seq").range(i * 1000, i * 1000 + 999);
     if (error) return { rows, error: error.message };
     rows.push(...(data ?? [])); if (!data || data.length < 1000) break;
   }
@@ -19,8 +20,8 @@ async function allEvents(from: string, to: string): Promise<{ rows: Row[]; error
 }
 
 const backend: Parameters<typeof registerAttendanceBackend>[0] = {
-  async punch(kind, note) {
-    const { data, error } = await sb().rpc("attendance_punch", { p_kind: kind, p_note: note ?? null });
+  async punch(kind, note, extra) {
+    const { data, error } = await sb().rpc("attendance_punch", { p_kind: kind, p_note: note ?? null, p_selfie: extra?.selfie ?? null, p_lat: extra?.lat ?? null, p_lng: extra?.lng ?? null, p_accuracy: extra?.accuracy ?? null });
     return error || !data ? { error: error?.message ?? "Could not record the punch" } : eventFrom(data as Row);
   },
   async adjust(userId, date, inTime, outTime, reason) {

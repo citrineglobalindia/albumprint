@@ -13,6 +13,7 @@ test("an employee checks in, takes a break and checks out; the ledger and timeli
 
   await today.getByLabel("Note (optional)").fill("at the studio");
   await today.getByRole("button", { name: "Check in", exact: true }).click();
+  await page.getByTestId("punch-dialog").getByRole("button", { name: /^Skip selfie/ }).click();   // the selfie is optional
   await expect(today.getByText("Working")).toBeVisible();
   await expect(page.getByTestId("timeline").getByText("Checked in")).toBeVisible();
   await expect(page.getByTestId("timeline").getByText("at the studio")).toBeVisible();
@@ -24,6 +25,7 @@ test("an employee checks in, takes a break and checks out; the ledger and timeli
   await today.getByRole("button", { name: "End break" }).click();
   await expect(today.getByText("Working")).toBeVisible();
   await today.getByRole("button", { name: "Check out" }).click();
+  await page.getByTestId("punch-dialog").getByRole("button", { name: /^Skip selfie/ }).click();
   await expect(page.getByTestId("timeline").getByText("Checked out")).toBeVisible();
   await expect(today.getByRole("button", { name: "Check in again" })).toBeVisible();
   await expect(page.getByTestId("timeline").getByRole("listitem")).toHaveCount(4);

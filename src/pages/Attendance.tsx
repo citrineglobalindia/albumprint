@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AlarmClockCheck, CalendarCheck, CalendarX2, ChevronLeft, ChevronRight, Clock, Coffee, LogIn, LogOut, Plane, Scale, Timer, TimerOff, Users } from "lucide-react";
 import { Avatar, Field, KpiRow, LineTabs, Panel, PageHeader, Pill, SlideOver, Td, Th, cx, inputCls, tableCls, trCls, type Kpi } from "../components/ui";
 import { ExportBtn } from "../components/listKit";
+import { PunchDialog } from "../components/PunchDialog";
+import { PunchProof } from "../components/PunchProof";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../lib/auth";
 import { useStore } from "../lib/store";
@@ -9,7 +11,7 @@ import { downloadRows } from "../lib/exporters";
 import { jobMinutes, jobSpans } from "../lib/jobTime";
 import {
   CODE, DAY_NAMES, EVENTS, HIDDEN, addDays, sinceOf, LEAVES, LEAVE_KINDS, addMonths, adjustDay, buildLedger, cancelLeave, daysOf, decideLeave, dow, employees, ensureMonth, getSettings, hm, istClock, istDate, istTime, lastKindToday,
-  meId, monthLabel, monthOf, punch, requestLeave, saveSettings, seedDemo, signedHm, summarize, type AttSettings, type Employee, type LeaveKind, type PunchKind, type Row, type Status,
+  meId, monthLabel, monthOf, punch, requestLeave, saveSettings, seedDemo, signedHm, summarize, type AttSettings, type Employee, type LeaveKind, type PunchExtra, type PunchKind, type Row, type Status,
 } from "../lib/attendance";
 
 const TONE: Record<Status, "green" | "amber" | "orange" | "red" | "violet" | "indigo" | "slate" | "teal"> = {
@@ -79,10 +81,12 @@ function MyAttendance({ me, ym, setYm, show }: { me: string; ym: string; setYm: 
   const checkedIn = last === "check_in" || last === "break_end", onBreak = last === "break_start";
   const nowMin = Number(istTime(now.toISOString()).slice(0, 2)) * 60 + Number(istTime(now.toISOString()).slice(3));
   const willBeLate = !last && nowMin > Number(s.shiftStart.slice(0, 2)) * 60 + Number(s.shiftStart.slice(3)) + s.graceMinutes;
-  const act = async (kind: PunchKind) => {
+  const [dlg, setDlg] = useState<PunchKind | null>(null);
+  const act = async (kind: PunchKind, extra?: PunchExtra) => {
+    if (!extra && (kind === "check_in" || kind === "check_out")) { setDlg(kind); return; }   // selfie + location first (both optional)
     setPending(true); setMsg("");
-    const e = await punch(me, kind, note);
-    setPending(false);
+    const e = await punch(me, kind, note, extra);
+    setPending(false); setDlg(null);
     if (e) { setMsg(e); return; }
     setNote(""); show(EVENT_LABEL[kind] + " at " + istTime(new Date().toISOString()));
   };
@@ -132,6 +136,7 @@ function MyAttendance({ me, ym, setYm, show }: { me: string; ym: string; setYm: 
           <input aria-label="Note (optional)" className={cx(inputCls, "mt-2 h-9 text-[13px]")} placeholder="Note (optional) — e.g. site visit, client meeting" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
           {willBeLate && <p className="mt-2 text-xs font-semibold text-amber-700">Checking in now will be marked late (shift starts {s.shiftStart}, {s.graceMinutes} min grace).</p>}
           {msg && <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">{msg}</p>}
+          {dlg && <PunchDialog title={dlg === "check_in" ? "Check in" : "Check out"} action={dlg === "check_in" ? "Check in" : "Check out"} onCancel={() => setDlg(null)} onPunch={(x) => act(dlg, x)} />}
         </section>
         <Panel title="Today's timeline" subtitle="Every punch is stamped with the server clock and cannot be edited">
           {todays.length ? (
@@ -139,7 +144,7 @@ function MyAttendance({ me, ym, setYm, show }: { me: string; ym: string; setYm: 
               {todays.map((e) => (
                 <li key={e.id} className="mb-3 last:mb-0">
                   <span className={cx("absolute -left-[7px] mt-1 size-3.5 rounded-full border-2 border-white", e.kind === "check_in" ? "bg-emerald-500" : e.kind === "check_out" ? "bg-rose-500" : "bg-amber-400")} />
-                  <div className="flex flex-wrap items-baseline gap-x-3"><span className="text-sm font-bold">{EVENT_LABEL[e.kind]}</span><span className="text-sm tabular-nums text-sub">{istTime(e.at)}</span>{e.source === "admin" && <Pill tone="violet">Admin entry</Pill>}</div>
+                  <div className="flex flex-wrap items-baseline gap-x-3"><span className="text-sm font-bold">{EVENT_LABEL[e.kind]}</span><span className="text-sm tabular-nums text-sub">{istTime(e.at)}</span>{e.source === "admin" && <Pill tone="violet">Admin entry</Pill>}<PunchProof e={e} /></div>
                   {(e.note || e.reason) && <div className="text-xs text-sub">{e.note ?? e.reason}</div>}
                 </li>
               ))}
@@ -340,7 +345,7 @@ function DaySheet({ emp, date, onClose, show }: { emp: Employee; date: string; o
     <SlideOver open onClose={onClose} title={`${emp.name} · ${dayLabel(date)}`} width={460}>
       <div className="mb-4 flex flex-wrap items-center gap-2"><Pill tone={TONE[row.status]}>{row.status}</Pill>{row.late && <Pill tone="amber">Late by {row.lateMin} min</Pill>}<span className="text-sm text-sub">{hm(row.workedMin)} worked{row.breakMin ? ` · ${hm(row.breakMin)} break` : ""}</span></div>
       <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-sub">Punches</h3>
-      {evs.length ? <ul className="mb-5 divide-y divide-line rounded-xl border border-line">{evs.map((e) => <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm"><span className="font-semibold">{EVENT_LABEL[e.kind]}</span><span className="tabular-nums text-sub">{istTime(e.at)}</span>{e.source === "admin" && <Pill tone="violet">Admin entry</Pill>}<span className="ml-auto truncate text-xs text-sub">{e.reason ?? e.note ?? ""}</span></li>)}</ul> : <p className="mb-5 rounded-xl border border-dashed border-line p-4 text-center text-sm text-sub">No punches recorded.</p>}
+      {evs.length ? <ul className="mb-5 divide-y divide-line rounded-xl border border-line">{evs.map((e) => <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm"><span className="font-semibold">{EVENT_LABEL[e.kind]}</span><span className="tabular-nums text-sub">{istTime(e.at)}</span>{e.source === "admin" && <Pill tone="violet">Admin entry</Pill>}<PunchProof e={e} /><span className="ml-auto truncate text-xs text-sub">{e.reason ?? e.note ?? ""}</span></li>)}</ul> : <p className="mb-5 rounded-xl border border-dashed border-line p-4 text-center text-sm text-sub">No punches recorded.</p>}
       {future ? <p className="text-sm text-sub">This date is in the future.</p> : (
         <>
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-sub">Correct this day</h3>

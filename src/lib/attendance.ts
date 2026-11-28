@@ -8,7 +8,11 @@ import { loadUsers } from "./users";
 // DERIVED from those events here (the database refuses edits and deletes). Demo: kept in this browser. Database: written by server functions
 // that stamp the server clock, so nobody can back-date a punch.
 export type PunchKind = "check_in" | "check_out" | "break_start" | "break_end";
-export interface AttEvent { id: string; userId: string; kind: PunchKind; at: string; date: string; note?: string; source: "web" | "admin"; reason?: string; superseded?: boolean }
+export interface AttEvent { id: string; userId: string; kind: PunchKind; at: string; date: string; note?: string; source: "web" | "admin"; reason?: string; superseded?: boolean;
+  /** Optional proof with a punch (migration 0077): a selfie (storage path, or a data URL in the demo) and where it was made. */
+  selfie?: string; lat?: number; lng?: number; accuracy?: number }
+/** What can come with a punch; both are optional — the punch goes through without them. */
+export interface PunchExtra { selfie?: Blob; lat?: number; lng?: number; accuracy?: number }
 export interface AttSettings { shiftStart: string; shiftEnd: string; graceMinutes: number; halfDayHours: number; fullDayHours: number; weeklyOff: number[]; holidays: { date: string; name: string }[] }
 export type LeaveKind = "Casual" | "Sick" | "Earned" | "Comp-off" | "Unpaid" | "Half day";
 export const LEAVE_KINDS: LeaveKind[] = ["Casual", "Sick", "Earned", "Comp-off", "Unpaid", "Half day"];
@@ -152,7 +156,7 @@ export function meId(email: string): string {
 
 // ───────── actions ─────────
 type Backend = {
-  punch: (kind: PunchKind, note?: string) => Promise<AttEvent | { error: string }>;
+  punch: (kind: PunchKind, note?: string, extra?: { selfie?: string; lat?: number; lng?: number; accuracy?: number }) => Promise<AttEvent | { error: string }>;
   adjust: (userId: string, date: string, inTime: string | null, outTime: string | null, reason: string) => Promise<string | null>;
   requestLeave: (l: { from: string; to: string; kind: LeaveKind; reason: string }) => Promise<string | null>;
   decide: (id: string, approve: boolean, note: string) => Promise<string | null>;
@@ -180,16 +184,35 @@ export const lastKindToday = (userId: string, now = new Date()): PunchKind | und
   return EVENTS.filter((e) => e.userId === userId && e.date === today && !e.superseded).sort((a, b) => a.at.localeCompare(b.at)).at(-1)?.kind;
 };
 
-export async function punch(userId: string, kind: PunchKind, note = ""): Promise<string | null> {
+export async function punch(userId: string, kind: PunchKind, note = "", extra: PunchExtra = {}): Promise<string | null> {
+  const loc = extra.lat != null && extra.lng != null ? { lat: extra.lat, lng: extra.lng, accuracy: extra.accuracy } : {};
   if (backendOn) {
     if (!backend) return NOT_CONNECTED;
-    const r = await backend.punch(kind, note); if ("error" in r) return r.error;
+    let selfie: string | undefined;
+    if (extra.selfie) {                                       // the selfie goes up first; if that fails the punch still goes through
+      try {
+        const { sb } = await import("./db/core");
+        const path = `${ME.id}/${istDate(new Date())}-${kind}-${Date.now()}.jpg`;
+        const up = await sb().storage.from(SELFIE_BUCKET).upload(path, extra.selfie, { contentType: "image/jpeg", upsert: false });
+        if (!up.error) selfie = path;
+      } catch { /* no selfie this time */ }
+    }
+    const r = await backend.punch(kind, note, { selfie, ...loc }); if ("error" in r) return r.error;
     EVENTS.push(r); notify(); return null;
   }
   const now = new Date(), err = punchError(kind, lastKindToday(userId, now)); if (err) return err;
-  EVENTS.push({ id: uid(), userId, kind, at: now.toISOString(), date: istDate(now), note: note.trim() || undefined, source: "web" }); notify();
+  const selfie = extra.selfie ? await new Promise<string>((res) => { const f = new FileReader(); f.onload = () => res(String(f.result)); f.onerror = () => res(""); f.readAsDataURL(extra.selfie!); }) : "";
+  EVENTS.push({ id: uid(), userId, kind, at: now.toISOString(), date: istDate(now), note: note.trim() || undefined, source: "web", selfie: selfie || undefined, ...loc }); notify();
   return null;
 }
+export const SELFIE_BUCKET = "attendance-selfies";
+/** A link to look at a punch's selfie (a short-lived signed link with the database). */
+export async function selfieUrl(e: AttEvent): Promise<string | null> {
+  if (!e.selfie) return null;
+  if (!backendOn || e.selfie.startsWith("data:")) return e.selfie;
+  try { const { sb } = await import("./db/core"); const { data } = await sb().storage.from(SELFIE_BUCKET).createSignedUrl(e.selfie, 300); return data?.signedUrl ?? null; } catch { return null; }
+}
+export const mapLink = (e: Pick<AttEvent, "lat" | "lng">) => (e.lat != null && e.lng != null ? `https://www.google.com/maps?q=${e.lat},${e.lng}` : null);
 
 export async function adjustDay(userId: string, date: string, inTime: string | null, outTime: string | null, reason: string): Promise<string | null> {
   if (reason.trim().length < 3) return "Give a reason for the correction";
