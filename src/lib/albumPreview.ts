@@ -21,8 +21,8 @@ export const previewsOf = (orderId: string, album?: number) => PREVIEWS.filter((
 export const linkOf = (p: Pick<Preview, "token">) => `${location.origin}/album/${p.token}`;
 /** URLs of a preview's page images, in order. */
 export function pageUrls(p: Pick<Preview, "folder" | "pages"> & { demoPages?: string[] }): string[] {
-  const local = LOCAL.get(p.folder); if (local) return local;
-  if (p.demoPages?.length) return p.demoPages;
+  const local = LOCAL.get(p.folder); if (local) return [...local];          // a new list each call, like the database's URLs
+  if (p.demoPages?.length) return [...p.demoPages];
   if (!backendOn) return [];
   const base = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, "");
   return Array.from({ length: p.pages }, (_, i) => `${base}/storage/v1/object/public/${BUCKET}/${p.folder}/${i + 1}.jpg`);

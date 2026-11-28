@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronLeft, ChevronRight, Maximize2, Minimize2, RectangleVertical, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, ChevronLeft, ChevronRight, Maximize2, Minimize2, RectangleVertical, RotateCcw, ScrollText, X, ZoomIn, ZoomOut } from "lucide-react";
 
 type Sheet = { src: string; side: "left" | "right" | "full" | "blank"; img: number };
 
@@ -8,7 +8,12 @@ type Sheet = { src: string; side: "left" | "right" | "full" | "blank"; img: numb
  *  a back cover) is a single sheet. Double = the open book (two sheets side by side); Single = one sheet at a time.
  *  The book is sized to fit the space there is (width and height) and re-fits on resize / full screen. */
 export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPage?: (image: number, kind: "Cover" | "Page" | "Spread") => void; goTo?: { image: number; n: number }; compact?: boolean }) {
-  const { pages, onPage, goTo, compact } = props;
+  const { goTo, compact } = props;
+  const key = props.pages.join("\n");
+  const pages = useMemo(() => props.pages, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onPageRef = useRef(props.onPage); onPageRef.current = props.onPage;
+  const onPage = (n: number, k: "Cover" | "Page" | "Spread") => onPageRef.current?.(n, k);
+  const cache = useRef<HTMLImageElement[]>([]);              // decoded images kept alive, so turning a page never re-decodes one
   const host = useRef<HTMLDivElement>(null);
   const flip = useRef<{ flipNext(): void; flipPrev(): void; flip(i: number): void; turnToPage(i: number): void; destroy(): void; getPageCount(): number } | null>(null);
   const sheetsRef = useRef<Sheet[]>([]);
@@ -16,9 +21,23 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
   const [dims, setDims] = useState<{ w: number; h: number }[] | null>(null);
   const [at, setAt] = useState(0);
   const [full, setFull] = useState(false);
-  const [mode, setMode] = useState<"double" | "single">("double");
+  const [mode, setMode] = useState<"double" | "single" | "scroll">("double");
   const [dbl, setDbl] = useState(true);
   const [zoomed, setZoomed] = useState<string | null>(null);
+  const [scrollAt, setScrollAt] = useState(0);                // scroll view: the image in view
+  const scroller = useRef<HTMLDivElement>(null);
+  const kindOf = (i: number): "Cover" | "Page" | "Spread" => { const d = dims?.[i]; const wide = d ? d.w / d.h > 1.3 : true; return wide ? "Spread" : i === 0 ? "Cover" : "Page"; };
+  const scrollTo = (i: number) => { const el = scroller.current?.querySelector<HTMLElement>(`[data-img="${i}"]`); el?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  // scroll view: follow the image in view
+  useEffect(() => {
+    const root = scroller.current; if (mode !== "scroll" || !root) return;
+    const io = new IntersectionObserver((es) => {
+      const best = es.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (best) { const i = Number((best.target as HTMLElement).dataset.img); setScrollAt(i); onPage(i + 1, kindOf(i)); }
+    }, { root, threshold: [0.35, 0.6, 0.9] });
+    root.querySelectorAll("[data-img]").forEach((n) => io.observe(n));
+    return () => io.disconnect();
+  }, [mode, key, dims]); // eslint-disable-line react-hooks/exhaustive-deps
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1200 : window.innerWidth));
   const atRef = useRef(0);
   useEffect(() => { let t = 0; const r = () => { clearTimeout(t); t = window.setTimeout(() => setVw(window.innerWidth + window.innerHeight / 10000), 150); }; window.addEventListener("resize", r); return () => { window.removeEventListener("resize", r); clearTimeout(t); }; }, []);
@@ -27,13 +46,15 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
   useEffect(() => {
     if (!pages.length) return;
     let alive = true;
-    void Promise.all(pages.map((src) => new Promise<{ w: number; h: number }>((res) => { const i = new Image(); i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight }); i.onerror = () => res({ w: 1000, h: 1000 }); i.src = src; })))
+    const imgs = pages.map((src) => { const i = new Image(); i.decoding = "async"; i.src = src; return i; });
+    cache.current = imgs;
+    void Promise.all(imgs.map((i) => (i.decode ? i.decode().catch(() => undefined) : Promise.resolve()).then(() => ({ w: i.naturalWidth || 1000, h: i.naturalHeight || 1000 }))))
       .then((d) => { if (alive) setDims(d); });
     return () => { alive = false; };
   }, [pages]);
 
   useEffect(() => {
-    const el = host.current; if (!el || !dims || !pages.length) return;
+    const el = host.current; if (!el || !dims || !pages.length || mode === "scroll") return;
     let alive = true;
     void import("page-flip").then(({ PageFlip }) => {
       if (!alive) return;
@@ -61,11 +82,11 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
       const centre = (i: number, n: number) => { book.style.transform = !double ? "" : cover && i === 0 ? `translateX(-${pw / 2}px)` : i === n - 1 && isLeft(i) ? `translateX(${pw / 2}px)` : ""; };
       const nodes = sheets.map((s, i) => {
         const d = document.createElement("div");
-        d.className = "ipd-page";
+        d.className = "ipd-page"; d.style.backfaceVisibility = "hidden";
         d.setAttribute("data-density", s.side === "full" && (i === 0 || i === sheets.length - 1) ? "hard" : "soft");
         // page-flip rewrites the page's own style, so the picture sits on an inner layer
         const face = document.createElement("div");
-        Object.assign(face.style, { position: "absolute", inset: "0", backgroundColor: s.side === "full" || s.side === "blank" ? "#24201c" : "#fff",
+        Object.assign(face.style, { position: "absolute", inset: "0", backfaceVisibility: "hidden", transform: "translateZ(0)", willChange: "transform", backgroundColor: s.side === "full" || s.side === "blank" ? "#24201c" : "#fff",
           backgroundImage: s.src ? `url("${s.src}")` : "none", backgroundRepeat: "no-repeat",
           backgroundSize: s.side === "full" ? "contain" : "200% 100%", backgroundPosition: s.side === "left" ? "left center" : s.side === "right" ? "right center" : "center",
           boxShadow: s.side === "left" ? "inset -18px 0 24px -18px rgba(0,0,0,.35)" : s.side === "right" ? "inset 18px 0 24px -18px rgba(0,0,0,.35)" : "none" });
@@ -85,7 +106,9 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
 
   // turn to an image (1-based) asked for from outside, e.g. a page thumbnail clicked
   useEffect(() => {
-    if (!goTo || !flip.current) return;
+    if (!goTo) return;
+    if (mode === "scroll") { scrollTo(goTo.image - 1); return; }
+    if (!flip.current) return;
     const i = sheetsRef.current.findIndex((s) => s.img === goTo.image - 1 && s.side !== "blank");
     try { flip.current.flip(Math.max(0, i)); } catch { /* not ready yet */ }
   }, [goTo?.n]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -98,21 +121,33 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
   if (!pages.length) return <div className="grid h-64 place-items-center rounded-2xl bg-slate-100 text-sm text-sub">No pages to show</div>;
   // where we are: the image of the sheet open on the left (or alone)
   const s = sheets[at]?.side === "blank" ? sheets[at + 1] : sheets[at] ?? sheets[at + 1];
-  const img = s?.img ?? 0;
-  const kind = s?.side === "full" ? (img === 0 ? "Cover" : "Page") : "Spread";
+  const img = mode === "scroll" ? scrollAt : s?.img ?? 0;
+  const kind = mode === "scroll" ? kindOf(img) : s?.side === "full" ? (img === 0 ? "Cover" : "Page") : "Spread";
   const label = kind === "Cover" ? `Cover · 1 of ${pages.length}` : `${kind} ${img + 1} of ${pages.length}${!dbl && (s?.side === "left" || s?.side === "right") ? ` · ${s.side}` : ""}`;
   const seg = "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-bold";
   return (
     <div className={full ? "fixed inset-0 z-[60] flex flex-col bg-[#1d1a17] p-3 sm:p-5" : "rounded-2xl bg-gradient-to-b from-[#2b2622] to-[#1d1a17] p-3 sm:p-5"} data-testid="flipbook">
       <div className={full ? "mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 items-center" : "mx-auto w-full max-w-[1200px]"}>
-        <div ref={host} className="w-full" aria-label="Album pages — use the arrows or swipe to turn" />
+        <div ref={host} className={mode === "scroll" ? "hidden" : "w-full"} aria-label="Album pages — use the arrows or swipe to turn" />
+        {mode === "scroll" && (
+          <div ref={scroller} data-testid="album-scroll" className="scroll-thin mx-auto w-full snap-y snap-proximity space-y-4 overflow-y-auto scroll-smooth overscroll-contain pr-1"
+            style={{ maxHeight: full ? "calc(100vh - 120px)" : compact ? "min(62vh, 600px)" : "min(72vh, 760px)" }}>
+            {pages.map((src, i) => (
+              <figure key={src} data-img={i} className="mx-auto snap-start" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
+                <img src={src} alt={`${kindOf(i)} ${i + 1}`} loading="lazy" decoding="async" className="w-full rounded-md bg-white shadow-xl" style={{ aspectRatio: dims?.[i] ? `${dims[i]!.w} / ${dims[i]!.h}` : undefined }} />
+                <figcaption className="mt-1 text-center text-[11px] text-white/60">{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}</figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-white">
-        <button type="button" aria-label="Previous page" onClick={() => flip.current?.flipPrev()} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronLeft className="size-5" /></button>
+        <button type="button" aria-label="Previous page" onClick={() => (mode === "scroll" ? scrollTo(Math.max(0, scrollAt - 1)) : flip.current?.flipPrev())} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronLeft className="size-5" /></button>
         <span className="min-w-[150px] text-center text-sm font-semibold" data-testid="flip-position">{label}</span>
-        <button type="button" aria-label="Next page" onClick={() => flip.current?.flipNext()} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronRight className="size-5" /></button>
+        <button type="button" aria-label="Next page" onClick={() => (mode === "scroll" ? scrollTo(Math.min(pages.length - 1, scrollAt + 1)) : flip.current?.flipNext())} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ChevronRight className="size-5" /></button>
         <div className="ml-1 inline-flex rounded-lg bg-white/10 p-0.5" role="group" aria-label="Sheets shown">
           <button type="button" aria-pressed={mode === "single"} onClick={() => setMode("single")} className={`${seg} ${mode === "single" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><RectangleVertical className="size-3.5" />Single</button>
+          <button type="button" aria-pressed={mode === "scroll"} onClick={() => { atRef.current = Math.max(0, sheets.findIndex((x) => x.img === img)); setMode("scroll"); window.setTimeout(() => scrollTo(img), 60); }} className={`${seg} ${mode === "scroll" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><ScrollText className="size-3.5" />Scroll</button>
           <button type="button" aria-pressed={mode === "double"} onClick={() => setMode("double")} className={`${seg} ${mode === "double" ? "bg-white text-ink" : "text-white hover:bg-white/10"}`}><BookOpen className="size-3.5" />Double</button>
         </div>
         <button type="button" aria-label="Zoom" title="Zoom in on this page" onClick={() => setZoomed(pages[img] ?? null)} className="grid size-10 place-items-center rounded-full bg-white/10 hover:bg-white/20"><ZoomIn className="size-4" /></button>

@@ -131,7 +131,6 @@ function DesignWorkspace({ order }: { order: Order }) {
   const [editOv, setEditOv] = useState<number | null>(null);
   const [tplTab, setTplTab] = useState("Design Templates");
   const [albumView, setAlbumView] = useState<Preview | null>(null);
-  const [mode, setMode] = useState<"album" | "editor">("album");
   const [jump, setJump] = useState<{ image: number; n: number }>({ image: 1, n: 0 });
   const [albumAt, setAlbumAt] = useState(1);
   const [rTab, setRTab] = useState<"details" | "comments" | "corrections">("details");
@@ -379,13 +378,9 @@ function DesignWorkspace({ order }: { order: Order }) {
   };
 
   const latest = previewsOf(order.id)[0];
-  const showAlbum = !!latest && mode === "album";
   const tools: { I: typeof Type; l: string; run: () => void }[] = [
-    { I: Type, l: "Add Text", run: () => addOverlay("text") },
-    { I: ImageIcon, l: "Add Image", run: () => addOverlay("image") },
-    { I: LayoutGrid, l: "Templates", run: () => { setTplTab("Design Templates"); flash("Showing design templates"); } },
-    { I: Brush, l: "Background", run: () => setBgOpen((v) => !v) },
-    { I: BookOpen, l: "Preview", run: () => { const p = previewsOf(order.id)[0]; if (p) setAlbumView(p); else { document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }); flash("Upload the album below (or make it from the design files) to preview it"); } } },
+    { I: BookOpen, l: "Preview", run: () => { if (latest) setAlbumView(latest); else { document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }); flash("Upload the album below (or make it from the design files) to preview it"); } } },
+    { I: Upload, l: latest ? "Upload new version" : "Upload album", run: () => document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" }) },
   ];
   const details = [
     { I: Ruler, l: "Album Size", v: `${order.size} (Landscape)` },
@@ -427,160 +422,40 @@ function DesignWorkspace({ order }: { order: Order }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-[170px_minmax(0,1fr)_340px] gap-4">
         <Panel className="flex max-h-[760px] flex-col" bodyClassName="flex min-h-0 flex-1 flex-col p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-[15px] font-extrabold">Pages ({showAlbum ? latest!.pages : order.pages})</h3>
-            <button onClick={addSpread} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-bold text-brand"><Plus className="size-3" />Add</button>
-          </div>
-          <p className="mb-2 text-[10px] text-sub">Drag spreads to reorder</p>
-          {showAlbum && (
+          <h3 className="mb-3 text-[15px] font-extrabold">Pages ({latest ? latest.pages : 0})</h3>
+          {latest ? (
             <div data-testid="album-strip" className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
-              {pageUrls(latest!).map((src, i) => (
-                <button key={src} type="button" onClick={() => setJump({ image: i + 1, n: jump.n + 1 })} aria-label={`Go to ${latest!.spreads ? "spread" : "page"} ${i + 1}`}
+              {pageUrls(latest).map((src, i) => (
+                <button key={src} type="button" onClick={() => setJump({ image: i + 1, n: jump.n + 1 })} aria-label={`Go to ${latest.spreads ? "spread" : "page"} ${i + 1}`}
                   className={cx("w-full rounded-xl border-2 p-1.5 text-left transition", albumAt === i + 1 ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line")}>
                   <img src={src} alt="" loading="lazy" className="h-[64px] w-full rounded-md bg-white object-contain" />
-                  <div className="mt-1 text-[11px]"><b>{i + 1}</b> <span className="text-sub">{latest!.spreads ? (i === 0 ? "Spread 1" : `Spread ${i + 1}`) : i === 0 ? "Cover" : `Page ${i + 1}`}</span></div>
+                  <div className="mt-1 text-[11px]"><b>{i + 1}</b> <span className="text-sub">{i === 0 ? "Cover" : `${latest.spreads ? "Spread" : "Page"} ${i + 1}`}</span></div>
                 </button>
               ))}
             </div>
-          )}
-          <div data-testid="page-strip" className={cx("scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1", showAlbum && "hidden")}>
-            {spreadIdxs.map((i) => {
-              const s = spreads[i]!;
-              return (
-                <button key={s.id} data-spread={i} draggable={i > 0}
-                  onDragStart={(e) => { if (i === 0) return; setDragFrom(i); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragOver={(e) => { if (dragFrom !== null && i > 0) { e.preventDefault(); setDragOver(i); } }}
-                  onDragLeave={() => setDragOver((d) => (d === i ? null : d))}
-                  onDrop={(e) => { e.preventDefault(); if (dragFrom !== null) reorder(dragFrom, i); setDragFrom(null); setDragOver(null); }}
-                  onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
-                  onClick={() => { setPage(i); setSelOv(null); }}
-                  className={cx("w-full rounded-xl border-2 p-1.5 text-left transition", page === i ? "border-brand bg-brand-soft" : "border-transparent bg-slate-50 hover:border-line", dragOver === i && dragFrom !== i && "!border-dashed !border-brand bg-brand-soft/60", dragFrom === i && "opacity-40")}>
-                  <div className="flex h-[64px] gap-0.5 overflow-hidden rounded-md" style={{ background: s.bg }}>
-                    <div className="flex-1"><PageArt seed={s.id} /></div>
-                    {i > 0 && <div className="flex-1"><PageArt seed={s.id + 3} mirror /></div>}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-[11px]"><b>{i + 1}</b><span className="text-sub">{i === 0 ? "Cover" : `Spread ${i}`}</span>{s.overlays.length > 0 && <span className="rounded bg-brand-soft px-1 text-[9px] font-bold text-brand">{s.overlays.length}</span>}{i > 0 && <GripVertical className="ml-auto size-3 text-slate-300" />}</div>
-                </button>
-              );
-            })}
-          </div>
+          ) : <p className="text-xs text-sub">No album uploaded yet.</p>}
         </Panel>
 
         <div className="min-w-0 space-y-4">
           <Panel bodyClassName="p-3">
-            <div className="scroll-thin mb-3 flex max-w-full flex-wrap items-center gap-3 overflow-x-auto text-[11px] text-sub">
-              <div className="flex min-w-0 flex-wrap gap-1">
-                <button onClick={undo} disabled={!past.length} title="Ctrl+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Undo2 className="size-4 text-ink" />Undo</button>
-                <button onClick={redo} disabled={!future.length} title="Ctrl+Shift+Z" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Redo2 className="size-4 text-ink" />Redo</button>
-                <button onClick={() => setZoom(ZFIT)} className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100"><Maximize className="size-4 text-ink" />Fit</button>
-                <button onClick={() => selOv !== null && removeOverlay(selOv)} disabled={selOv === null} title="Delete" className="grid h-12 w-12 place-items-center rounded-lg hover:bg-slate-100 disabled:opacity-35"><Trash2 className="size-4 text-ink" />Delete</button>
-              </div>
-              <div className="flex items-center gap-1 rounded-lg border border-line p-1 text-sm font-bold text-ink">
-                <button aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(ZMIN, z - 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Minus className="size-4" /></button>
-                <span data-testid="zoom" className="w-12 text-center">{zoom}%</span>
-                <button aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(ZMAX, z + 10))} className="grid size-7 place-items-center rounded hover:bg-slate-100"><Plus className="size-4" /></button>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                Page
-                <button aria-label="Previous page" disabled={page === 0} onClick={() => { setPage(page - 1); setSelOv(null); }} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft className="size-4" /></button>
-                <span className="font-semibold text-ink">{pageNo} / {order.pages}</span>
-                <button aria-label="Next page" disabled={page >= spreads.length - 1} onClick={() => { setPage(page + 1); setSelOv(null); }} className="grid size-8 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight className="size-4" /></button>
-              </div>
-              <div className="ml-auto flex flex-wrap gap-1">
-                {tools.map(({ I, l, run }) => (
-                  <button key={l} onClick={run} className={cx("grid h-12 min-w-14 place-items-center rounded-lg px-1.5 hover:bg-slate-100", l === "Background" && bgOpen && "bg-brand-soft")}><I className="size-4 text-ink" />{l}</button>
-                ))}
-              </div>
-            </div>
-            {bgOpen && (
-              <div className="mb-3 flex items-center gap-2 rounded-xl border border-line bg-slate-50 p-2.5 text-[12px] font-semibold">
-                Spread background
-                {BG_SWATCHES.map((c) => (
-                  <button key={c} aria-label={`Background ${c}`} onClick={() => { setBg(c); flash("Background changed"); }} className={cx("size-7 rounded-full border-2", cur.bg === c ? "border-brand" : "border-line")} style={{ background: c }} />
-                ))}
-                <button onClick={() => setBg(undefined)} className="ml-auto text-xs font-bold text-brand">Reset</button>
-              </div>
-            )}
-            {latest && (
-              <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="canvas-mode">
-                <div className="inline-flex rounded-lg border border-line p-0.5 text-xs font-bold">
-                  <button type="button" onClick={() => setMode("album")} className={cx("rounded-md px-3 py-1.5", mode === "album" ? "bg-brand text-white" : "text-sub hover:bg-slate-100")}>Uploaded album · v{latest.version}</button>
-                  <button type="button" onClick={() => setMode("editor")} className={cx("rounded-md px-3 py-1.5", mode === "editor" ? "bg-brand text-white" : "text-sub hover:bg-slate-100")}>Layout editor</button>
-                </div>
-                {showAlbum && <span className="text-[11px] text-sub">{latest.pages} {latest.spreads ? "spreads" : "pages"} · {STATUS_LABEL[latest.status]}</span>}
-              </div>
-            )}
-            {!latest && <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="no-album-yet">Upload the album in “Album preview for the client” below (or make it from the design files) to see the real pages here.</p>}
-            {showAlbum && <div data-testid="album-canvas"><AlbumFlipbook compact pages={pageUrls(latest!)} spreads={latest!.spreads} goTo={jump} onPage={setAlbumAt} /></div>}
-            <div ref={stageRef} className={cx("grid h-[430px] place-items-center overflow-hidden rounded-xl bg-slate-200/70", showAlbum && "hidden")}>
-              <div ref={canvasRef} data-testid="canvas" onPointerDown={(e) => { if (!(e.target as HTMLElement).closest("[data-ov]")) { setSelOv(null); setEditOv(null); } }}
-                className="relative flex aspect-[2/1] w-[88%] max-w-[760px] origin-center touch-none select-none overflow-hidden rounded shadow-2xl transition-transform" style={{ transform: `scale(${zoom / ZFIT})`, background: cur.bg }}>
-                <div className="relative flex-1 border-r border-black/10">
-                  <PageArt seed={cur.id + doc.tpl} />
-                  {page === 0 && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-6 text-center font-serif italic text-white drop-shadow">
-                      <div className="text-2xl">Our Wedding Story</div>
-                      <div className="mt-1 text-[10px] not-italic tracking-[0.25em]">{order.customer.toUpperCase()}</div>
-                    </div>
-                  )}
-                </div>
-                <div className="relative flex-1"><PageArt seed={cur.id + doc.tpl + 3} mirror /></div>
-                {cur.overlays.map((o) => {
-                  const selected = selOv === o.id;
-                  return (
-                    <div key={o.id} data-ov={o.id} data-kind={o.kind}
-                      onPointerDown={(e) => startDrag(e, o, "move")} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
-                      onDoubleClick={() => { if (o.kind === "text") { setEditOv(o.id); setSelOv(o.id); } }}
-                      className={cx("absolute", editOv === o.id ? "cursor-text" : "cursor-move", selected && "z-10")}
-                      style={{ left: `${o.x}%`, top: `${o.y}%`, ...(o.kind === "image" ? { width: `${o.w}%`, height: `${o.h}%` } : {}) }}>
-                      {o.kind === "text" ? (
-                        <div className={cx("flex items-center gap-1 whitespace-nowrap rounded border border-dashed bg-white/70 px-1.5 py-0.5", selected ? "border-brand ring-2 ring-brand/40" : "border-brand/40")}>
-                          {editOv === o.id ? (
-                            <input autoFocus aria-label="Text overlay" defaultValue={o.text} onPointerDown={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                              onBlur={(e) => { const v = e.target.value; setEditOv(null); if (v !== o.text) commit(setOverlay(docRef.current, o.id, (x) => ({ ...x, text: v }))); }}
-                              className="w-36 bg-transparent font-serif text-sm outline-none" />
-                          ) : <span className="font-serif text-sm">{o.text}</span>}
-                        </div>
-                      ) : (
-                        <div className={cx("relative h-full w-full overflow-hidden rounded-md", selected && "ring-2 ring-brand")}>
-                          <Thumb seed={o.id} size={0} rounded="rounded-md" className="!h-full !w-full" />
-                        </div>
-                      )}
-                      {selected && (
-                        <>
-                          <button aria-label="Remove overlay" onPointerDown={(e) => e.stopPropagation()} onClick={() => removeOverlay(o.id)} className="absolute -right-2 -top-2 grid size-4 place-items-center rounded-full bg-rose-500 text-[9px] text-white">✕</button>
-                          {o.kind === "image" && <span role="slider" aria-label="Resize image" data-handle="resize" onPointerDown={(e) => startDrag(e, o, "resize")} onPointerMove={moveDrag} onPointerUp={endDrag} className="absolute -bottom-1.5 -right-1.5 size-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-brand shadow" />}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-sub">
-              <span>Drag elements to move · double-click text to edit · drag the corner of an image to resize</span>
-              <span className="ml-auto"><Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo · <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Z</Kbd> redo · <Kbd>Del</Kbd> delete · <Kbd>Ctrl</Kbd>+scroll zoom</span>
-            </div>
-          </Panel>
-
-          <Panel bodyClassName="p-4">
-            <div className="mb-3 flex min-w-0 items-center justify-between gap-3 border-b border-line">
-              <div className="scroll-thin flex min-w-0 gap-5 overflow-x-auto">
-                {TPL_TABS.map((t) => (
-                  <button key={t} onClick={() => setTplTab(t)} className={cx("-mb-px whitespace-nowrap border-b-2 pb-2 text-[13px] font-bold", t === tplTab ? "border-brand text-brand" : "border-transparent text-sub")}>{t}</button>
-                ))}
-              </div>
-              <LinkAction onClick={() => { setTplTab("Design Templates"); applyTpl((doc.tpl + 1) % TEMPLATES.length); flash(`Browsing all ${TEMPLATES.length} templates in ${tplTab}`); }}>View All →</LinkAction>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {TEMPLATES.map((t, i) => (
-                <button key={t} onClick={() => applyTpl(i)} className="w-[92px] shrink-0 text-center">
-                  <div className={cx("overflow-hidden rounded-lg border-2", doc.tpl === i ? "border-brand" : "border-transparent")}><Thumb seed={i + 1} size={0} rounded="rounded-none" className="!h-14 !w-full" /></div>
-                  <div className={cx("mt-1 text-[11px] font-semibold", doc.tpl === i ? "text-brand" : "text-sub")}>{t}</div>
-                </button>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h3 className="flex-1 text-[15px] font-extrabold">Album{latest ? ` · v${latest.version}` : ""}{latest && <span className="ml-2 text-[11px] font-semibold text-sub">{latest.pages} {latest.spreads ? "spreads" : "pages"} · {STATUS_LABEL[latest.status]}</span>}</h3>
+              {tools.map(({ I, l, run }) => (
+                <button key={l} type="button" onClick={run} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-bold hover:bg-slate-50"><I className="size-4" />{l}</button>
               ))}
             </div>
+            {latest
+              ? <div data-testid="album-canvas"><AlbumFlipbook compact pages={pageUrls(latest)} spreads={latest.spreads} goTo={jump} onPage={setAlbumAt} /></div>
+              : (
+                <div data-testid="no-album-yet" className="grid h-[360px] place-items-center rounded-xl border-2 border-dashed border-line bg-slate-50 text-center">
+                  <div className="max-w-sm px-4">
+                    <BookOpen className="mx-auto size-10 text-slate-400" />
+                    <p className="mt-2 text-sm font-bold">No album uploaded yet</p>
+                    <p className="mt-1 text-xs text-sub">Upload the album (one PDF or the page images) in “Album preview for the client” below, or make it from the design files. It shows here as a page-turning book.</p>
+                    <button type="button" onClick={() => document.getElementById("album-preview")?.scrollIntoView({ behavior: "smooth" })} className="mt-3 inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark"><Upload className="size-4" />Upload album</button>
+                  </div>
+                </div>
+              )}
           </Panel>
         </div>
 
