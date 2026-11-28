@@ -7,7 +7,7 @@ type Sheet = { src: string; side: "left" | "right" | "full" | "blank"; img: numb
  *  spread and is split into its left and right sheets (the open book shows the whole spread), a portrait image (the cover,
  *  a back cover) is a single sheet. Double = the open book (two sheets side by side); Single = one sheet at a time.
  *  The book is sized to fit the space there is (width and height) and re-fits on resize / full screen. */
-export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPage?: (image: number, kind: "Cover" | "Page" | "Spread") => void; goTo?: { image: number; n: number }; compact?: boolean }) {
+export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; noteFor?: (image: number, kind: "Cover" | "Page" | "Spread") => void; noteCount?: (image: number) => number; onPage?: (image: number, kind: "Cover" | "Page" | "Spread") => void; goTo?: { image: number; n: number }; compact?: boolean }) {
   const { goTo, compact } = props;
   const key = props.pages.join("\n");
   const pages = useMemo(() => props.pages, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -135,7 +135,10 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
             {pages.map((src, i) => (
               <figure key={src} data-img={i} className="mx-auto snap-start" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
                 <img src={src} alt={`${kindOf(i)} ${i + 1}`} loading="lazy" decoding="async" className="w-full rounded-md bg-white shadow-xl" style={{ aspectRatio: dims?.[i] ? `${dims[i]!.w} / ${dims[i]!.h}` : undefined }} />
-                <figcaption className={`mt-1 text-center text-[11px] ${full ? "text-white/60" : "text-sub"}`}>{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}</figcaption>
+                <figcaption className={`mt-1 flex items-center justify-center gap-2 text-[11px] ${full ? "text-white/60" : "text-sub"}`}>
+                  <span>{kindOf(i) === "Cover" ? "Cover" : `${kindOf(i)} ${i + 1}`}{props.noteCount?.(i + 1) ? ` · ${props.noteCount(i + 1)} note${props.noteCount(i + 1) === 1 ? "" : "s"}` : ""}</span>
+                  {props.noteFor && <button type="button" onClick={() => props.noteFor!(i + 1, kindOf(i))} className="rounded-md bg-amber-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-amber-700">+ Note</button>}
+                </figcaption>
               </figure>
             ))}
           </div>

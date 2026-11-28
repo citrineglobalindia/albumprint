@@ -18,6 +18,12 @@ export default function AlbumPortal() {
   const [busy, setBusy] = useState(false); const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [pageNote, setPageNote] = useState<string | null>(null);
   const [pageKind, setPageKind] = useState<"Cover" | "Page" | "Spread">("Spread");
+  const [side, setSide] = useState<"left" | "right" | "whole">("whole");          // which page of an open spread the note is about
+  const openNote = (n?: number, k?: "Cover" | "Page" | "Spread", sd: "left" | "right" | "whole" = "whole") => {
+    if (n) { setPage(n); if (k) setPageKind(k); }
+    setSide(sd); setPageNote(""); setNote(null);
+    window.setTimeout(() => document.getElementById("page-notes")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  };
   const load = () => void publicGet(token).then(setView, () => setView(null));
   useEffect(load, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -45,26 +51,39 @@ export default function AlbumPortal() {
             : view.status === "changes" ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800" data-testid="client-status">Changes requested — the studio is on it</span> : null}
         </div>
 
-        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }} />
+        <AlbumFlipbook pages={view.pages} spreads={view.spreads} onPage={(n, k) => { setPage(n); setPageKind(k); }}
+          noteFor={approved ? undefined : (n, k) => openNote(n, k)} noteCount={(n) => view.feedback.filter((f) => f.page === n && f.kind !== "approve").length} />
 
         {/* a note on the page that is open */}
         {(() => {
           const what = pageKind === "Cover" ? "the cover" : `${pageKind.toLowerCase()} ${page}`;
           const here = view.feedback.filter((f) => f.page === page && f.kind !== "approve");
           return (
-            <section className="mt-3 rounded-2xl border border-line bg-white p-3" data-testid="page-notes" aria-label={`Notes on ${what}`}>
+            <section id="page-notes" className="mt-3 rounded-2xl border border-line bg-white p-3" data-testid="page-notes" aria-label={`Notes on ${what}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <MessageSquarePlus className="size-4 text-amber-700" />
                 <b className="flex-1 text-sm">Notes on {what}{here.length ? ` (${here.length})` : ""}</b>
-                {!approved && pageNote === null && <button type="button" onClick={() => { setPageNote(""); setNote(null); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"><PenLine className="size-3.5" />Add a note on {what}</button>}
+                {!approved && pageNote === null && (pageKind === "Spread" ? (
+                  <span className="inline-flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => openNote(undefined, undefined, "left")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"><PenLine className="size-3.5" />Note on left page</button>
+                    <button type="button" onClick={() => openNote(undefined, undefined, "right")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"><PenLine className="size-3.5" />Note on right page</button>
+                    <button type="button" onClick={() => openNote(undefined, undefined, "whole")} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-xs font-bold text-amber-800 hover:bg-amber-50">Whole spread</button>
+                  </span>
+                ) : <button type="button" onClick={() => openNote()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"><PenLine className="size-3.5" />Add a note on {what}</button>)}
               </div>
               {here.length > 0 && <ul className="mt-2 space-y-1.5">{here.map((f, i) => <li key={i} className="rounded-lg bg-amber-50 px-3 py-2 text-sm">{f.message}<span className="block text-[11px] text-sub">{f.name ? `${f.name} · ` : ""}{fmtDate(f.at)}{f.resolved ? " · ✓ done by the studio" : ""}</span></li>)}</ul>}
               {pageNote !== null && (
                 <form className="mt-2 space-y-2" onSubmit={(e) => { e.preventDefault(); void (async () => {
                   setBusy(true); try { localStorage.setItem("albumpro.client.name", name); } catch { /* ignore */ }
-                  const r = await publicFeedback(token, { page, name, message: pageNote, kind: "changes" });
-                  setBusy(false); setNote({ ok: r.ok, text: r.ok ? `Note added on ${what} — thank you` : r.msg }); if (r.ok) { setPageNote(null); load(); }
+                  const where = pageKind === "Spread" && side !== "whole" ? `${side === "left" ? "Left" : "Right"} page` : "";
+                  const r = await publicFeedback(token, { page, name, message: where ? `${where}: ${pageNote.trim()}` : pageNote, kind: "changes" });
+                  setBusy(false); setNote({ ok: r.ok, text: r.ok ? `Note added on ${where ? `the ${where.toLowerCase()} of ` : ""}${what} — thank you` : r.msg }); if (r.ok) { setPageNote(null); load(); }
                 })(); }}>
+                  {pageKind === "Spread" && (
+                    <div className="inline-flex rounded-lg border border-line p-0.5 text-xs font-bold" role="group" aria-label="Which page">
+                      {(["left", "right", "whole"] as const).map((k) => <button key={k} type="button" aria-pressed={side === k} onClick={() => setSide(k)} className={cx("rounded-md px-3 py-1.5", side === k ? "bg-amber-600 text-white" : "text-sub hover:bg-slate-100")}>{k === "left" ? "Left page" : k === "right" ? "Right page" : "Whole spread"}</button>)}
+                    </div>
+                  )}
                   <textarea aria-label={`Note on ${what}`} rows={2} autoFocus className="w-full rounded-lg border border-line px-3 py-2 text-sm" value={pageNote} onChange={(e) => setPageNote(e.target.value)} placeholder="e.g. Use a different photo on the left / make this picture bigger" />
                   <div className="flex flex-wrap items-center gap-2">
                     <input aria-label="Your name" className="h-9 min-w-[160px] flex-1 rounded-lg border border-line px-3 text-sm" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />

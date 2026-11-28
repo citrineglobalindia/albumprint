@@ -41,13 +41,25 @@ test("album viewer: cover + spreads, single / double, zoom, note on a page", asy
   await expect(zoom.getByTestId("zoom-level")).toHaveText("150%");
   await zoom.getByRole("button", { name: "Close zoom" }).click();
 
-  await page.getByRole("button", { name: "Add a note on spread 2" }).click();
+  // a note on the left page of the open spread
+  await page.getByRole("button", { name: "Note on left page" }).click();
   await page.getByLabel("Note on spread 2").fill("Make the left photo bigger");
   await page.getByRole("button", { name: "Save note" }).click();
-  await expect(page.getByText("Note added on spread 2 — thank you")).toBeVisible();
-  await expect(page.getByTestId("page-notes")).toContainText("Make the left photo bigger");
+  await expect(page.getByText("Note added on the left page of spread 2 — thank you")).toBeVisible();
+  await expect(page.getByTestId("page-notes")).toContainText("Left page: Make the left photo bigger");
+  // scroll view: every page has its own + Note
+  await fb.getByRole("button", { name: "Scroll" }).click();
+  const scroll = page.getByTestId("album-scroll");
+  await expect(scroll.locator("figure").nth(1)).toContainText("1 note");
+  await scroll.locator("figure").nth(2).getByRole("button", { name: "+ Note" }).click();
+  await page.getByRole("group", { name: "Which page" }).getByRole("button", { name: "Right page" }).click();
+  await page.getByLabel("Note on spread 3").fill("Change the background colour");
+  await page.getByRole("button", { name: "Save note" }).click();
+  await expect(page.getByText("Note added on the right page of spread 3 — thank you")).toBeVisible();
+  await expect(scroll.locator("figure").nth(2)).toContainText("1 note");
 
   await page.goto(`/orders/${code}`);
   await expect(box.getByTestId("preview-feedback")).toContainText("Spread 2");
-  await expect(box.getByTestId("preview-feedback")).toContainText("Make the left photo bigger");
+  await expect(box.getByTestId("preview-feedback")).toContainText("Left page: Make the left photo bigger");
+  await expect(box.getByTestId("preview-feedback")).toContainText("Right page: Change the background colour");
 });
