@@ -74,7 +74,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
       sheetsRef.current = sheets; setSheets(sheets);
 
       // fit the book in the space there is; never taller than the box
-      const W = Math.max(200, el.clientWidth), H = Math.max(280, full ? window.innerHeight - 110 : window.innerHeight - (compact ? 190 : 230));   // as big as the screen allows
+      const W = Math.max(200, el.clientWidth), H = Math.max(280, full ? window.innerHeight - 110 : compact ? Math.min(window.innerHeight * 0.62, window.innerHeight - 260) : Math.min(window.innerHeight * 0.68, window.innerHeight - 230));
       const double = mode === "double" && W >= 520; setDbl(double);
       const ph = Math.floor(Math.min(H, double ? W / (2 * a) : W / a)), pw = Math.floor(ph * a);
       const book = document.createElement("div"); book.style.margin = "0 auto"; book.style.width = `${double ? pw * 2 : pw}px`; book.style.transition = "transform .5s ease"; book.style.boxShadow = full ? "none" : "0 18px 40px -12px rgba(20,20,40,.45)"; el.appendChild(book);
@@ -131,7 +131,7 @@ export function AlbumFlipbook(props: { pages: string[]; spreads?: boolean; onPag
         <div ref={host} className={mode === "scroll" ? "hidden" : "w-full"} aria-label="Album pages — use the arrows or swipe to turn" />
         {mode === "scroll" && (
           <div ref={scroller} data-testid="album-scroll" className="scroll-thin mx-auto w-full snap-y snap-proximity space-y-4 overflow-y-auto scroll-smooth overscroll-contain pr-1"
-            style={{ maxHeight: full ? "calc(100vh - 110px)" : compact ? "calc(100vh - 190px)" : "calc(100vh - 230px)" }}>
+            style={{ maxHeight: full ? "calc(100vh - 110px)" : compact ? "min(62vh, calc(100vh - 260px))" : "min(68vh, calc(100vh - 230px))" }}>
             {pages.map((src, i) => (
               <figure key={src} data-img={i} className="mx-auto snap-start" style={{ maxWidth: kindOf(i) === "Spread" ? "100%" : "min(100%, 560px)" }}>
                 <img src={src} alt={`${kindOf(i)} ${i + 1}`} loading="lazy" decoding="async" className="w-full rounded-md bg-white shadow-xl" style={{ aspectRatio: dims?.[i] ? `${dims[i]!.w} / ${dims[i]!.h}` : undefined }} />
